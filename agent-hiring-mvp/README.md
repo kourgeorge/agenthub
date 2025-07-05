@@ -59,16 +59,19 @@ npm start
 - **Agent Templates**: Pre-built templates for common use cases
 - **Testing Tools**: Local testing and validation tools
 - **Submission API**: Simple API to submit agents to the marketplace
+- **Code Storage**: Direct code storage in database or file paths
 
 ### For Agent Consumers
 - **Agent Discovery**: Browse and search available agents
 - **Agent Hiring**: Hire agents with one-click
+- **Real Execution**: Execute actual agent code with input/output handling
 - **Permanent Links**: Get permanent ACP communication links
 - **Agent Management**: Manage hired agents and their usage
 
 ### For Platform Administrators
 - **Agent Validation**: Automated validation of submitted agents
-- **Security Sandbox**: Secure execution environment
+- **Secure Runtime**: Subprocess-based execution with security measures
+- **Resource Management**: CPU, memory, and time limits enforcement
 - **Usage Analytics**: Track agent usage and performance
 - **Moderation Tools**: Review and approve agents
 
@@ -92,10 +95,12 @@ npm start
 
 ## 🛡️ Security Features
 
-- **Sandboxed Execution**: Agents run in isolated environments
-- **Resource Limits**: CPU, memory, and time limits
-- **Input Validation**: Strict validation of agent inputs
+- **Secure Runtime**: Subprocess-based execution with controlled environment
+- **Resource Limits**: CPU, memory (100MB), and time (30s) limits
+- **Security Checks**: Detection of forbidden commands and suspicious patterns
+- **Input Validation**: Strict validation of agent inputs and outputs
 - **Rate Limiting**: Prevent abuse of the platform
+- **Code Isolation**: Temporary execution directories with cleanup
 
 ## 📊 Database Schema
 
@@ -124,6 +129,9 @@ pytest
 pytest tests/unit/
 pytest tests/integration/
 pytest tests/e2e/
+
+# Test real agent execution
+python test_real_agents.py
 ```
 
 ## 📈 Deployment

@@ -58,52 +58,199 @@ def create_sample_data(engine) -> None:
             session.add(user)
         session.commit()
         
-        # Create sample agents
+        # Create sample agents with actual code
         sample_agents = [
             Agent(
-                name="Data Analyzer",
-                description="An intelligent agent that analyzes data and provides insights",
+                name="Echo Agent",
+                description="A simple agent that echoes back input messages with processing",
                 version="1.0.0",
                 author="creator1",
                 email="creator1@example.com",
-                entry_point="main.py:DataAnalyzerAgent",
-                requirements=["pandas", "numpy", "matplotlib"],
-                tags=["data-analysis", "insights", "visualization"],
-                category="data-science",
-                pricing_model="per_use",
-                price_per_use=0.10,
+                entry_point="echo_agent.py:main",
+                requirements=[],
+                tags=["echo", "simple", "demo"],
+                category="utility",
+                pricing_model="free",
+                price_per_use=0.0,
                 status="approved",
                 is_public=True,
+                code='''#!/usr/bin/env python3
+"""
+Simple Echo Agent
+This agent simply echoes back the input message with some processing.
+"""
+
+def main():
+    """Main agent function."""
+    # Get input data from the environment
+    message = input_data.get('message', 'Hello World!')
+    prefix = input_data.get('prefix', 'Echo: ')
+    
+    # Process the message
+    response = f"{prefix}{message}"
+    
+    # Add some metadata
+    result = {
+        "response": response,
+        "original_message": message,
+        "timestamp": "2024-01-01T00:00:00Z",
+        "agent_type": "echo"
+    }
+    
+    # Print the result (this will be captured by the runtime)
+    print(f"Agent Response: {result['response']}")
+    print(f"Processing complete for message: {message}")
+
+if __name__ == "__main__":
+    main()''',
             ),
             Agent(
-                name="Code Reviewer",
-                description="Reviews code for best practices, security issues, and improvements",
+                name="Calculator Agent",
+                description="Performs mathematical operations on input data",
                 version="1.0.0",
                 author="creator1",
                 email="creator1@example.com",
-                entry_point="main.py:CodeReviewerAgent",
-                requirements=["ast", "black", "flake8"],
-                tags=["code-review", "security", "best-practices"],
-                category="development",
-                pricing_model="per_use",
-                price_per_use=0.25,
+                entry_point="calculator_agent.py:main",
+                requirements=[],
+                tags=["calculator", "math", "utility"],
+                category="utility",
+                pricing_model="free",
+                price_per_use=0.0,
                 status="approved",
                 is_public=True,
+                code='''#!/usr/bin/env python3
+"""
+Calculator Agent
+This agent performs mathematical operations on input data.
+"""
+
+def main():
+    """Main agent function."""
+    # Get input data
+    operation = input_data.get('operation', 'add')
+    numbers = input_data.get('numbers', [1, 2])
+    
+    # Validate input
+    if not isinstance(numbers, list) or len(numbers) < 2:
+        print("Error: At least 2 numbers required")
+        return
+    
+    # Perform calculation
+    result = None
+    if operation == 'add':
+        result = sum(numbers)
+    elif operation == 'multiply':
+        result = 1
+        for num in numbers:
+            result *= num
+    elif operation == 'subtract':
+        result = numbers[0] - sum(numbers[1:])
+    elif operation == 'divide':
+        if 0 in numbers[1:]:
+            print("Error: Division by zero")
+            return
+        result = numbers[0]
+        for num in numbers[1:]:
+            result /= num
+    else:
+        print(f"Error: Unknown operation '{operation}'")
+        return
+    
+    # Format output
+    print(f"Operation: {operation}")
+    print(f"Numbers: {numbers}")
+    print(f"Result: {result}")
+    
+    # Return structured result
+    output = {
+        "operation": operation,
+        "numbers": numbers,
+        "result": result,
+        "agent_type": "calculator"
+    }
+    
+    print(f"Calculation complete: {output}")
+
+if __name__ == "__main__":
+    main()''',
             ),
             Agent(
-                name="Content Writer",
-                description="Creates high-quality content for blogs, articles, and marketing",
+                name="Text Processor",
+                description="Processes and analyzes text input with various operations",
                 version="1.0.0",
                 author="creator1",
                 email="creator1@example.com",
-                entry_point="main.py:ContentWriterAgent",
-                requirements=["openai", "markdown"],
-                tags=["content-writing", "marketing", "seo"],
-                category="content",
-                pricing_model="per_use",
-                price_per_use=0.50,
+                entry_point="text_processor_agent.py:main",
+                requirements=[],
+                tags=["text-processing", "analysis", "utility"],
+                category="utility",
+                pricing_model="free",
+                price_per_use=0.0,
                 status="approved",
                 is_public=True,
+                code='''#!/usr/bin/env python3
+"""
+Text Processor Agent
+This agent processes and analyzes text input.
+"""
+
+def main():
+    """Main agent function."""
+    # Get input data
+    text = input_data.get('text', 'Hello World!')
+    operation = input_data.get('operation', 'analyze')
+    
+    # Process text based on operation
+    if operation == 'analyze':
+        # Basic text analysis
+        word_count = len(text.split())
+        char_count = len(text)
+        line_count = len(text.splitlines())
+        
+        analysis = {
+            "text": text,
+            "word_count": word_count,
+            "character_count": char_count,
+            "line_count": line_count,
+            "average_word_length": char_count / word_count if word_count > 0 else 0
+        }
+        
+        print(f"Text Analysis Results:")
+        print(f"Word count: {analysis['word_count']}")
+        print(f"Character count: {analysis['character_count']}")
+        print(f"Line count: {analysis['line_count']}")
+        print(f"Average word length: {analysis['average_word_length']:.2f}")
+        
+    elif operation == 'uppercase':
+        result = text.upper()
+        print(f"Uppercase text: {result}")
+        
+    elif operation == 'lowercase':
+        result = text.lower()
+        print(f"Lowercase text: {result}")
+        
+    elif operation == 'reverse':
+        result = text[::-1]
+        print(f"Reversed text: {result}")
+        
+    elif operation == 'word_count':
+        words = text.split()
+        word_freq = {}
+        for word in words:
+            word_freq[word] = word_freq.get(word, 0) + 1
+        
+        print(f"Word frequency:")
+        for word, count in word_freq.items():
+            print(f"  '{word}': {count}")
+            
+    else:
+        print(f"Error: Unknown operation '{operation}'")
+        return
+    
+    print(f"Text processing complete for operation: {operation}")
+
+if __name__ == "__main__":
+    main()''',
             ),
         ]
         

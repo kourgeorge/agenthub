@@ -40,6 +40,8 @@ class Agent(Base):
     code_zip_url = Column(String(500), nullable=True)  # URL to agent code ZIP
     code_hash = Column(String(64), nullable=True)  # SHA256 hash of code
     docker_image = Column(String(255), nullable=True)  # Docker image name (future)
+    code = Column(Text, nullable=True)  # Direct code storage
+    file_path = Column(String(500), nullable=True)  # Path to agent file
     
     # Metadata
     tags = Column(JSON, nullable=True)  # List of tags

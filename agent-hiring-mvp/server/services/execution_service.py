@@ -12,6 +12,7 @@ from ..models.execution import Execution, ExecutionStatus
 from ..models.agent import Agent
 from ..models.hiring import Hiring
 from ..database.config import get_session
+from .agent_runtime import AgentRuntimeService, RuntimeStatus
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +110,7 @@ class ExecutionService:
         )
     
     def execute_agent(self, execution_id: str) -> Dict[str, Any]:
-        """Execute an agent (simplified version)."""
+        """Execute an agent using the real runtime service."""
         execution = self.get_execution(execution_id)
         if not execution:
             return {"status": "error", "message": "Execution not found"}
@@ -118,34 +119,65 @@ class ExecutionService:
         self.update_execution_status(execution_id, ExecutionStatus.RUNNING)
         
         try:
-            # Simulate agent execution
+            # Get agent details
+            agent = self.db.query(Agent).filter(Agent.id == execution.agent_id).first()
+            if not agent:
+                raise Exception("Agent not found")
+            
+            # Initialize runtime service
+            runtime_service = AgentRuntimeService()
+            
+            # Execute the agent
             input_data = execution.input_data or {}
+            runtime_result = runtime_service.execute_agent(
+                agent_id=execution.agent_id,
+                input_data=input_data,
+                agent_code=agent.code if hasattr(agent, 'code') else None,
+                agent_file_path=agent.file_path if hasattr(agent, 'file_path') else None
+            )
             
-            # Simple mock execution
-            if "message" in input_data:
+            # Process runtime result
+            if runtime_result.status == RuntimeStatus.COMPLETED:
                 output_data = {
-                    "response": f"Echo: {input_data['message']}",
+                    "output": runtime_result.output,
+                    "execution_time": runtime_result.execution_time,
                     "status": "success"
                 }
-            elif "data" in input_data:
-                output_data = {
-                    "result": f"Processed: {input_data['data']}",
-                    "status": "success"
-                }
-            else:
-                output_data = {
-                    "message": "No input data provided",
-                    "status": "success"
+                self.update_execution_status(execution_id, ExecutionStatus.COMPLETED, output_data)
+                
+                return {
+                    "status": "success",
+                    "execution_id": execution_id,
+                    "result": output_data,
+                    "execution_time": runtime_result.execution_time
                 }
             
-            # Update execution as completed
-            self.update_execution_status(execution_id, ExecutionStatus.COMPLETED, output_data)
+            elif runtime_result.status == RuntimeStatus.TIMEOUT:
+                error_msg = "Execution timeout"
+                self.update_execution_status(execution_id, ExecutionStatus.TIMEOUT, error_message=error_msg)
+                return {
+                    "status": "error",
+                    "execution_id": execution_id,
+                    "error": error_msg
+                }
             
-            return {
-                "status": "success",
-                "execution_id": execution_id,
-                "result": output_data
-            }
+            elif runtime_result.status == RuntimeStatus.SECURITY_VIOLATION:
+                error_msg = f"Security violation: {runtime_result.error}"
+                self.update_execution_status(execution_id, ExecutionStatus.FAILED, error_message=error_msg)
+                return {
+                    "status": "error",
+                    "execution_id": execution_id,
+                    "error": error_msg
+                }
+            
+            else:  # FAILED or other status
+                error_msg = runtime_result.error or "Execution failed"
+                self.update_execution_status(execution_id, ExecutionStatus.FAILED, error_message=error_msg)
+                return {
+                    "status": "error",
+                    "execution_id": execution_id,
+                    "error": error_msg
+                }
         
         except Exception as e:
             error_msg = f"Execution failed: {str(e)}"

@@ -10,6 +10,38 @@ from ..services.acp_service import ACPService
 router = APIRouter(prefix="/acp", tags=["acp"])
 
 
+@router.get("/discovery")
+def acp_discovery():
+    """ACP protocol discovery endpoint."""
+    return {
+        "protocol": "ACP",
+        "version": "1.0.0",
+        "name": "Agent Communication Protocol",
+        "description": "Standard protocol for agent communication"
+    }
+
+
+@router.get("/capabilities")
+def acp_capabilities():
+    """ACP protocol capabilities endpoint."""
+    return {
+        "capabilities": [
+            "session_management",
+            "message_routing",
+            "tool_calling",
+            "result_submission",
+            "error_handling",
+            "execution_control"
+        ],
+        "supported_versions": ["1.0.0"],
+        "features": {
+            "async_execution": True,
+            "tool_integration": True,
+            "state_management": True
+        }
+    }
+
+
 @router.post("/session")
 def create_acp_session(
     agent_id: int,
