@@ -45,7 +45,7 @@ from beeai_server.api.routes.llm import router as llm_router
 from beeai_server.api.routes.ui import router as ui_router
 from beeai_server.api.routes.embeddings import router as embeddings_router
 from beeai_server.api.routes.vector_stores import router as vector_stores_router
-# from beeai_server.api.routes.hiring import router as hiring_router
+from beeai_server.api.routes.hiring import router as hiring_router
 
 logger = logging.getLogger(__name__)
 
@@ -104,7 +104,7 @@ def mount_routes(app: FastAPI):
     server_router.include_router(ui_router, prefix="/ui", tags=["ui"])
     server_router.include_router(embeddings_router, prefix="/llm", tags=["embeddings"])
     server_router.include_router(vector_stores_router, prefix="/vector_stores", tags=["vector_stores"])
-    # server_router.include_router(hiring_router, prefix="/hiring", tags=["hiring"])
+    server_router.include_router(hiring_router, prefix="/hiring", tags=["hiring"])
     
     app.mount("/healthcheck", lambda: "OK")
     app.include_router(server_router, prefix="/api/v1", tags=["provider"])

@@ -66,7 +66,7 @@ class AgentRegistryConfiguration(BaseModel):
 
 class AuthConfiguration(BaseModel):
     admin_password: Secret[str] | None = Field(default=None)
-    disable_auth: bool = False
+    disable_auth: bool = True
 
     @model_validator(mode="after")
     def validate_auth(self):
