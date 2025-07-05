@@ -24,6 +24,7 @@ agents_table = Table(
     Column("description", Text, nullable=True),
     Column("provider_id", ForeignKey("providers.id", ondelete="CASCADE"), nullable=False),
     Column("metadata", JSON, nullable=False),
+    Column("hiring_metadata", JSON, nullable=True),
 )
 
 agent_requests_table = Table(
@@ -54,6 +55,7 @@ class SqlAlchemyAgentRepository(IAgentRepository):
                     "description": agent.description,
                     "provider_id": agent.metadata.provider_id,
                     "metadata": agent.metadata.model_dump(mode="json"),
+                    "hiring_metadata": agent.hiring_metadata.model_dump(mode="json") if agent.hiring_metadata else None,
                 }
                 for agent in agents
             ]
@@ -83,6 +85,7 @@ class SqlAlchemyAgentRepository(IAgentRepository):
                 "name": row.name,
                 "description": row.description,
                 "metadata": row.metadata,
+                "hiring_metadata": row.hiring_metadata,
             }
         )
 

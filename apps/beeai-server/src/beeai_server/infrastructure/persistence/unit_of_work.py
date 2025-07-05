@@ -13,12 +13,16 @@ from beeai_server.domain.repositories.file import IFileRepository
 from beeai_server.domain.repositories.provider import IProviderRepository
 from beeai_server.domain.repositories.user import IUserRepository
 from beeai_server.domain.repositories.vector_store import IVectorStoreRepository, IVectorDatabaseRepository
+from beeai_server.domain.repositories.task import ITaskRepository
+from beeai_server.domain.repositories.credits import ICreditsRepository
 from beeai_server.infrastructure.persistence.repositories.file import SqlAlchemyFileRepository
 from beeai_server.infrastructure.persistence.repositories.agent import SqlAlchemyAgentRepository
 from beeai_server.infrastructure.persistence.repositories.env import SqlAlchemyEnvVariableRepository
 from beeai_server.infrastructure.persistence.repositories.provider import SqlAlchemyProviderRepository
 from beeai_server.infrastructure.persistence.repositories.user import SqlAlchemyUserRepository
 from beeai_server.infrastructure.persistence.repositories.vector_store import SqlAlchemyVectorStoreRepository
+from beeai_server.infrastructure.persistence.repositories.task import SqlAlchemyTaskRepository
+from beeai_server.infrastructure.persistence.repositories.credits import SqlAlchemyCreditsRepository
 from beeai_server.infrastructure.vector_database.vector_db import VectorDatabaseRepository
 from beeai_server.service_layer.unit_of_work import IUnitOfWork, IUnitOfWorkFactory
 
@@ -36,6 +40,8 @@ class SQLAlchemyUnitOfWork(IUnitOfWork):
     users: IUserRepository
     vector_stores: IVectorStoreRepository
     vector_database: IVectorDatabaseRepository
+    tasks: ITaskRepository
+    credits: ICreditsRepository
 
     def __init__(self, engine: AsyncEngine, config: Configuration) -> None:
         self._engine: AsyncEngine = engine
@@ -59,6 +65,8 @@ class SQLAlchemyUnitOfWork(IUnitOfWork):
             self.vector_database = VectorDatabaseRepository(
                 self._connection, schema_name=self._config.persistence.vector_db_schema
             )
+            self.tasks = SqlAlchemyTaskRepository(self._connection)
+            self.credits = SqlAlchemyCreditsRepository(self._connection)
 
         except Exception as e:
             if self._connection:
@@ -69,28 +77,28 @@ class SQLAlchemyUnitOfWork(IUnitOfWork):
 
         return self
 
-    async def __aexit__(self, exc_type, exc, tb) -> None:
-        """
-        Exits the asynchronous context.
-
-        If an exception occurred within the 'async with' block, or if
-        commit/rollback was not explicitly called and the transaction is still active,
-        the transaction is rolled back. The database connection is always closed.
-        """
-
-        try:
-            await self.rollback()
-        finally:
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        if self._transaction:
             with suppress(Exception):
-                await self._connection.close()
+                if exc_type is None:
+                    await self._transaction.commit()
+                else:
+                    await self._transaction.rollback()
+            self._transaction = None
+
+        if self._connection:
+            await self._connection.close()
+            self._connection = None
 
     async def commit(self) -> None:
-        if self._transaction and self._transaction.is_active:
+        if self._transaction:
             await self._transaction.commit()
+            self._transaction = await self._connection.begin()
 
     async def rollback(self) -> None:
-        if self._transaction and self._transaction.is_active:
+        if self._transaction:
             await self._transaction.rollback()
+            self._transaction = await self._connection.begin()
 
 
 class SqlAlchemyUnitOfWorkFactory(IUnitOfWorkFactory):

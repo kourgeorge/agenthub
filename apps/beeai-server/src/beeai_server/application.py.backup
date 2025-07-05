@@ -94,7 +94,20 @@ def register_global_exception_handlers(app: FastAPI):
 
 def mount_routes(app: FastAPI):
     static_directory = pathlib.Path(__file__).parent.joinpath("static")
-    
+    if not static_directory.joinpath("index.html").exists():  # this check is for running locally
+        raise RuntimeError("Could not find static files -- ensure that beeai-ui is built: `mise build:beeai-ui`")
+
+    ui_app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+    ui_app.mount("/", NoCacheStaticFiles(directory=static_directory, html=True))
+    ui_app.add_exception_handler(
+        404,
+        lambda _req, _exc: FileResponse(
+            static_directory / "index.html",
+            status_code=200,
+            headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache", "Expires": "0"},
+        ),
+    )
+
     server_router = APIRouter()
     server_router.include_router(acp_router, prefix="/acp")
     server_router.include_router(provider_router, prefix="/providers", tags=["providers"])
@@ -105,26 +118,10 @@ def mount_routes(app: FastAPI):
     server_router.include_router(embeddings_router, prefix="/llm", tags=["embeddings"])
     server_router.include_router(vector_stores_router, prefix="/vector_stores", tags=["vector_stores"])
     # server_router.include_router(hiring_router, prefix="/hiring", tags=["hiring"])
-    
+
     app.mount("/healthcheck", lambda: "OK")
     app.include_router(server_router, prefix="/api/v1", tags=["provider"])
-    
-    # Only mount UI if static files exist
-    if static_directory.joinpath("index.html").exists():
-        logger.info("Mounting UI static files...")
-        ui_app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
-        ui_app.mount("/", NoCacheStaticFiles(directory=static_directory, html=True))
-        ui_app.add_exception_handler(
-            404,
-            lambda _req, _exc: FileResponse(
-                static_directory / "index.html",
-                status_code=200,
-                headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache", "Expires": "0"},
-            ),
-        )
-        app.mount("/", ui_app)
-    else:
-        logger.warning("Static files not found, running in API-only mode")
+    app.mount("/", ui_app)
 
 
 def register_telemetry():

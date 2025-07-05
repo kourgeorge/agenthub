@@ -1,3 +1,7 @@
+# BeeAI Web
+
+> **Note:** A Flask example app for agent access is available in `../beeai-flask-demo`.
+
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
 ## Getting Started
