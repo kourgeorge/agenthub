@@ -14,117 +14,282 @@ A comprehensive SDK for creating, publishing, and using AI agents on the AgentHu
 ## Installation
 
 ```bash
-# Install the SDK dependencies
-pip install aiohttp aiofiles pydantic
+# Install the SDK in development mode
+pip install -e ./agenthub-sdk
 
-# Or install from the SDK directory
-cd agenthub-sdk
-pip install -r requirements.txt
+# Or install dependencies manually
+pip install aiohttp>=3.8.0 aiofiles>=23.0.0 pydantic>=2.0.0
 ```
 
 ## Quick Start
 
 ### 1. Create an Agent
 
+The AgentHub SDK provides several agent types you can use:
+
+#### Simple Agent
 ```python
-from agenthub_sdk import Agent, AgentConfig
+from agenthub_sdk import SimpleAgent, AgentConfig
 
-class MyAgent(Agent):
-    def __init__(self):
-        super().__init__()
-        
-        # Configure your agent
-        self.config = AgentConfig(
-            name="my-awesome-agent",
-            description="A helpful agent that does amazing things",
-            version="1.0.0",
-            author="Your Name",
-            email="your.email@example.com",
-            entry_point="my_agent.py",
-            requirements=["requests>=2.25.0"],
-            tags=["utility", "api"],
-            category="utilities",
-            pricing_model="per_use",
-            price_per_use=0.01
-        )
-    
-    def get_config(self) -> AgentConfig:
-        return self.config
-    
-    def process(self, input_data: dict, config: dict = None) -> dict:
-        # Your agent logic here
-        return {"result": "Hello from my agent!"}
+# Create agent configuration
+config = AgentConfig(
+    name="my-awesome-agent",
+    description="A helpful agent that does amazing things",
+    version="1.0.0",
+    author="Your Name",
+    email="your.email@example.com",
+    entry_point="my_agent.py",
+    requirements=["requests>=2.25.0"],
+    tags=["utility", "api"],
+    category="utilities",
+    pricing_model="per_use",
+    price_per_use=0.01
+)
+
+# Create the agent
+agent = SimpleAgent(config)
 ```
 
-### 2. Create Agent Code
+#### Data Processing Agent
+```python
+from agenthub_sdk import DataProcessingAgent, AgentConfig
 
-Create a directory with your agent code:
+config = AgentConfig(
+    name="data-processor",
+    description="Processes and analyzes data",
+    version="1.0.0",
+    author="Your Name",
+    email="your.email@example.com",
+    entry_point="data_processor.py",
+    requirements=["pandas>=1.5.0", "numpy>=1.20.0"],
+    tags=["data", "analytics"],
+    category="data-processing",
+    pricing_model="per_use",
+    price_per_use=0.05
+)
 
+agent = DataProcessingAgent(config)
 ```
-my_agent/
-├── my_agent.py          # Main agent file (entry point)
+
+#### Chat Agent
+```python
+from agenthub_sdk import ChatAgent, AgentConfig
+
+config = AgentConfig(
+    name="chat-assistant",
+    description="Conversational AI assistant",
+    version="1.0.0",
+    author="Your Name",
+    email="your.email@example.com",
+    entry_point="chat_agent.py",
+    requirements=["openai>=1.0.0"],
+    tags=["chat", "ai", "assistant"],
+    category="conversational",
+    pricing_model="per_use",
+    price_per_use=0.02
+)
+
+agent = ChatAgent(config)
+```
+
+### 2. Generate Agent Code
+
+The SDK can automatically generate agent code for you:
+
+```python
+import os
+from agenthub_sdk import SimpleAgent, AgentConfig
+
+# Create your agent configuration
+config = AgentConfig(
+    name="my-awesome-agent",
+    description="A helpful agent that does amazing things",
+    version="1.0.0",
+    author="Your Name",
+    email="your.email@example.com",
+    entry_point="my_awesome_agent.py",
+    requirements=["requests>=2.25.0"],
+    tags=["utility", "api"],
+    category="utilities",
+    pricing_model="per_use",
+    price_per_use=0.01
+)
+
+# Create the agent
+agent = SimpleAgent(config)
+
+# Generate and save agent code to a directory
+agent.save_to_directory("./my_agent_code")
+```
+
+This will create a directory structure like:
+```
+my_agent_code/
+├── my_awesome_agent.py  # Main agent file (entry point)
 ├── requirements.txt     # Python dependencies
-└── README.md           # Agent documentation
+├── README.md           # Agent documentation
+└── config.json         # Agent configuration
 ```
 
-Example `my_agent.py`:
+### 3. Customize Agent Behavior
+
+You can create custom agent classes by inheriting from the base classes:
 
 ```python
-#!/usr/bin/env python3
-"""
-My Awesome Agent - Does amazing things!
-"""
-
-import json
+from agenthub_sdk import SimpleAgent, AgentConfig
 from typing import Dict, Any
 
-def main(input_data: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Main agent function.
-    
-    Args:
-        input_data: User input
-        config: Agent configuration
-    
-    Returns:
-        Agent response
-    """
-    # Your agent logic here
-    name = input_data.get("name", "World")
-    return {
-        "message": f"Hello, {name}!",
-        "status": "success"
-    }
+class CustomAgent(SimpleAgent):
+    async def process_message(self, message: Dict[str, Any]) -> Dict[str, Any]:
+        """Custom message processing logic."""
+        # Your custom logic here
+        user_input = message.get("content", "")
+        
+        # Example: Echo the message with a greeting
+        response = f"Hello! You said: {user_input}"
+        
+        return {
+            "status": "success",
+            "response": response,
+            "message_type": "text"
+        }
 
-if __name__ == "__main__":
-    # Test the agent
-    test_input = {"name": "Test User"}
-    test_config = {}
-    result = main(test_input, test_config)
-    print(json.dumps(result, indent=2))
+# Use your custom agent
+config = AgentConfig(
+    name="custom-echo-agent",
+    description="Custom agent that echoes messages",
+    version="1.0.0",
+    author="Your Name",
+    email="your.email@example.com",
+    entry_point="custom_agent.py",
+    requirements=[],
+    tags=["custom", "echo"],
+    category="utilities",
+    pricing_model="free"
+)
+
+agent = CustomAgent(config)
 ```
 
-### 3. Publish Your Agent
+### 4. Test Your Agent Locally
+
+Before publishing, you should test your agent locally:
 
 ```python
 import asyncio
-from agenthub_sdk import AgentHubClient
+from agenthub_sdk import SimpleAgent, AgentConfig
+
+async def test_agent():
+    # Create your agent
+    config = AgentConfig(
+        name="test-agent",
+        description="A test agent",
+        version="1.0.0",
+        author="Your Name",
+        email="your.email@example.com",
+        entry_point="test_agent.py",
+        requirements=[],
+        tags=["test"],
+        category="utilities",
+        pricing_model="free"
+    )
+    
+    agent = SimpleAgent(config)
+    
+    # Initialize the agent
+    await agent.initialize({"environment": "test"})
+    
+    # Test message processing
+    test_message = {"content": "Hello, agent!"}
+    response = await agent.process_message(test_message)
+    
+    print(f"Agent response: {response}")
+    
+    # Clean up
+    await agent.cleanup()
+
+# Run the test
+asyncio.run(test_agent())
+```
+
+### 5. Publish Your Agent
+
+Once you've created your agent, you can publish it to the AgentHub platform:
+
+```python
+import asyncio
+from agenthub_sdk import AgentHubClient, SimpleAgent, AgentConfig
 
 async def publish_agent():
-    # Create your agent
-    agent = MyAgent()
+    # Create your agent configuration
+    config = AgentConfig(
+        name="my-awesome-agent",
+        description="A helpful agent that does amazing things",
+        version="1.0.0",
+        author="Your Name",
+        email="your.email@example.com",
+        entry_point="my_awesome_agent.py",
+        requirements=["requests>=2.25.0"],
+        tags=["utility", "api"],
+        category="utilities",
+        pricing_model="per_use",
+        price_per_use=0.01
+    )
     
-    # Connect to AgentHub
+    # Create the agent
+    agent = SimpleAgent(config)
+    
+    # Generate agent code directory
+    agent.save_to_directory("./my_agent_code")
+    
+    # Connect to AgentHub and submit
     async with AgentHubClient("http://localhost:8002") as client:
         # Submit the agent
-        result = await client.submit_agent(agent, "my_agent/")
-        print(f"Agent submitted! ID: {result['agent_id']}")
+        result = await client.submit_agent(agent, "./my_agent_code/")
+        print(f"Agent submitted successfully!")
+        print(f"Agent ID: {result['agent_id']}")
+        print(f"Status: {result['status']}")
 
 # Run the publishing
 asyncio.run(publish_agent())
 ```
 
-### 4. Use Published Agents
+#### Agent Approval Workflow
+
+**Important**: After submission, agents must be approved before becoming publicly visible. Newly submitted agents have:
+- `status = "submitted"`
+- `is_public = False`
+
+To approve an agent (admin only):
+
+```bash
+# Approve the agent using the admin endpoint
+curl -X 'PUT' 'http://localhost:8002/api/v1/agents/{agent_id}/approve' \
+     -H 'accept: application/json'
+```
+
+Once approved, the agent will have:
+- `status = "approved"`
+- `is_public = True`
+
+#### Publishing with API Key (if required)
+
+```python
+async def publish_with_auth():
+    # ... create agent as above ...
+    
+    async with AgentHubClient("http://localhost:8002") as client:
+        result = await client.submit_agent(
+            agent, 
+            "./my_agent_code/", 
+            api_key="your-api-key-here"
+        )
+        print(f"Agent submitted with authentication: {result}")
+
+asyncio.run(publish_with_auth())
+```
+
+### 6. Use Published Agents
 
 ```python
 import asyncio
@@ -132,12 +297,21 @@ from agenthub_sdk import AgentHubClient
 
 async def use_agents():
     async with AgentHubClient("http://localhost:8002") as client:
-        # List available agents
-        agents = await client.list_agents()
+        # List available agents (only approved and public agents are shown)
+        agents = await client.list_agents(skip=0, limit=100)
         print(f"Found {len(agents['agents'])} agents")
         
+        # Print agent details
+        for agent in agents['agents']:
+            print(f"- {agent['name']} (ID: {agent['id']}) - {agent['description']}")
+        
+        # Get details of a specific agent
+        if agents['agents']:
+            agent_id = agents['agents'][0]['id']
+            agent_details = await client.get_agent(agent_id)
+            print(f"Agent details: {agent_details}")
+        
         # Hire an agent
-        agent_id = 1
         hire_result = await client.hire_agent(
             agent_id=agent_id,
             config={"api_key": "your_key"},
@@ -156,6 +330,30 @@ async def use_agents():
 asyncio.run(use_agents())
 ```
 
+#### Manual API Access
+
+You can also access agents directly via the REST API:
+
+```bash
+# List all approved agents
+curl -X 'GET' 'http://localhost:8002/api/v1/agents/?skip=0&limit=100' \
+     -H 'accept: application/json'
+
+# Get specific agent details
+curl -X 'GET' 'http://localhost:8002/api/v1/agents/{agent_id}' \
+     -H 'accept: application/json'
+
+# Hire an agent
+curl -X 'POST' 'http://localhost:8002/api/v1/hiring/hire' \
+     -H 'accept: application/json' \
+     -H 'Content-Type: application/json' \
+     -d '{
+       "agent_id": 1,
+       "config": {"api_key": "your_key"},
+       "billing_cycle": "per_use"
+     }'
+```
+
 ## API Reference
 
 ### AgentConfig
@@ -164,19 +362,21 @@ Configuration class for defining agent properties:
 
 ```python
 AgentConfig(
-    name: str,                    # Unique agent name
-    description: str,             # Agent description
-    version: str,                 # Version string
-    author: str,                  # Author name
-    email: str,                   # Author email
-    entry_point: str,             # Main Python file
-    requirements: List[str],      # Python dependencies
-    config_schema: Dict,          # JSON schema for configuration
-    tags: List[str],              # Search tags
-    category: str,                # Agent category
-    pricing_model: str,           # "per_use" or "monthly"
-    price_per_use: float,         # Price per execution
-    monthly_price: float          # Monthly subscription price
+    name: str,                          # Unique agent name
+    description: str,                   # Agent description
+    version: str = "1.0.0",            # Version string
+    author: str = "",                   # Author name
+    email: str = "",                    # Author email
+    entry_point: str = "",              # Main Python file
+    requirements: List[str] = [],       # Python dependencies
+    config_schema: Optional[Dict] = None, # JSON schema for configuration
+    tags: List[str] = [],               # Search tags
+    category: str = "general",          # Agent category
+    pricing_model: str = "free",        # "free", "per_use", "monthly"
+    price_per_use: Optional[float] = None, # Price per execution
+    monthly_price: Optional[float] = None, # Monthly subscription price
+    max_execution_time: int = 30,       # Maximum execution time in seconds
+    memory_limit: str = "100MB"         # Memory limit for agent execution
 )
 ```
 
@@ -200,12 +400,29 @@ Main client class for platform interactions:
 - `get_execution_status(execution_id)` - Get execution status
 - `run_agent(agent_id, input_data, hiring_id=None, user_id=None, wait_for_completion=True, timeout=60)` - Run and wait for completion
 
+#### Admin Endpoints (Direct API)
+
+For agent management, these endpoints are available directly via the REST API:
+
+```bash
+# Approve an agent
+PUT /api/v1/agents/{agent_id}/approve
+
+# Reject an agent  
+PUT /api/v1/agents/{agent_id}/reject
+
+# Delete an agent
+DELETE /api/v1/agents/{agent_id}
+```
+
+**Note**: Admin endpoints are not currently wrapped in the SDK client class.
+
 ### Synchronous Wrappers
 
-For convenience, synchronous wrapper functions are available:
+For convenience, synchronous wrapper functions are available in the client module:
 
 ```python
-from agenthub_sdk import submit_agent_sync, list_agents_sync, hire_agent_sync, run_agent_sync
+from agenthub_sdk.client import submit_agent_sync, list_agents_sync, hire_agent_sync, run_agent_sync
 
 # Submit agent
 result = submit_agent_sync(agent, "my_agent/")
@@ -231,34 +448,51 @@ See the `examples/` directory for complete examples:
 
 ### 1. Agent Structure
 
-Your agent code should follow this structure:
+When using the SDK's automatic code generation, your agent directory will have this structure:
 
 ```
 agent_directory/
-├── main_agent.py      # Entry point (required)
-├── requirements.txt   # Dependencies (required)
-├── README.md         # Documentation (recommended)
-└── other_files.py    # Additional modules
+├── agent_name.py     # Entry point (generated automatically)
+├── requirements.txt  # Dependencies (generated automatically)
+├── README.md        # Documentation (generated automatically)
+└── config.json      # Agent configuration (generated automatically)
 ```
 
-### 2. Entry Point Function
+### 2. Manual Agent Development
 
-Your main agent file must have a `main` function with this signature:
+If you prefer to create agent code manually, you can inherit from the agent base classes:
 
 ```python
-def main(input_data: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Main agent function.
+from agenthub_sdk import Agent, AgentConfig
+from typing import Dict, Any
+
+class MyCustomAgent(Agent):
+    def __init__(self, config: AgentConfig):
+        super().__init__(config)
+        # Your initialization code here
     
-    Args:
-        input_data: User input data
-        config: Agent configuration
+    async def initialize(self, context: Dict[str, Any]) -> None:
+        """Initialize the agent with context."""
+        # Setup code here
+        pass
     
-    Returns:
-        Agent response (must be JSON serializable)
-    """
-    # Your logic here
+    async def process_message(self, message: Dict[str, Any]) -> Dict[str, Any]:
+        """Process an incoming message and return a response."""
+        # Your message processing logic here
+        return {"status": "success", "response": "Message processed"}
+    
+    async def cleanup(self) -> None:
+        """Clean up resources when the agent is done."""
+        # Cleanup code here
+        pass
+    
+    def generate_code(self) -> str:
+        """Generate the agent code as a string."""
+        return '''
+def main(input_data, config):
+    # Your main function logic here
     return {"result": "success"}
+'''
 ```
 
 ### 3. Error Handling
@@ -316,9 +550,58 @@ print(result)
 ### Common Issues
 
 1. **Import Errors**: Make sure all dependencies are in `requirements.txt`
+   ```bash
+   pip install -r requirements.txt
+   ```
+
 2. **Validation Errors**: Check your `AgentConfig` for required fields
-3. **Execution Errors**: Test your agent locally first
-4. **Network Errors**: Ensure the AgentHub server is running and accessible
+   ```python
+   # Validate your config
+   config = AgentConfig(...)
+   errors = config.validate()
+   if errors:
+       print(f"Validation errors: {errors}")
+   ```
+
+3. **Agent Not Visible After Submission**: Agents need approval before becoming public
+   ```bash
+   # Check if agent was created (replace {agent_id} with actual ID from submission)
+   curl -X 'GET' 'http://localhost:8002/api/v1/agents/{agent_id}' -H 'accept: application/json'
+   
+   # If you get 404, the agent needs approval:
+   curl -X 'PUT' 'http://localhost:8002/api/v1/agents/{agent_id}/approve' -H 'accept: application/json'
+   ```
+
+4. **Empty Agent List**: Use correct API endpoint with query parameters
+   ```bash
+   # ✅ Correct - includes query parameters
+   curl -X 'GET' 'http://localhost:8002/api/v1/agents/?skip=0&limit=100' -H 'accept: application/json'
+   
+   # ❌ Incorrect - missing query parameters (returns redirect)
+   curl -X 'GET' 'http://localhost:8002/api/v1/agents' -H 'accept: application/json'
+   ```
+
+5. **Execution Errors**: Test your agent locally first
+   ```python
+   # Test locally before publishing
+   await agent.initialize({})
+   response = await agent.process_message({"content": "test"})
+   print(response)
+   ```
+
+6. **Network Errors**: Ensure the AgentHub server is running and accessible
+   ```python
+   # Check server connectivity
+   async with AgentHubClient("http://localhost:8002") as client:
+       is_healthy = await client.health_check()
+       print(f"Server healthy: {is_healthy}")
+   ```
+
+7. **Package Installation Issues**: If you see setup.py or pyproject.toml errors:
+   ```bash
+   # Make sure you're in the correct directory
+   pip install -e ./agenthub-sdk
+   ```
 
 ### Getting Help
 
@@ -326,6 +609,44 @@ print(result)
 - Validate your agent configuration before submission
 - Test your agent code independently
 - Use the health check to verify server connectivity
+- Check the examples directory for working code samples
+
+## Complete Agent Workflow
+
+The AgentHub platform follows a complete lifecycle for agent management:
+
+### 1. Development Phase
+- **Create Agent**: Use SDK to define agent configuration
+- **Generate Code**: Automatically generate agent code directory
+- **Test Locally**: Validate agent behavior before submission
+
+### 2. Submission Phase
+- **Submit Agent**: Upload agent to platform via SDK
+- **Validation**: Platform validates agent code and configuration
+- **Status**: Agent created with `status="submitted"` and `is_public=false`
+
+### 3. Approval Phase (Admin)
+- **Review**: Admin reviews submitted agent
+- **Approve**: Use `/agents/{id}/approve` endpoint
+- **Publication**: Agent becomes `status="approved"` and `is_public=true`
+
+### 4. Usage Phase
+- **Discovery**: Users can find agents via `/agents/?skip=0&limit=100`
+- **Hiring**: Users hire agents for their use cases
+- **Execution**: Agents execute tasks and return results
+
+## Summary
+
+The AgentHub SDK provides a comprehensive platform for creating, testing, and publishing AI agents. Key features include:
+
+- **Multiple Agent Types**: SimpleAgent, DataProcessingAgent, ChatAgent
+- **Automatic Code Generation**: Generate complete agent directories
+- **Approval Workflow**: Secure agent review and approval process
+- **Easy Publishing**: Submit agents to the platform with validation
+- **Local Testing**: Test agents before publishing
+- **Async/Sync Support**: Both asynchronous and synchronous interfaces
+
+Get started by creating your first agent and following the step-by-step guide above!
 
 ## License
 

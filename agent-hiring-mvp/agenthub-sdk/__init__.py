@@ -8,9 +8,6 @@ This SDK provides tools for both agent creators and users:
 
 from .agent import Agent, AgentConfig, SimpleAgent, DataProcessingAgent, ChatAgent
 from .client import AgentHubClient
-from .hiring import HiringManager
-from .execution import ExecutionManager
-from .templates import get_template, list_templates, create_agent_from_template
 
 __version__ = "1.0.0"
 
@@ -24,13 +21,4 @@ __all__ = [
     
     # Client
     "AgentHubClient",
-    
-    # Hiring & Execution
-    "HiringManager",
-    "ExecutionManager",
-    
-    # Templates
-    "get_template",
-    "list_templates", 
-    "create_agent_from_template",
 ] 
