@@ -167,9 +167,13 @@ def safe_execute():
             # Import and execute agent code
             import agent_code
             if hasattr(agent_code, 'main'):
-                # Pass input_data to the agent code
-                agent_code.input_data = input_data
-                agent_code.main()
+                # Call main function with proper parameters
+                result = agent_code.main(input_data, {})
+                # If the agent returns a result, use it
+                if result:
+                    print(json.dumps(result))
+            else:
+                raise Exception("Agent code does not have a main() function")
         
         # Get captured output
         stdout_output = stdout_capture.getvalue()

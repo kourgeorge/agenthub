@@ -329,13 +329,13 @@ def publish(ctx, directory, api_key, base_url, dry_run):
         sys.exit(1)
 
 
-@agent.command()
+@agent.command(name='list')
 @click.option('--query', '-q', help='Search query')
 @click.option('--category', '-c', help='Filter by category')
 @click.option('--limit', '-l', default=10, help='Number of results to show')
 @click.option('--base-url', help='Base URL of the AgentHub server')
 @click.pass_context
-def list(ctx, query, category, limit, base_url):
+def list_agents(ctx, query, category, limit, base_url):
     """List available agents on the platform."""
     verbose = ctx.obj.get('verbose', False)
     
@@ -448,6 +448,420 @@ def template(ctx, template_type, output_file):
         
     except Exception as e:
         echo(style(f"✗ Error generating template: {e}", fg='red'))
+        sys.exit(1)
+
+
+@cli.group()
+def marketplace():
+    """Browse and discover agents in the marketplace."""
+    pass
+
+
+@cli.group()
+def hire():
+    """Hire agents for your use cases."""
+    pass
+
+
+@cli.group()
+def execute():
+    """Execute hired agents."""
+    pass
+
+
+@cli.group()
+def jobs():
+    """Manage agent execution jobs."""
+    pass
+
+
+@cli.group()
+def hired():
+    """Manage your hired agents."""
+    pass
+
+
+@marketplace.command()
+@click.option('--query', '-q', help='Search query')
+@click.option('--category', '-c', help='Filter by category')
+@click.option('--pricing', '-p', help='Filter by pricing model')
+@click.option('--limit', '-l', default=10, help='Number of results to show')
+@click.option('--base-url', help='Base URL of the AgentHub server')
+@click.pass_context
+def search(ctx, query, category, pricing, limit, base_url):
+    """Search for agents in the marketplace."""
+    verbose = ctx.obj.get('verbose', False)
+    
+    base_url = base_url or cli_config.get('base_url', 'http://localhost:8002')
+    
+    try:
+        echo(style("🔍 Searching marketplace...", fg='blue'))
+        
+        async def search_agents():
+            async with AgentHubClient(base_url) as client:
+                result = await client.list_agents(
+                    query=query,
+                    category=category,
+                    limit=limit
+                )
+                return result
+        
+        result = asyncio.run(search_agents())
+        agents = result.get('agents', [])
+        
+        if not agents:
+            echo(style("No agents found matching your criteria.", fg='yellow'))
+            return
+        
+        echo(style(f"Found {len(agents)} agents:", fg='green'))
+        echo()
+        
+        for agent in agents:
+            # Filter by pricing if specified
+            if pricing and agent.get('pricing_model') != pricing:
+                continue
+                
+            echo(f"🤖 {style(agent['name'], fg='cyan', bold=True)} (ID: {agent['id']})")
+            echo(f"   {agent['description']}")
+            echo(f"   Author: {agent['author']} | Category: {agent['category']}")
+            echo(f"   Pricing: {agent['pricing_model']}", nl=False)
+            
+            if agent.get('price_per_use'):
+                echo(f" (${agent['price_per_use']}/use)", nl=False)
+            if agent.get('monthly_price'):
+                echo(f" (${agent['monthly_price']}/month)", nl=False)
+            echo()
+            
+            if agent.get('tags'):
+                echo(f"   Tags: {', '.join(agent['tags'])}")
+            echo()
+            
+    except Exception as e:
+        echo(style(f"✗ Error searching marketplace: {e}", fg='red'))
+        sys.exit(1)
+
+
+@marketplace.command()
+@click.option('--base-url', help='Base URL of the AgentHub server')
+@click.pass_context
+def categories(ctx, base_url):
+    """List available agent categories."""
+    verbose = ctx.obj.get('verbose', False)
+    
+    base_url = base_url or cli_config.get('base_url', 'http://localhost:8002')
+    
+    try:
+        echo(style("📋 Fetching categories...", fg='blue'))
+        
+        async def get_categories():
+            async with AgentHubClient(base_url) as client:
+                result = await client.list_agents(limit=1000)  # Get all to extract categories
+                agents = result.get('agents', [])
+                categories = set(agent.get('category', 'general') for agent in agents)
+                return sorted(categories)
+        
+        categories = asyncio.run(get_categories())
+        
+        echo(style("Available categories:", fg='green'))
+        for category in categories:
+            echo(f"  • {category}")
+            
+    except Exception as e:
+        echo(style(f"✗ Error fetching categories: {e}", fg='red'))
+        sys.exit(1)
+
+
+@hire.command(name='agent')
+@click.argument('agent_id', type=int)
+@click.option('--config', '-c', help='JSON configuration for the agent')
+@click.option('--billing-cycle', '-b', help='Billing cycle (per_use, monthly)')
+@click.option('--user-id', '-u', type=int, help='User ID (for multi-user scenarios)')
+@click.option('--base-url', help='Base URL of the AgentHub server')
+@click.pass_context
+def hire_agent_cmd(ctx, agent_id, config, billing_cycle, user_id, base_url):
+    """Hire an agent by ID."""
+    verbose = ctx.obj.get('verbose', False)
+    
+    base_url = base_url or cli_config.get('base_url', 'http://localhost:8002')
+    
+    try:
+        # Parse config if provided
+        agent_config = {}
+        if config:
+            agent_config = json.loads(config)
+        
+        echo(style(f"🤝 Hiring agent {agent_id}...", fg='blue'))
+        
+        async def hire_agent():
+            async with AgentHubClient(base_url) as client:
+                result = await client.hire_agent(
+                    agent_id=agent_id,
+                    config=agent_config,
+                    billing_cycle=billing_cycle,
+                    user_id=user_id
+                )
+                return result
+        
+        result = asyncio.run(hire_agent())
+        
+        echo(style("✅ Agent hired successfully!", fg='green'))
+        echo(f"  Hiring ID: {result.get('hiring_id')}")
+        echo(f"  Status: {result.get('status')}")
+        echo(f"  Billing cycle: {result.get('billing_cycle')}")
+        
+        if verbose:
+            echo("Full response:")
+            echo(json.dumps(result, indent=2))
+            
+    except Exception as e:
+        echo(style(f"✗ Error hiring agent: {e}", fg='red'))
+        sys.exit(1)
+
+
+@execute.command(name='agent')
+@click.argument('agent_id', type=int)
+@click.option('--input', '-i', required=True, help='JSON input data for the agent')
+@click.option('--config', '-c', help='JSON configuration for the agent')
+@click.option('--hiring-id', '-h', type=int, help='Hiring ID (if already hired)')
+@click.option('--user-id', '-u', type=int, help='User ID')
+@click.option('--wait', '-w', is_flag=True, help='Wait for completion')
+@click.option('--timeout', '-t', default=60, help='Timeout in seconds')
+@click.option('--base-url', help='Base URL of the AgentHub server')
+@click.pass_context
+def execute_agent_cmd(ctx, agent_id, input, config, hiring_id, user_id, wait, timeout, base_url):
+    """Execute an agent with input data."""
+    verbose = ctx.obj.get('verbose', False)
+    
+    base_url = base_url or cli_config.get('base_url', 'http://localhost:8002')
+    
+    try:
+        # Parse input and config
+        input_data = json.loads(input)
+        agent_config = json.loads(config) if config else {}
+        
+        echo(style(f"🚀 Executing agent {agent_id}...", fg='blue'))
+        if verbose:
+            echo(f"Input: {json.dumps(input_data, indent=2)}")
+            echo(f"Config: {json.dumps(agent_config, indent=2)}")
+        
+        async def execute_agent():
+            async with AgentHubClient(base_url) as client:
+                if wait:
+                    result = await client.run_agent(
+                        agent_id=agent_id,
+                        input_data=input_data,
+                        hiring_id=hiring_id,
+                        user_id=user_id,
+                        wait_for_completion=True,
+                        timeout=timeout
+                    )
+                else:
+                    result = await client.execute_agent(
+                        agent_id=agent_id,
+                        input_data=input_data,
+                        hiring_id=hiring_id,
+                        user_id=user_id
+                    )
+                return result
+        
+        result = asyncio.run(execute_agent())
+        
+        echo(style("✅ Agent execution completed!", fg='green'))
+        echo(f"  Execution ID: {result.get('execution_id')}")
+        echo(f"  Status: {result.get('status')}")
+        
+        # Display results - check both possible locations
+        output_data = result.get('output_data')
+        if output_data:
+            echo("\n📊 Result:")
+            if isinstance(output_data, dict):
+                if 'output' in output_data:
+                    echo(output_data['output'])
+                else:
+                    echo(json.dumps(output_data, indent=2))
+            else:
+                echo(str(output_data))
+        elif result.get('result'):
+            echo("\n📊 Result:")
+            echo(json.dumps(result['result'], indent=2))
+        
+        if verbose:
+            echo("\nFull response:")
+            echo(json.dumps(result, indent=2))
+            
+    except Exception as e:
+        echo(style(f"✗ Error executing agent: {e}", fg='red'))
+        sys.exit(1)
+
+
+@execute.command()
+@click.argument('agent_id', type=int)
+@click.argument('input_file', type=click.Path(exists=True))
+@click.option('--config', '-c', help='JSON configuration for the agent')
+@click.option('--hiring-id', '-h', type=int, help='Hiring ID (if already hired)')
+@click.option('--user-id', '-u', type=int, help='User ID')
+@click.option('--wait', '-w', is_flag=True, help='Wait for completion')
+@click.option('--timeout', '-t', default=60, help='Timeout in seconds')
+@click.option('--base-url', help='Base URL of the AgentHub server')
+@click.pass_context
+def file(ctx, agent_id, input_file, config, hiring_id, user_id, wait, timeout, base_url):
+    """Execute an agent with input from a file."""
+    verbose = ctx.obj.get('verbose', False)
+    
+    try:
+        # Read input from file
+        with open(input_file, 'r') as f:
+            input_data = json.load(f)
+        
+        echo(style(f"📁 Loading input from: {input_file}", fg='blue'))
+        
+        # Call the agent execution with the loaded data
+        ctx.invoke(execute_agent_cmd, agent_id=agent_id, input=json.dumps(input_data), 
+                  config=config, hiring_id=hiring_id, user_id=user_id, 
+                  wait=wait, timeout=timeout, base_url=base_url)
+        
+    except Exception as e:
+        echo(style(f"✗ Error reading input file: {e}", fg='red'))
+        sys.exit(1)
+
+
+@jobs.command(name='list')
+@click.option('--user-id', '-u', type=int, help='User ID')
+@click.option('--limit', '-l', default=10, help='Number of results to show')
+@click.option('--status', '-s', help='Filter by status')
+@click.option('--base-url', help='Base URL of the AgentHub server')
+@click.pass_context
+def list_jobs(ctx, user_id, limit, status, base_url):
+    """List recent agent execution jobs."""
+    verbose = ctx.obj.get('verbose', False)
+    
+    base_url = base_url or cli_config.get('base_url', 'http://localhost:8002')
+    
+    try:
+        echo(style("📋 Fetching execution jobs...", fg='blue'))
+        
+        # Note: This would require an API endpoint for listing executions
+        # For now, we'll show a placeholder
+        echo(style("⚠️  Job listing feature requires server-side implementation", fg='yellow'))
+        echo("Contact your AgentHub administrator to enable execution history.")
+        
+    except Exception as e:
+        echo(style(f"✗ Error fetching jobs: {e}", fg='red'))
+        sys.exit(1)
+
+
+@jobs.command()
+@click.argument('execution_id')
+@click.option('--base-url', help='Base URL of the AgentHub server')
+@click.pass_context
+def status(ctx, execution_id, base_url):
+    """Get the status of an execution job."""
+    verbose = ctx.obj.get('verbose', False)
+    
+    base_url = base_url or cli_config.get('base_url', 'http://localhost:8002')
+    
+    try:
+        echo(style(f"🔍 Checking status of execution {execution_id}...", fg='blue'))
+        
+        async def get_execution_status():
+            async with AgentHubClient(base_url) as client:
+                result = await client.get_execution_status(execution_id)
+                return result
+        
+        result = asyncio.run(get_execution_status())
+        
+        echo(style("📊 Execution Status:", fg='green'))
+        echo(f"  ID: {result.get('execution_id')}")
+        echo(f"  Status: {result.get('status')}")
+        echo(f"  Created: {result.get('created_at')}")
+        echo(f"  Updated: {result.get('updated_at')}")
+        
+        # Display results - check both possible locations
+        output_data = result.get('output_data')
+        if output_data:
+            echo("\n📋 Result:")
+            if isinstance(output_data, dict):
+                if 'output' in output_data:
+                    echo(output_data['output'])
+                else:
+                    echo(json.dumps(output_data, indent=2))
+            else:
+                echo(str(output_data))
+        elif result.get('result'):
+            echo("\n📋 Result:")
+            echo(json.dumps(result['result'], indent=2))
+        
+        if result.get('error'):
+            echo(f"\n❌ Error: {result['error']}")
+        elif result.get('error_message'):
+            echo(f"\n❌ Error: {result['error_message']}")
+            
+    except Exception as e:
+        echo(style(f"✗ Error getting execution status: {e}", fg='red'))
+        sys.exit(1)
+
+
+@hired.command(name='list')
+@click.option('--user-id', '-u', type=int, help='User ID')
+@click.option('--base-url', help='Base URL of the AgentHub server')
+@click.pass_context
+def list_hired(ctx, user_id, base_url):
+    """List your hired agents."""
+    verbose = ctx.obj.get('verbose', False)
+    
+    base_url = base_url or cli_config.get('base_url', 'http://localhost:8002')
+    
+    try:
+        echo(style("📋 Fetching hired agents...", fg='blue'))
+        
+        async def get_hired_agents():
+            async with AgentHubClient(base_url) as client:
+                result = await client.list_hired_agents(user_id=user_id)
+                return result
+        
+        result = asyncio.run(get_hired_agents())
+        hired_agents = result.get('hired_agents', [])
+        
+        if not hired_agents:
+            echo(style("No hired agents found.", fg='yellow'))
+            return
+        
+        echo(style(f"Found {len(hired_agents)} hired agents:", fg='green'))
+        echo()
+        
+        for hiring in hired_agents:
+            agent = hiring.get('agent', {})
+            echo(f"🤖 {style(agent.get('name', 'Unknown'), fg='cyan', bold=True)} (Hiring ID: {hiring.get('id')})")
+            echo(f"   Agent ID: {agent.get('id')} | Category: {agent.get('category')}")
+            echo(f"   Hired: {hiring.get('hired_at')} | Status: {hiring.get('status')}")
+            echo(f"   Billing: {hiring.get('billing_cycle')}")
+            echo()
+            
+    except Exception as e:
+        echo(style(f"✗ Error fetching hired agents: {e}", fg='red'))
+        sys.exit(1)
+
+
+@hired.command(name='info')
+@click.argument('hiring_id', type=int)
+@click.option('--base-url', help='Base URL of the AgentHub server')
+@click.pass_context
+def info_hired(ctx, hiring_id, base_url):
+    """Get detailed information about a hired agent."""
+    verbose = ctx.obj.get('verbose', False)
+    
+    base_url = base_url or cli_config.get('base_url', 'http://localhost:8002')
+    
+    try:
+        echo(style(f"🔍 Fetching hiring details for {hiring_id}...", fg='blue'))
+        
+        # Note: This would require an API endpoint for hiring details
+        # For now, we'll show a placeholder
+        echo(style("⚠️  Hiring details feature requires server-side implementation", fg='yellow'))
+        echo("Contact your AgentHub administrator to enable hiring management.")
+        
+    except Exception as e:
+        echo(style(f"✗ Error fetching hiring details: {e}", fg='red'))
         sys.exit(1)
 
 

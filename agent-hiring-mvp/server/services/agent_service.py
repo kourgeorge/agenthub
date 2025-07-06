@@ -44,6 +44,9 @@ class AgentService:
         # Calculate code hash
         code_hash = self._calculate_file_hash(code_file_path)
         
+        # Extract and store agent code
+        agent_code = self._extract_agent_code(code_file_path, agent_data.entry_point)
+        
         # Create agent record
         agent = Agent(
             name=agent_data.name,
@@ -60,6 +63,7 @@ class AgentService:
             price_per_use=agent_data.price_per_use,
             monthly_price=agent_data.monthly_price,
             code_hash=code_hash,
+            code=agent_code,  # Store the extracted code
             status=AgentStatus.SUBMITTED.value,
             is_public=False,
         )
@@ -151,6 +155,30 @@ class AgentService:
             agent.average_rating = new_total / agent.total_executions
         
         self.db.commit()
+    
+    def _extract_agent_code(self, code_file_path: str, entry_point: str) -> str:
+        """Extract agent code from ZIP file."""
+        try:
+            with zipfile.ZipFile(code_file_path, 'r') as zip_file:
+                # Get the main agent file from entry_point
+                # entry_point might be like "my_agent.py" or "my_agent.py:main"
+                agent_file = entry_point.split(':')[0]
+                
+                # Try to find the agent file in the ZIP
+                if agent_file in zip_file.namelist():
+                    with zip_file.open(agent_file) as f:
+                        return f.read().decode('utf-8')
+                else:
+                    # Fallback: find any Python file
+                    python_files = [f for f in zip_file.namelist() if f.endswith('.py')]
+                    if python_files:
+                        with zip_file.open(python_files[0]) as f:
+                            return f.read().decode('utf-8')
+                    else:
+                        raise Exception("No Python files found in ZIP")
+        except Exception as e:
+            logger.error(f"Error extracting agent code: {str(e)}")
+            return ""
     
     def _calculate_file_hash(self, file_path: str) -> str:
         """Calculate SHA256 hash of a file."""

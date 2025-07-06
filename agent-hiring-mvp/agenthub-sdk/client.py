@@ -193,21 +193,31 @@ class AgentHubClient:
         if not self.session:
             raise RuntimeError("Client not initialized. Use async context manager.")
         
+        # Default user_id to 1 for testing purposes
+        if user_id is None:
+            user_id = 1
+        
         data = {
-            "agent_id": agent_id,
-            "config": config or {},
-            "billing_cycle": billing_cycle or "per_use",
+            "agent_id": int(agent_id),
+            "user_id": int(user_id),
+            "requirements": config or {},
+            "budget": 100.0,  # Default budget
+            "duration_hours": 24,  # Default duration
         }
         
-        if user_id:
-            data["user_id"] = user_id
-        
         async with self.session.post(
-            f"{self.api_base}/hiring/hire/{agent_id}",
+            f"{self.api_base}/hiring/",
             json=data,
         ) as response:
             if response.status == 200:
-                return await response.json()
+                result = await response.json()
+                # Convert to format expected by CLI
+                return {
+                    "hiring_id": result.get("id"),
+                    "status": result.get("status"),
+                    "billing_cycle": billing_cycle or "per_use",
+                    "message": result.get("message", "Agent hired successfully")
+                }
             else:
                 error_text = await response.text()
                 raise Exception(f"Failed to hire agent: {error_text}")
@@ -217,16 +227,32 @@ class AgentHubClient:
         if not self.session:
             raise RuntimeError("Client not initialized. Use async context manager.")
         
-        params = {}
-        if user_id:
-            params["user_id"] = user_id
+        # Default user_id to 1 for testing purposes
+        if user_id is None:
+            user_id = 1
         
         async with self.session.get(
-            f"{self.api_base}/hiring/my-agents",
-            params=params,
+            f"{self.api_base}/hiring/user/{user_id}",
         ) as response:
             if response.status == 200:
-                return await response.json()
+                hired_agents = await response.json()
+                # Convert to format expected by CLI
+                return {
+                    "hired_agents": [
+                        {
+                            "id": hiring.get("id"),
+                            "agent": {
+                                "id": hiring.get("agent_id"),
+                                "name": f"Agent {hiring.get('agent_id')}",
+                                "category": "general"
+                            },
+                            "status": hiring.get("status"),
+                            "hired_at": hiring.get("hired_at"),
+                            "billing_cycle": "per_use"
+                        }
+                        for hiring in (hired_agents if isinstance(hired_agents, list) else [])
+                    ]
+                }
             else:
                 error_text = await response.text()
                 raise Exception(f"Failed to list hired agents: {error_text}")
@@ -256,15 +282,37 @@ class AgentHubClient:
         if user_id:
             data["user_id"] = user_id
         
+        # Step 1: Create execution
         async with self.session.post(
             f"{self.api_base}/execution",
             json=data,
         ) as response:
             if response.status == 200:
-                return await response.json()
+                result = await response.json()
             else:
                 error_text = await response.text()
-                raise Exception(f"Failed to execute agent: {error_text}")
+                raise Exception(f"Failed to create execution: {error_text}")
+        
+        # Step 2: Trigger execution automatically
+        execution_id = result.get("execution_id")
+        if not execution_id:
+            raise Exception("No execution ID returned")
+        
+        async with self.session.post(
+            f"{self.api_base}/execution/{execution_id}/run",
+        ) as response:
+            if response.status == 200:
+                # Return the execution result for immediate executions
+                execution_result = await response.json()
+                return {
+                    "execution_id": execution_id,
+                    "status": "running",
+                    "result": execution_result.get("result"),
+                    "message": "Execution triggered successfully"
+                }
+            else:
+                error_text = await response.text()
+                raise Exception(f"Failed to trigger execution: {error_text}")
     
     async def get_execution_status(self, execution_id: str) -> Dict[str, Any]:
         """Get execution status."""
@@ -290,7 +338,7 @@ class AgentHubClient:
         timeout: int = 60,
     ) -> Dict[str, Any]:
         """Run an agent and optionally wait for completion."""
-        # Create execution
+        # Create and trigger execution
         execution_result = await self.execute_agent(
             agent_id=agent_id,
             input_data=input_data,
@@ -312,8 +360,12 @@ class AgentHubClient:
                 raise Exception(f"Execution timeout after {timeout} seconds")
             
             status_result = await self.get_execution_status(execution_id)
-            execution = status_result.get("execution", {})
-            status = execution.get("status")
+            # Check both possible response formats
+            status = status_result.get("status")
+            if not status:
+                # Try nested format
+                execution = status_result.get("execution", {})
+                status = execution.get("status")
             
             if status in ["completed", "failed"]:
                 return status_result
