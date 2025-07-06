@@ -1,20 +1,17 @@
 # Core Framework - Essential
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
-pydantic==2.5.0
-pydantic-settings==2.1.0
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
 
 # Database - Essential
-sqlalchemy==2.0.23
-
-# HTTP client for SDK
-aiohttp==3.9.1
+sqlalchemy
 
 # Utilities - Essential
-python-dotenv==1.0.0
-pyyaml==6.0.1
-requests==2.31.0
+python-dotenv
+pyyaml
+requests
 
 # Testing - Optional but recommended
-pytest==7.4.3
-httpx==0.25.2 
+pytest
+httpx 
