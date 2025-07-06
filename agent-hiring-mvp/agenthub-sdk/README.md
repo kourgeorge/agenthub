@@ -13,15 +13,79 @@ A comprehensive SDK for creating, publishing, and using AI agents on the AgentHu
 
 ## Installation
 
+### SDK Installation
+
 ```bash
 # Install the SDK in development mode
 pip install -e ./agenthub-sdk
 
 # Or install dependencies manually
-pip install aiohttp>=3.8.0 aiofiles>=23.0.0 pydantic>=2.0.0
+pip install aiohttp>=3.8.0 aiofiles>=23.0.0 pydantic>=2.0.0 click>=8.0.0
+```
+
+### CLI Installation
+
+The AgentHub SDK includes a powerful CLI tool for agent creators:
+
+```bash
+# Install CLI using the setup script
+cd agent-hiring-mvp/agenthub-sdk
+python setup_cli.py
+
+# Or install manually
+pip install -e .
+
+# Verify installation
+agenthub --version
+agenthub --help
+```
+
+### Quick CLI Setup
+
+```bash
+# Configure your author information
+agenthub config --author "Your Name" --email "your@email.com"
+
+# Set the AgentHub server URL (if different from default)
+agenthub config --base-url "https://your-agenthub-server.com"
+
+# View current configuration
+agenthub config --show
 ```
 
 ## Quick Start
+
+### Using the CLI (Recommended for Beginners)
+
+The CLI provides the easiest way to create and manage agents:
+
+```bash
+# 1. Create a new agent
+agenthub agent init my-first-agent --type simple --description "My first agent"
+
+# 2. Navigate to the agent directory
+cd my-first-agent
+
+# 3. Validate the agent
+agenthub agent validate
+
+# 4. Test the agent locally
+agenthub agent test --input '{"message": "Hello, world!"}'
+
+# 5. Publish the agent (dry run first)
+agenthub agent publish --dry-run
+agenthub agent publish
+
+# 6. List available agents
+agenthub agent list
+
+# 7. Get agent information
+agenthub agent info 123
+```
+
+See the [CLI Guide](CLI_GUIDE.md) for comprehensive documentation.
+
+### Using the SDK Directly
 
 ### 1. Create an Agent
 
@@ -610,6 +674,65 @@ print(result)
 - Test your agent code independently
 - Use the health check to verify server connectivity
 - Check the examples directory for working code samples
+
+## CLI Commands Reference
+
+The AgentHub CLI provides comprehensive commands for agent creators:
+
+### Agent Management Commands
+
+```bash
+# Create a new agent project
+agenthub agent init <name> [OPTIONS]
+
+# Validate agent configuration and code
+agenthub agent validate [--directory DIR]
+
+# Test agent locally
+agenthub agent test [--input JSON] [--config JSON]
+
+# Publish agent to platform
+agenthub agent publish [--dry-run] [--api-key KEY]
+
+# List available agents
+agenthub agent list [--query QUERY] [--category CATEGORY]
+
+# Get agent information
+agenthub agent info <agent-id>
+
+# Generate agent templates
+agenthub agent template <type> <output-file>
+```
+
+### Configuration Commands
+
+```bash
+# Configure CLI settings
+agenthub config [--author NAME] [--email EMAIL] [--base-url URL] [--api-key KEY]
+
+# Show current configuration
+agenthub config --show
+```
+
+### Example Workflows
+
+```bash
+# Create and publish a simple agent
+agenthub agent init my-agent --type simple
+cd my-agent
+agenthub agent validate
+agenthub agent test
+agenthub agent publish --dry-run
+agenthub agent publish
+
+# Create a data processing agent
+agenthub agent init data-processor --type data --category analytics --pricing per_use --price 0.10
+
+# Create a chat agent
+agenthub agent init chat-bot --type chat --category support --pricing monthly --price 29.99
+```
+
+For detailed CLI documentation, see the [CLI Guide](CLI_GUIDE.md).
 
 ## Complete Agent Workflow
 

@@ -30,6 +30,7 @@ dependencies = [
     "aiohttp>=3.8.0",
     "aiofiles>=23.0.0",
     "pydantic>=2.0.0",
+    "click>=8.0.0",
 ]
 
 [project.optional-dependencies]
@@ -40,6 +41,9 @@ dev = [
     "flake8>=6.0.0",
     "mypy>=1.0.0",
 ]
+
+[project.scripts]
+agenthub = "agenthub_sdk.cli:cli"
 
 [project.urls]
 Homepage = "https://github.com/your-org/agenthub"
