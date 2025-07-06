@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 
 from .database.init_db import init_database
-from .api import agents_router, hiring_router, execution_router, acp_router
+from .api import agents_router, hiring_router, execution_router, acp_router, users_router
 
 # Configure logging
 logging.basicConfig(
@@ -61,6 +61,7 @@ app.include_router(agents_router, prefix="/api/v1")
 app.include_router(hiring_router, prefix="/api/v1")
 app.include_router(execution_router, prefix="/api/v1")
 app.include_router(acp_router, prefix="/api/v1")
+app.include_router(users_router, prefix="/api/v1")
 
 
 @app.get("/")
@@ -82,6 +83,26 @@ async def health_check():
         "service": "agent-hiring-system",
         "version": "0.1.0",
     }
+
+
+@app.post("/refresh")
+async def refresh_database():
+    """Refresh database connection and reinitialize data."""
+    try:
+        logger.info("Refreshing database connection...")
+        init_database()
+        logger.info("Database refreshed successfully")
+        return {
+            "status": "success",
+            "message": "Database refreshed successfully",
+            "service": "agent-hiring-system",
+        }
+    except Exception as e:
+        logger.error(f"Failed to refresh database: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to refresh database: {str(e)}"
+        )
 
 
 @app.exception_handler(Exception)
