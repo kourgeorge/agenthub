@@ -3,14 +3,21 @@
 Demo script showing how to hire an agent and run requests against it.
 This demonstrates the complete workflow of the AI Agent Hiring System.
 """
+import os
+import sys
 
 import requests
 import json
 import time
+
+# Add the project root to the Python path
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+
 from typing import Dict, Any
+from config import DEFAULT_SERVER_URL
 
 # Configuration
-BASE_URL = "http://localhost:8002"
+BASE_URL = DEFAULT_SERVER_URL
 API_BASE = f"{BASE_URL}/api/v1"
 
 def print_step(step: str, description: str):
