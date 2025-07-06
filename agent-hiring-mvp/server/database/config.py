@@ -22,7 +22,6 @@ class DatabaseSettings(BaseSettings):
     
     class Config:
         env_file = ".env"
-        env_prefix = "DB_"
 
 
 # Global settings instance

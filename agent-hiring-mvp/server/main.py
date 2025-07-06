@@ -6,8 +6,9 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
+# StaticFiles removed - no static files needed for API-only server
 from fastapi.responses import JSONResponse
+# SessionMiddleware removed - not needed for server-side only API
 
 from .database.init_db import init_database
 from .api import agents_router, hiring_router, execution_router, acp_router, users_router
@@ -46,7 +47,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Add CORS middleware
+# Session middleware removed - not needed for server-side only API
+
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
@@ -72,6 +74,13 @@ async def root():
         "version": "0.1.0",
         "docs": "/docs",
         "redoc": "/redoc",
+        "endpoints": {
+            "agents": "/api/v1/agents",
+            "users": "/api/v1/users",
+            "hiring": "/api/v1/hiring",
+            "execution": "/api/v1/execution",
+            "acp": "/api/v1/acp"
+        }
     }
 
 
