@@ -11,6 +11,7 @@ import aiohttp
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 from pathlib import Path
+import tempfile
 
 from sqlalchemy.orm import Session
 from ..models.agent import Agent, AgentType
@@ -28,8 +29,12 @@ class DeploymentService:
         self.docker_client = docker.from_env()
         self.base_port = 8001
         self.max_port = 9000
-        self.deployment_dir = Path("/tmp/agent_deployments")
-        self.deployment_dir.mkdir(exist_ok=True)
+        
+        # Use cross-platform temporary directory
+        # Try environment variable first, then system temp
+        temp_base = os.getenv("AGENTHUB_TEMP_DIR") or tempfile.gettempdir()
+        self.deployment_dir = Path(temp_base) / "agent_deployments"
+        self.deployment_dir.mkdir(parents=True, exist_ok=True)
         
     def get_available_port(self) -> int:
         """Get an available port for deployment."""
