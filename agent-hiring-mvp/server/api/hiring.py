@@ -18,7 +18,14 @@ def create_hiring(
 ):
     """Create a new hiring request."""
     hiring_service = HiringService(db)
-    hiring = hiring_service.create_hiring(hiring_data)
+    
+    try:
+        hiring = hiring_service.create_hiring(hiring_data)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
     
     return {
         "id": hiring.id,

@@ -32,6 +32,11 @@ class HiringService:
     
     def create_hiring(self, hiring_data: HiringCreateRequest) -> Hiring:
         """Create a new hiring record."""
+        # Validate that the agent exists
+        agent = self.db.query(Agent).filter(Agent.id == hiring_data.agent_id).first()
+        if not agent:
+            raise ValueError(f"Agent with ID {hiring_data.agent_id} does not exist")
+        
         hiring = Hiring(
             agent_id=hiring_data.agent_id,
             user_id=hiring_data.user_id,
