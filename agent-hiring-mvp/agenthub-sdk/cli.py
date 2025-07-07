@@ -1008,6 +1008,111 @@ def info_hired(ctx, hiring_id, base_url):
         sys.exit(1)
 
 
+@hired.command(name='cancel')
+@click.argument('hiring_id', type=int)
+@click.option('--notes', '-n', help='Cancellation notes')
+@click.option('--base-url', help='Base URL of the AgentHub server')
+@click.pass_context
+def cancel_hired(ctx, hiring_id, notes, base_url):
+    """Cancel a hired agent."""
+    verbose = ctx.obj.get('verbose', False)
+    
+    base_url = base_url or cli_config.get('base_url', 'http://localhost:8002')
+    
+    try:
+        echo(style(f"🚫 Cancelling hiring {hiring_id}...", fg='yellow'))
+        
+        async def cancel_hiring():
+            async with AgentHubClient(base_url) as client:
+                result = await client.cancel_hiring(hiring_id, notes)
+                return result
+        
+        result = asyncio.run(cancel_hiring())
+        
+        echo(style("✅ Hiring cancelled successfully!", fg='green'))
+        echo(f"  Hiring ID: {result.get('id')}")
+        echo(f"  Status: {result.get('status')}")
+        echo(f"  Message: {result.get('message')}")
+        
+        if verbose:
+            echo("Full response:")
+            echo(json.dumps(result, indent=2))
+            
+    except Exception as e:
+        echo(style(f"✗ Error cancelling hiring: {e}", fg='red'))
+        sys.exit(1)
+
+
+@hired.command(name='suspend')
+@click.argument('hiring_id', type=int)
+@click.option('--notes', '-n', help='Suspension notes')
+@click.option('--base-url', help='Base URL of the AgentHub server')
+@click.pass_context
+def suspend_hired(ctx, hiring_id, notes, base_url):
+    """Suspend a hired agent."""
+    verbose = ctx.obj.get('verbose', False)
+    
+    base_url = base_url or cli_config.get('base_url', 'http://localhost:8002')
+    
+    try:
+        echo(style(f"⏸️  Suspending hiring {hiring_id}...", fg='yellow'))
+        
+        async def suspend_hiring():
+            async with AgentHubClient(base_url) as client:
+                result = await client.suspend_hiring(hiring_id, notes)
+                return result
+        
+        result = asyncio.run(suspend_hiring())
+        
+        echo(style("✅ Hiring suspended successfully!", fg='green'))
+        echo(f"  Hiring ID: {result.get('id')}")
+        echo(f"  Status: {result.get('status')}")
+        echo(f"  Message: {result.get('message')}")
+        
+        if verbose:
+            echo("Full response:")
+            echo(json.dumps(result, indent=2))
+            
+    except Exception as e:
+        echo(style(f"✗ Error suspending hiring: {e}", fg='red'))
+        sys.exit(1)
+
+
+@hired.command(name='activate')
+@click.argument('hiring_id', type=int)
+@click.option('--notes', '-n', help='Activation notes')
+@click.option('--base-url', help='Base URL of the AgentHub server')
+@click.pass_context
+def activate_hired(ctx, hiring_id, notes, base_url):
+    """Activate a hired agent."""
+    verbose = ctx.obj.get('verbose', False)
+    
+    base_url = base_url or cli_config.get('base_url', 'http://localhost:8002')
+    
+    try:
+        echo(style(f"▶️  Activating hiring {hiring_id}...", fg='blue'))
+        
+        async def activate_hiring():
+            async with AgentHubClient(base_url) as client:
+                result = await client.activate_hiring(hiring_id, notes)
+                return result
+        
+        result = asyncio.run(activate_hiring())
+        
+        echo(style("✅ Hiring activated successfully!", fg='green'))
+        echo(f"  Hiring ID: {result.get('id')}")
+        echo(f"  Status: {result.get('status')}")
+        echo(f"  Message: {result.get('message')}")
+        
+        if verbose:
+            echo("Full response:")
+            echo(json.dumps(result, indent=2))
+            
+    except Exception as e:
+        echo(style(f"✗ Error activating hiring: {e}", fg='red'))
+        sys.exit(1)
+
+
 @cli.command()
 @click.option('--base-url', help='Base URL of the AgentHub server')
 @click.option('--api-key', help='API key for authentication')
@@ -1190,21 +1295,21 @@ def start(ctx, agent_id, base_url, wait, timeout):
 
 
 @deploy.command()
-@click.argument('agent_id', type=int)
+@click.argument('deployment_id', type=str)
 @click.option('--base-url', help='Base URL of the AgentHub server')
 @click.pass_context
-def stop(ctx, agent_id, base_url):
+def stop(ctx, deployment_id, base_url):
     """Stop a deployed ACP server agent."""
     verbose = ctx.obj.get('verbose', False)
     
     base_url = base_url or cli_config.get('base_url', 'http://localhost:8002')
     
     try:
-        echo(style(f"🛑 Stopping deployment for agent {agent_id}...", fg='blue'))
+        echo(style(f"🛑 Stopping deployment {deployment_id}...", fg='blue'))
         
         async def stop_agent():
             async with AgentHubClient(base_url) as client:
-                result = await client.stop_deployment(agent_id)
+                result = await client.stop_deployment(deployment_id)
                 return result
         
         result = asyncio.run(stop_agent())

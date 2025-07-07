@@ -159,35 +159,48 @@ def safe_execute():
         else:
             input_data = {}
         
-        # Capture stdout and stderr
+        # Capture stdout and stderr for debugging
         stdout_capture = StringIO()
         stderr_capture = StringIO()
+        
+        agent_result = None
         
         with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
             # Import and execute agent code
             import agent_code
             if hasattr(agent_code, 'main'):
                 # Call main function with proper parameters
-                result = agent_code.main(input_data, {})
-                # If the agent returns a result, use it
-                if result:
-                    print(json.dumps(result))
+                agent_result = agent_code.main(input_data, {})
             else:
                 raise Exception("Agent code does not have a main() function")
         
-        # Get captured output
+        # Get captured output for debugging
         stdout_output = stdout_capture.getvalue()
         stderr_output = stderr_capture.getvalue()
         
-        # Write output to file
-        result = {
-            'status': 'success',
-            'output': stdout_output,
-            'error': stderr_output if stderr_output else None
-        }
+        # Use the actual agent result, not the captured output
+        if agent_result:
+            # Write the actual agent result to output.json
+            output_data = {
+                'status': 'success',
+                'output': json.dumps(agent_result),  # The actual result from agent
+            }
+            if stderr_output and stderr_output.strip():
+                output_data['error'] = stderr_output
+        else:
+            # Fallback if no result returned
+            fallback_output = stdout_output.strip() if stdout_output else ''
+            if not fallback_output:
+                fallback_output = '{"status": "success", "response": "No result returned"}'
+            output_data = {
+                'status': 'success',
+                'output': fallback_output,
+            }
+            if stderr_output and stderr_output.strip():
+                output_data['error'] = stderr_output
         
         with open('output.json', 'w') as f:
-            json.dump(result, f)
+            json.dump(output_data, f)
             
     except Exception as e:
         result = {
@@ -198,12 +211,20 @@ def safe_execute():
             json.dump(result, f)
 
 if __name__ == "__main__":
-    # Set up timeout handler
+    # Set up timeout handler (cross-platform)
     def timeout_handler(signum, frame):
         raise TimeoutError("Execution timeout")
     
-    signal.signal(signal.SIGALRM, timeout_handler)
-    signal.alarm(30)  # 30 second timeout
+    # Use signal timeout only on Unix systems
+    timeout_set = False
+    try:
+        if hasattr(signal, 'SIGALRM'):
+            signal.signal(signal.SIGALRM, timeout_handler)
+            signal.alarm(30)  # 30 second timeout
+            timeout_set = True
+    except (AttributeError, OSError):
+        # Windows doesn't support SIGALRM
+        pass
     
     try:
         safe_execute()
@@ -215,7 +236,11 @@ if __name__ == "__main__":
         with open('output.json', 'w') as f:
             json.dump(result, f)
     finally:
-        signal.alarm(0)  # Cancel alarm
+        if timeout_set:
+            try:
+                signal.alarm(0)  # Cancel alarm
+            except (AttributeError, OSError):
+                pass
 '''
         
         return wrapper

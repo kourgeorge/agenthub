@@ -294,6 +294,63 @@ class AgentHubClient:
                 error_text = await response.text()
                 raise Exception(f"Failed to list hired agents: {error_text}")
     
+    async def cancel_hiring(self, hiring_id: int, notes: Optional[str] = None) -> Dict[str, Any]:
+        """Cancel a hiring."""
+        if not self.session:
+            raise RuntimeError("Client not initialized. Use async context manager.")
+        
+        data = {}
+        if notes:
+            data["notes"] = notes
+        
+        async with self.session.put(
+            f"{self.api_base}/hiring/{hiring_id}/cancel",
+            json=data,
+        ) as response:
+            if response.status == 200:
+                return await response.json()
+            else:
+                error_text = await response.text()
+                raise Exception(f"Failed to cancel hiring: {error_text}")
+
+    async def suspend_hiring(self, hiring_id: int, notes: Optional[str] = None) -> Dict[str, Any]:
+        """Suspend a hiring."""
+        if not self.session:
+            raise RuntimeError("Client not initialized. Use async context manager.")
+        
+        data = {}
+        if notes:
+            data["notes"] = notes
+        
+        async with self.session.put(
+            f"{self.api_base}/hiring/{hiring_id}/suspend",
+            json=data,
+        ) as response:
+            if response.status == 200:
+                return await response.json()
+            else:
+                error_text = await response.text()
+                raise Exception(f"Failed to suspend hiring: {error_text}")
+
+    async def activate_hiring(self, hiring_id: int, notes: Optional[str] = None) -> Dict[str, Any]:
+        """Activate a hiring."""
+        if not self.session:
+            raise RuntimeError("Client not initialized. Use async context manager.")
+        
+        data = {}
+        if notes:
+            data["notes"] = notes
+        
+        async with self.session.put(
+            f"{self.api_base}/hiring/{hiring_id}/activate",
+            json=data,
+        ) as response:
+            if response.status == 200:
+                return await response.json()
+            else:
+                error_text = await response.text()
+                raise Exception(f"Failed to activate hiring: {error_text}")
+    
     # =============================================================================
     # AGENT EXECUTION
     # =============================================================================
@@ -443,14 +500,13 @@ class AgentHubClient:
                 error_text = await response.text()
                 raise Exception(f"Failed to deploy agent: {error_text}")
     
-    async def stop_deployment(self, agent_id: int) -> Dict[str, Any]:
+    async def stop_deployment(self, deployment_id: str) -> Dict[str, Any]:
         """Stop a deployed ACP server agent."""
         if not self.session:
             raise RuntimeError("Client not initialized. Use async context manager.")
         
-        async with self.session.post(
-            f"{self.api_base}/deployment/stop",
-            json={"agent_id": agent_id},
+        async with self.session.put(
+            f"{self.api_base}/deployment/stop/{deployment_id}",
         ) as response:
             if response.status == 200:
                 return await response.json()
