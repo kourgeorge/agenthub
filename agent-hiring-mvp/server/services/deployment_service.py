@@ -12,6 +12,7 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime
 from pathlib import Path
 import tempfile
+import socket
 
 from sqlalchemy.orm import Session
 from ..models.agent import Agent, AgentType
@@ -36,6 +37,35 @@ class DeploymentService:
         self.deployment_dir = Path(temp_base) / "agent_deployments"
         self.deployment_dir.mkdir(parents=True, exist_ok=True)
         
+        # Configure server hostname for proxy endpoints
+        self.server_hostname = self._get_server_hostname()
+        
+    def _get_server_hostname(self) -> str:
+        """Get the server hostname for proxy endpoints."""
+        # 1. Check environment variable first (allows manual override)
+        hostname = os.getenv("AGENTHUB_HOSTNAME")
+        if hostname:
+            return hostname
+        
+        # 2. Try to get external IP from request context (if available)
+        # This would need to be passed from FastAPI context
+        
+        # 3. Get local machine's IP address (fallback)
+        try:
+            # Connect to a remote server to get local IP
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            local_ip = s.getsockname()[0]
+            s.close()
+            return local_ip
+        except Exception:
+            # Final fallback - get hostname
+            try:
+                return socket.getfqdn()
+            except Exception:
+                # Ultimate fallback
+                return "localhost"
+    
     def get_available_port(self) -> int:
         """Get an available port for deployment."""
         used_ports = {
@@ -87,7 +117,7 @@ class DeploymentService:
                 deployment_id=deployment_id,
                 external_port=external_port,
                 status=DeploymentStatus.PENDING.value,
-                proxy_endpoint=f"http://localhost:{external_port}",
+                proxy_endpoint=f"http://{self.server_hostname}:{external_port}",
                 environment_vars={
                     "PORT": "8001",
                     "DEPLOYMENT_ID": deployment_id,
