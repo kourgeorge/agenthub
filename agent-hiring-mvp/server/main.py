@@ -12,6 +12,8 @@ from fastapi.responses import JSONResponse
 
 from .database.init_db import init_database
 from .api import agents_router, hiring_router, execution_router, acp_router, users_router
+from .api.deployment import router as deployment_router
+from .api.agent_proxy import router as agent_proxy_router
 
 # Configure logging
 logging.basicConfig(
@@ -64,6 +66,8 @@ app.include_router(hiring_router, prefix="/api/v1")
 app.include_router(execution_router, prefix="/api/v1")
 app.include_router(acp_router, prefix="/api/v1")
 app.include_router(users_router, prefix="/api/v1")
+app.include_router(deployment_router, prefix="/api/v1")
+app.include_router(agent_proxy_router, prefix="/api/v1")
 
 
 @app.get("/")
@@ -79,7 +83,9 @@ async def root():
             "users": "/api/v1/users",
             "hiring": "/api/v1/hiring",
             "execution": "/api/v1/execution",
-            "acp": "/api/v1/acp"
+            "acp": "/api/v1/acp",
+            "deployment": "/api/v1/deployment",
+            "agent_proxy": "/api/v1/agent-proxy"
         }
     }
 

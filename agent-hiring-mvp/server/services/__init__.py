@@ -3,7 +3,7 @@
 from .agent_service import AgentService
 from .hiring_service import HiringService
 from .execution_service import ExecutionService
-from .acp_service import ACPService
+from .acp_service import ACPService  # Simplified service for protocol info only
 
 __all__ = [
     "AgentService",

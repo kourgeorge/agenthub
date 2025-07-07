@@ -19,6 +19,12 @@ class AgentStatus(str, Enum):
     INACTIVE = "inactive"
 
 
+class AgentType(str, Enum):
+    """Agent type enumeration."""
+    FUNCTION = "function"  # Traditional function-based agent
+    ACP_SERVER = "acp_server"  # ACP server-based agent
+
+
 class Agent(Base):
     """Agent model for storing agent information."""
     
@@ -31,7 +37,8 @@ class Agent(Base):
     author = Column(String(255), nullable=False)
     email = Column(String(255), nullable=False)
     
-    # Agent Configuration
+    # Agent Type and Configuration
+    agent_type = Column(String(20), nullable=False, default=AgentType.FUNCTION.value)
     entry_point = Column(String(255), nullable=False)  # e.g., "main.py:AgentClass"
     requirements = Column(JSON, nullable=True)  # List of Python dependencies
     config_schema = Column(JSON, nullable=True)  # JSON schema for agent configuration
@@ -39,9 +46,15 @@ class Agent(Base):
     # Agent Code and Assets
     code_zip_url = Column(String(500), nullable=True)  # URL to agent code ZIP
     code_hash = Column(String(64), nullable=True)  # SHA256 hash of code
-    docker_image = Column(String(255), nullable=True)  # Docker image name (future)
+    docker_image = Column(String(255), nullable=True)  # Docker image name
     code = Column(Text, nullable=True)  # Direct code storage
     file_path = Column(String(500), nullable=True)  # Path to agent file
+    
+    # ACP Server Deployment (for ACP_SERVER type agents)
+    acp_manifest = Column(JSON, nullable=True)  # ACP agent manifest
+    deployment_config = Column(JSON, nullable=True)  # Docker deployment configuration
+    server_port = Column(Integer, nullable=True)  # Port for ACP server
+    health_check_endpoint = Column(String(255), nullable=True)  # Health check URL
     
     # Metadata
     tags = Column(JSON, nullable=True)  # List of tags

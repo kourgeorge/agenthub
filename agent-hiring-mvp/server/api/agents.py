@@ -33,6 +33,8 @@ async def submit_agent(
     pricing_model: Optional[str] = Form(None),
     price_per_use: Optional[float] = Form(None),
     monthly_price: Optional[float] = Form(None),
+    agent_type: Optional[str] = Form("function"),  # New field
+    acp_manifest: Optional[str] = Form(None),  # JSON string - New field
     code_file: UploadFile = File(...),
     db: Session = Depends(get_session_dependency),
 ):
@@ -43,6 +45,7 @@ async def submit_agent(
         requirements_list = json.loads(requirements) if requirements else None
         config_schema_dict = json.loads(config_schema) if config_schema else None
         tags_list = json.loads(tags) if tags else None
+        acp_manifest_dict = json.loads(acp_manifest) if acp_manifest else None
         
         # Create agent data
         agent_data = AgentCreateRequest(
@@ -59,6 +62,8 @@ async def submit_agent(
             pricing_model=pricing_model,
             price_per_use=price_per_use,
             monthly_price=monthly_price,
+            agent_type=agent_type,
+            acp_manifest=acp_manifest_dict,
         )
         
         # Save uploaded file temporarily
@@ -85,6 +90,7 @@ async def submit_agent(
                 "message": "Agent submitted successfully",
                 "agent_id": agent.id,
                 "status": agent.status,
+                "agent_type": agent.agent_type,
             }
         
         finally:
@@ -168,6 +174,8 @@ async def get_agent(
         "pricing_model": agent.pricing_model,
         "price_per_use": agent.price_per_use,
         "monthly_price": agent.monthly_price,
+        "agent_type": agent.agent_type,
+        "acp_manifest": agent.acp_manifest,
         "total_hires": agent.total_hires,
         "total_executions": agent.total_executions,
         "average_rating": agent.average_rating,

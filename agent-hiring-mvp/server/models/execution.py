@@ -48,7 +48,7 @@ class Execution(Base):
     
     # Execution Context
     execution_id = Column(String(64), nullable=False, unique=True, index=True)  # Unique execution ID
-    acp_session_id = Column(String(64), nullable=True)  # ACP session ID
+    # acp_session_id = Column(String(64), nullable=True)  # Deprecated: ACP session ID (simplified ACP no longer uses sessions)
     
     # Relationships
     agent = relationship("Agent", back_populates="executions")

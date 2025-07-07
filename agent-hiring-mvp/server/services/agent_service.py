@@ -10,7 +10,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
-from ..models.agent import Agent, AgentStatus
+from ..models.agent import Agent, AgentStatus, AgentType
 from ..models.user import User
 
 logger = logging.getLogger(__name__)
@@ -31,6 +31,8 @@ class AgentCreateRequest(BaseModel):
     pricing_model: Optional[str] = None
     price_per_use: Optional[float] = None
     monthly_price: Optional[float] = None
+    agent_type: Optional[str] = AgentType.FUNCTION.value
+    acp_manifest: Optional[Dict[str, Any]] = None
 
 
 class AgentService:
@@ -62,6 +64,8 @@ class AgentService:
             pricing_model=agent_data.pricing_model,
             price_per_use=agent_data.price_per_use,
             monthly_price=agent_data.monthly_price,
+            agent_type=agent_data.agent_type or AgentType.FUNCTION.value,
+            acp_manifest=agent_data.acp_manifest,
             code_hash=code_hash,
             code=agent_code,  # Store the extracted code
             status=AgentStatus.SUBMITTED.value,
@@ -72,7 +76,7 @@ class AgentService:
         self.db.commit()
         self.db.refresh(agent)
         
-        logger.info(f"Created agent: {agent.name} (ID: {agent.id})")
+        logger.info(f"Created agent: {agent.name} (ID: {agent.id}) with type: {agent.agent_type}")
         return agent
     
     def get_agent(self, agent_id: int) -> Optional[Agent]:
@@ -156,6 +160,14 @@ class AgentService:
         
         self.db.commit()
     
+    def _calculate_file_hash(self, file_path: str) -> str:
+        """Calculate SHA256 hash of a file."""
+        hash_sha256 = hashlib.sha256()
+        with open(file_path, "rb") as f:
+            for chunk in iter(lambda: f.read(4096), b""):
+                hash_sha256.update(chunk)
+        return hash_sha256.hexdigest()
+    
     def _extract_agent_code(self, code_file_path: str, entry_point: str) -> str:
         """Extract agent code from ZIP file."""
         try:
@@ -179,14 +191,6 @@ class AgentService:
         except Exception as e:
             logger.error(f"Error extracting agent code: {str(e)}")
             return ""
-    
-    def _calculate_file_hash(self, file_path: str) -> str:
-        """Calculate SHA256 hash of a file."""
-        hash_sha256 = hashlib.sha256()
-        with open(file_path, "rb") as f:
-            for chunk in iter(lambda: f.read(4096), b""):
-                hash_sha256.update(chunk)
-        return hash_sha256.hexdigest()
     
     def validate_agent_code(self, code_file_path: str) -> List[str]:
         """Validate agent code for security and compliance."""

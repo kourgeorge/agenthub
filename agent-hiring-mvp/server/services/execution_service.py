@@ -124,17 +124,21 @@ class ExecutionService:
             if not agent:
                 raise Exception("Agent not found")
             
-            # Initialize runtime service
-            runtime_service = AgentRuntimeService()
+            # Check agent type and handle accordingly
+            agent_type = getattr(agent, 'agent_type', 'function')
             
-            # Execute the agent
-            input_data = execution.input_data or {}
-            runtime_result = runtime_service.execute_agent(
-                agent_id=execution.agent_id,
-                input_data=input_data,
-                agent_code=agent.code if hasattr(agent, 'code') else None,
-                agent_file_path=agent.file_path if hasattr(agent, 'file_path') else None
-            )
+            if agent_type == 'acp_server':
+                # Handle ACP server agents
+                runtime_result = self._execute_acp_server_agent(agent, execution.input_data or {})
+            else:
+                # Handle traditional function-based agents
+                runtime_service = AgentRuntimeService()
+                runtime_result = runtime_service.execute_agent(
+                    agent_id=execution.agent_id,
+                    input_data=execution.input_data or {},
+                    agent_code=agent.code if hasattr(agent, 'code') else None,
+                    agent_file_path=agent.file_path if hasattr(agent, 'file_path') else None
+                )
             
             # Process runtime result
             if runtime_result.status == RuntimeStatus.COMPLETED:
@@ -187,6 +191,101 @@ class ExecutionService:
                 "execution_id": execution_id,
                 "error": error_msg
             }
+    
+    def _execute_acp_server_agent(self, agent: Agent, input_data: Dict[str, Any]):
+        """Execute an ACP server agent using its compatibility mode."""
+        import tempfile
+        import subprocess
+        import sys
+        import json
+        import time
+        from .agent_runtime import RuntimeResult, RuntimeStatus
+        
+        start_time = time.time()
+        
+        try:
+            # Create temporary execution directory
+            with tempfile.TemporaryDirectory() as temp_dir:
+                logger.info(f"Executing ACP server agent {agent.id} in compatibility mode")
+                
+                # Write agent code to file
+                if not agent.code:
+                    return RuntimeResult(
+                        status=RuntimeStatus.FAILED,
+                        error="No agent code available",
+                        execution_time=time.time() - start_time
+                    )
+                
+                agent_file = f"{temp_dir}/agent_code.py"
+                with open(agent_file, 'w') as f:
+                    f.write(agent.code)
+                
+                # Create execution script that calls the agent's main function
+                exec_script = f"""
+import sys
+import json
+import logging
+sys.path.insert(0, '{temp_dir}')
+
+# Suppress logging during execution to avoid interfering with JSON output
+logging.getLogger().setLevel(logging.ERROR)
+
+try:
+    from agent_code import main
+    input_data = {json.dumps(input_data)}
+    config_data = {{}}
+    result = main(input_data, config_data)
+    print(json.dumps(result))
+except Exception as e:
+    error_result = {{"status": "error", "error": str(e)}}
+    print(json.dumps(error_result))
+"""
+                
+                # Execute the script
+                process = subprocess.run(
+                    [sys.executable, '-c', exec_script],
+                    cwd=temp_dir,
+                    capture_output=True,
+                    text=True,
+                    timeout=30  # 30 second timeout
+                )
+                
+                execution_time = time.time() - start_time
+                
+                if process.returncode == 0:
+                    # Parse the output as JSON
+                    try:
+                        result_data = json.loads(process.stdout.strip())
+                        return RuntimeResult(
+                            status=RuntimeStatus.COMPLETED,
+                            output=json.dumps(result_data),
+                            execution_time=execution_time
+                        )
+                    except json.JSONDecodeError:
+                        return RuntimeResult(
+                            status=RuntimeStatus.FAILED,
+                            error=f"Invalid JSON output: {process.stdout}",
+                            execution_time=execution_time
+                        )
+                else:
+                    return RuntimeResult(
+                        status=RuntimeStatus.FAILED,
+                        error=process.stderr or f"Agent execution failed with code {process.returncode}",
+                        execution_time=execution_time
+                    )
+                    
+        except subprocess.TimeoutExpired:
+            return RuntimeResult(
+                status=RuntimeStatus.TIMEOUT,
+                error="Agent execution timeout",
+                execution_time=time.time() - start_time
+            )
+        except Exception as e:
+            return RuntimeResult(
+                status=RuntimeStatus.FAILED,
+                error=f"ACP server agent execution error: {str(e)}",
+                execution_time=time.time() - start_time
+            )
     
     def get_execution_stats(self, agent_id: Optional[int] = None, user_id: Optional[int] = None) -> Dict[str, Any]:
         """Get execution statistics."""
