@@ -8,6 +8,7 @@ import docker
 import uuid
 import asyncio
 import aiohttp
+import requests
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 from pathlib import Path
@@ -333,7 +334,7 @@ CMD ["python", "main.py"]
             return {"error": str(e)}
     
     def get_deployment_status(self, deployment_id: str) -> Dict[str, Any]:
-        """Get deployment status."""
+        """Get deployment status with real-time health check."""
         deployment = self.db.query(AgentDeployment).filter(
             AgentDeployment.deployment_id == deployment_id
         ).first()
@@ -350,6 +351,28 @@ CMD ["python", "main.py"]
             except docker.errors.NotFound:
                 container_status = "not_found"
         
+        # Perform real-time health check if deployment is running
+        real_time_health = deployment.is_healthy
+        if deployment.status == DeploymentStatus.RUNNING.value and deployment.proxy_endpoint:
+            try:
+                health_url = f"{deployment.proxy_endpoint}/health"
+                response = requests.get(health_url, timeout=2)
+                if response.status_code == 200:
+                    real_time_health = True
+                    # Update database with fresh health status
+                    deployment.is_healthy = True
+                    deployment.health_check_failures = 0
+                    deployment.last_health_check = datetime.utcnow()
+                    self.db.commit()
+                else:
+                    real_time_health = False
+                    deployment.health_check_failures += 1
+                    deployment.last_health_check = datetime.utcnow()
+                    self.db.commit()
+            except Exception:
+                # Health check failed, but don't update database on temporary failures
+                real_time_health = False
+        
         return {
             "deployment_id": deployment_id,
             "agent_id": deployment.agent_id,
@@ -362,7 +385,7 @@ CMD ["python", "main.py"]
             "created_at": deployment.created_at.isoformat(),
             "started_at": deployment.started_at.isoformat() if deployment.started_at else None,
             "stopped_at": deployment.stopped_at.isoformat() if deployment.stopped_at else None,
-            "is_healthy": deployment.is_healthy,
+            "is_healthy": real_time_health,
             "health_check_failures": deployment.health_check_failures,
             "status_message": deployment.status_message
         }
