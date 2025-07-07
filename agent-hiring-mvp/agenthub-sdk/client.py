@@ -259,7 +259,7 @@ class AgentHubClient:
                 error_text = await response.text()
                 raise Exception(f"Failed to hire agent: {error_text}")
     
-    async def list_hired_agents(self, user_id: Optional[int] = None) -> Dict[str, Any]:
+    async def list_hired_agents(self, user_id: Optional[int] = None, status: Optional[str] = None) -> Dict[str, Any]:
         """List hired agents."""
         if not self.session:
             raise RuntimeError("Client not initialized. Use async context manager.")
@@ -268,8 +268,14 @@ class AgentHubClient:
         if user_id is None:
             user_id = 1
         
+        # Build query parameters
+        params = {}
+        if status and status != "all":
+            params["status"] = status
+        
         async with self.session.get(
             f"{self.api_base}/hiring/user/{user_id}",
+            params=params,
         ) as response:
             if response.status == 200:
                 hired_agents = await response.json()

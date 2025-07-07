@@ -946,37 +946,74 @@ def status(ctx, execution_id, base_url):
 
 @hired.command(name='list')
 @click.option('--user-id', '-u', type=int, help='User ID')
+@click.option('--status', '-s', 'hiring_status',
+              type=click.Choice(['active', 'suspended', 'cancelled', 'expired', 'all']),
+              default='active',
+              help='Filter by status (default: active)')
+@click.option('--all', '-a', 'show_all', is_flag=True, help='Show all hirings regardless of status')
 @click.option('--base-url', help='Base URL of the AgentHub server')
 @click.pass_context
-def list_hired(ctx, user_id, base_url):
-    """List your hired agents."""
+def list_hired(ctx, user_id, hiring_status, show_all, base_url):
+    """List your hired agents (active by default)."""
     verbose = ctx.obj.get('verbose', False)
     
     base_url = base_url or cli_config.get('base_url', 'http://localhost:8002')
     
+    # If --all is specified, override status filter
+    if show_all:
+        hiring_status = None
+    
     try:
-        echo(style("📋 Fetching hired agents...", fg='blue'))
+        if hiring_status:
+            echo(style(f"📋 Fetching {hiring_status} hired agents...", fg='blue'))
+        else:
+            echo(style("📋 Fetching all hired agents...", fg='blue'))
         
         async def get_hired_agents():
             async with AgentHubClient(base_url) as client:
-                result = await client.list_hired_agents(user_id=user_id)
+                result = await client.list_hired_agents(user_id=user_id, status=hiring_status)
                 return result
         
         result = asyncio.run(get_hired_agents())
         hired_agents = result.get('hired_agents', [])
         
         if not hired_agents:
-            echo(style("No hired agents found.", fg='yellow'))
+            if hiring_status:
+                echo(style(f"No {hiring_status} hired agents found.", fg='yellow'))
+            else:
+                echo(style("No hired agents found.", fg='yellow'))
             return
         
-        echo(style(f"Found {len(hired_agents)} hired agents:", fg='green'))
+        # Count by status for summary
+        status_counts = {}
+        for hiring in hired_agents:
+            agent_status = hiring.get('status', 'unknown')
+            status_counts[agent_status] = status_counts.get(agent_status, 0) + 1
+        
+        # Display header with status info
+        if hiring_status:
+            echo(style(f"Found {len(hired_agents)} {hiring_status} hired agents:", fg='green'))
+        else:
+            echo(style(f"Found {len(hired_agents)} hired agents:", fg='green'))
+            status_summary = ", ".join([f"{count} {status_name}" for status_name, count in status_counts.items()])
+            echo(style(f"Status breakdown: {status_summary}", fg='cyan'))
         echo()
         
         for hiring in hired_agents:
             agent = hiring.get('agent', {})
+            current_status = hiring.get('status', 'unknown')
+            
+            # Color code by status
+            status_color = {
+                'active': 'green',
+                'suspended': 'yellow', 
+                'cancelled': 'red',
+                'expired': 'white'
+            }.get(current_status, 'white')
+            
             echo(f"🤖 {style(agent.get('name', 'Unknown'), fg='cyan', bold=True)} (Hiring ID: {hiring.get('id')})")
             echo(f"   Agent ID: {agent.get('id')} | Category: {agent.get('category')}")
-            echo(f"   Hired: {hiring.get('hired_at')} | Status: {hiring.get('status')}")
+            echo(f"   Hired: {hiring.get('hired_at')} | Status: {style(current_status, fg=status_color)}")
             echo(f"   Billing: {hiring.get('billing_cycle')}")
             echo()
             
@@ -1137,6 +1174,69 @@ def activate_hired(ctx, hiring_id, notes, base_url):
             
     except Exception as e:
         echo(style(f"✗ Error activating hiring: {e}", fg='red'))
+        sys.exit(1)
+
+
+@hired.command(name='history')
+@click.option('--user-id', '-u', type=int, help='User ID')
+@click.option('--base-url', help='Base URL of the AgentHub server')
+@click.pass_context
+def history_hired(ctx, user_id, base_url):
+    """Show all hiring history (including cancelled and suspended)."""
+    verbose = ctx.obj.get('verbose', False)
+    
+    base_url = base_url or cli_config.get('base_url', 'http://localhost:8002')
+    
+    try:
+        echo(style("📋 Fetching complete hiring history...", fg='blue'))
+        
+        async def get_hired_agents():
+            async with AgentHubClient(base_url) as client:
+                result = await client.list_hired_agents(user_id=user_id, status=None)
+                return result
+        
+        result = asyncio.run(get_hired_agents())
+        hired_agents = result.get('hired_agents', [])
+        
+        if not hired_agents:
+            echo(style("No hiring history found.", fg='yellow'))
+            return
+        
+        # Count by status for summary
+        status_counts = {}
+        for hiring in hired_agents:
+            agent_status = hiring.get('status', 'unknown')
+            status_counts[agent_status] = status_counts.get(agent_status, 0) + 1
+        
+        # Display header with status info
+        echo(style(f"Found {len(hired_agents)} total hirings:", fg='green'))
+        status_summary = ", ".join([f"{count} {status_name}" for status_name, count in status_counts.items()])
+        echo(style(f"Status breakdown: {status_summary}", fg='cyan'))
+        echo()
+        
+        # Sort by hired_at date (newest first)
+        hired_agents.sort(key=lambda x: x.get('hired_at', ''), reverse=True)
+        
+        for hiring in hired_agents:
+            agent = hiring.get('agent', {})
+            current_status = hiring.get('status', 'unknown')
+            
+            # Color code by status
+            status_color = {
+                'active': 'green',
+                'suspended': 'yellow', 
+                'cancelled': 'red',
+                'expired': 'white'
+            }.get(current_status, 'white')
+            
+            echo(f"🤖 {style(agent.get('name', 'Unknown'), fg='cyan', bold=True)} (Hiring ID: {hiring.get('id')})")
+            echo(f"   Agent ID: {agent.get('id')} | Category: {agent.get('category')}")
+            echo(f"   Hired: {hiring.get('hired_at')} | Status: {style(current_status, fg=status_color)}")
+            echo(f"   Billing: {hiring.get('billing_cycle')}")
+            echo()
+            
+    except Exception as e:
+        echo(style(f"✗ Error fetching hiring history: {e}", fg='red'))
         sys.exit(1)
 
 
@@ -1390,7 +1490,7 @@ def list_deployments(ctx, status, base_url):
                 'building': 'yellow',
                 'deploying': 'blue',
                 'failed': 'red',
-                'stopped': 'grey'
+                'stopped': 'white'
             }.get(deployment.get('status'), 'white')
             
             # Extract port from proxy_endpoint
@@ -1444,7 +1544,7 @@ def status(ctx, agent_id, base_url):
             'building': 'yellow',
             'deploying': 'blue',
             'failed': 'red',
-            'stopped': 'grey'
+            'stopped': 'white'
         }.get(result.get('status'), 'white')
         
         echo(style("📊 Deployment Status:", fg='green'))
