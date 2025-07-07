@@ -91,7 +91,7 @@ def agent():
 @agent.command()
 @click.argument('name')
 @click.option('--type', '-t', 'agent_type', 
-              type=click.Choice(['simple', 'data', 'chat']), 
+              type=click.Choice(['simple', 'data', 'chat', 'acp_server']), 
               default='simple', 
               help='Type of agent to create')
 @click.option('--author', '-a', help='Agent author name')
@@ -303,6 +303,31 @@ def publish(ctx, directory, api_key, base_url, dry_run):
             echo(style("✓ Agent validation passed! Ready to publish.", fg='green'))
             return
         
+        # 🔧 FIX: Read local requirements.txt and merge with config requirements
+        requirements_file = agent_dir / "requirements.txt"
+        local_requirements = []
+        if requirements_file.exists():
+            try:
+                with open(requirements_file, 'r') as f:
+                    local_requirements = [
+                        line.strip() 
+                        for line in f.readlines() 
+                        if line.strip() and not line.strip().startswith('#')
+                    ]
+                if verbose and local_requirements:
+                    echo(f"  Found local requirements: {', '.join(local_requirements)}")
+            except Exception as e:
+                echo(style(f"⚠ Warning: Could not read requirements.txt: {e}", fg='yellow'))
+        
+        # Merge config requirements with local requirements
+        all_requirements = list(set(config.requirements + local_requirements))
+        config.requirements = all_requirements
+        
+        if verbose and all_requirements:
+            echo(f"  Total requirements to publish: {', '.join(all_requirements)}")
+        elif all_requirements:
+            echo(f"  📦 Publishing with {len(all_requirements)} requirements")
+        
         # Create temporary agent instance for publishing
         agent = _create_agent_instance(config)
         
@@ -430,25 +455,137 @@ def info(ctx, agent_id, base_url):
 
 
 @agent.command()
-@click.argument('template_type', type=click.Choice(['simple', 'data', 'chat']))
-@click.argument('output_file')
+@click.argument('agent_id', type=int)
+@click.option('--base-url', help='Base URL of the AgentHub server')
 @click.pass_context
-def template(ctx, template_type, output_file):
-    """Generate agent template code."""
+def approve(ctx, agent_id, base_url):
+    """Approve an agent (admin only)."""
     verbose = ctx.obj.get('verbose', False)
     
+    base_url = base_url or cli_config.get('base_url', 'http://localhost:8002')
+    
     try:
+        echo(style(f"✅ Approving agent {agent_id}...", fg='blue'))
+        
+        async def approve_agent():
+            async with AgentHubClient(base_url) as client:
+                result = await client.approve_agent(agent_id)
+                return result
+        
+        result = asyncio.run(approve_agent())
+        
+        echo(style("✅ Agent approved successfully!", fg='green'))
+        echo(f"  Agent ID: {result.get('agent_id')}")
+        echo(f"  Status: {result.get('status')}")
+        echo(f"  Message: {result.get('message')}")
+        
+        if verbose:
+            echo("Full response:")
+            echo(json.dumps(result, indent=2))
+            
+    except Exception as e:
+        echo(style(f"✗ Error approving agent: {e}", fg='red'))
+        sys.exit(1)
+
+
+@agent.command()
+@click.argument('agent_id', type=int)
+@click.option('--reason', '-r', required=True, help='Reason for rejection')
+@click.option('--base-url', help='Base URL of the AgentHub server')
+@click.pass_context
+def reject(ctx, agent_id, reason, base_url):
+    """Reject an agent (admin only)."""
+    verbose = ctx.obj.get('verbose', False)
+    
+    base_url = base_url or cli_config.get('base_url', 'http://localhost:8002')
+    
+    try:
+        echo(style(f"❌ Rejecting agent {agent_id}...", fg='blue'))
+        
+        async def reject_agent():
+            async with AgentHubClient(base_url) as client:
+                result = await client.reject_agent(agent_id, reason)
+                return result
+        
+        result = asyncio.run(reject_agent())
+        
+        echo(style("❌ Agent rejected successfully!", fg='yellow'))
+        echo(f"  Agent ID: {result.get('agent_id')}")
+        echo(f"  Status: {result.get('status')}")
+        echo(f"  Reason: {result.get('reason')}")
+        
+        if verbose:
+            echo("Full response:")
+            echo(json.dumps(result, indent=2))
+            
+    except Exception as e:
+        echo(style(f"✗ Error rejecting agent: {e}", fg='red'))
+        sys.exit(1)
+
+
+@agent.command()
+@click.argument('template_type', type=click.Choice(['simple', 'data', 'chat', 'acp_server', 'acp_template']))
+@click.argument('target_directory', required=False)
+@click.pass_context
+def template(ctx, template_type, target_directory):
+    """Generate agent templates or copy full template directory."""
+    verbose = ctx.obj.get('verbose', False)
+    
+    if template_type == 'acp_template':
+        # Copy the full ACP template directory
+        if not target_directory:
+            target_directory = 'my_acp_agent'
+        
+        sdk_dir = Path(__file__).parent
+        template_dir = sdk_dir / "templates" / "acp_agent_template"
+        target_path = Path(target_directory)
+        
+        if not template_dir.exists():
+            echo(style("❌ ACP template directory not found. Make sure the templates are installed.", fg='red'))
+            sys.exit(1)
+        
+        if target_path.exists():
+            if not click.confirm(f"Directory '{target_directory}' already exists. Continue?"):
+                sys.exit(0)
+        
+        try:
+            import shutil
+            shutil.copytree(template_dir, target_path, dirs_exist_ok=True)
+            
+            echo(style(f"✅ ACP agent template copied to '{target_directory}'", fg='green'))
+            echo("📝 Next steps:")
+            echo(f"  1. cd {target_directory}")
+            echo("  2. Customize config.json with your agent details")
+            echo("  3. Modify acp_agent_template.py for your use case")
+            echo("  4. pip install -r requirements.txt")
+            echo("  5. python acp_agent_template.py")
+            echo("  6. agenthub agent validate")
+            echo("  7. agenthub agent publish")
+            
+        except Exception as e:
+            echo(style(f"❌ Error copying template: {e}", fg='red'))
+            sys.exit(1)
+    else:
+        # Generate single template file
         template_code = _generate_template(template_type)
         
-        with open(output_file, 'w') as f:
-            f.write(template_code)
+        if not target_directory:
+            target_directory = f"{template_type}_agent.py"
         
-        echo(style(f"✓ Template generated: {output_file}", fg='green'))
-        echo(f"  Type: {template_type}")
+        target_path = Path(target_directory)
         
-    except Exception as e:
-        echo(style(f"✗ Error generating template: {e}", fg='red'))
-        sys.exit(1)
+        try:
+            with open(target_path, 'w') as f:
+                f.write(template_code)
+            
+            echo(style(f"✅ Template generated: {target_path}", fg='green'))
+            if verbose:
+                echo(f"Template type: {template_type}")
+                echo(f"Output file: {target_path}")
+                
+        except Exception as e:
+            echo(style(f"❌ Error generating template: {e}", fg='red'))
+            sys.exit(1)
 
 
 @cli.group()
@@ -478,6 +615,12 @@ def jobs():
 @cli.group()
 def hired():
     """Manage your hired agents."""
+    pass
+
+
+@cli.group()
+def deploy():
+    """Deploy and manage ACP server agents."""
     pass
 
 
@@ -903,13 +1046,330 @@ def config(ctx, base_url, api_key, author, email, show):
         echo("No configuration changes specified. Use --show to see current config.")
 
 
+# ============================================================================
+# ACP Server Deployment Commands
+# ============================================================================
+
+@deploy.command()
+@click.argument('hiring_id', type=int)
+@click.option('--base-url', help='Base URL of the AgentHub server')
+@click.option('--wait', '-w', is_flag=True, help='Wait for deployment completion')
+@click.option('--timeout', '-t', default=300, help='Timeout in seconds')
+@click.pass_context
+def create(ctx, hiring_id, base_url, wait, timeout):
+    """Create a deployment for a hired ACP agent."""
+    verbose = ctx.obj.get('verbose', False)
+    
+    base_url = base_url or cli_config.get('base_url', 'http://localhost:8002')
+    
+    try:
+        echo(style(f"🚀 Creating deployment for hiring {hiring_id}...", fg='blue'))
+        
+        async def create_deployment():
+            async with AgentHubClient(base_url) as client:
+                result = await client.create_deployment(hiring_id)
+                return result
+        
+        result = asyncio.run(create_deployment())
+        
+        echo(style("✅ Deployment created successfully!", fg='green'))
+        echo(f"  Deployment ID: {result.get('deployment_id')}")
+        echo(f"  Status: {result.get('status')}")
+        echo(f"  Proxy Endpoint: {result.get('proxy_endpoint')}")
+        echo(f"  Message: {result.get('message')}")
+        
+        if wait and result.get('deployment_id'):
+            echo(style("⏳ Waiting for deployment to complete...", fg='yellow'))
+            import time
+            
+            deployment_id = result.get('deployment_id')
+            start_time = time.time()
+            
+            while time.time() - start_time < timeout:
+                time.sleep(5)  # Check every 5 seconds
+                
+                # Check deployment status via direct API call
+                import requests
+                try:
+                    response = requests.get(f"{base_url}/api/v1/deployment/status/{deployment_id}")
+                    if response.status_code == 200:
+                        status_data = response.json()
+                        current_status = status_data.get('status', 'unknown')
+                        
+                        echo(f"  Current status: {current_status}")
+                        
+                        if current_status == 'running':
+                            echo(style("🎉 Deployment completed successfully!", fg='green'))
+                            echo(f"  Container Status: {status_data.get('container_status')}")
+                            echo(f"  Health Check: {status_data.get('is_healthy')}")
+                            break
+                        elif current_status == 'failed':
+                            echo(style("❌ Deployment failed!", fg='red'))
+                            echo(f"  Error: {status_data.get('error')}")
+                            sys.exit(1)
+                except Exception as e:
+                    echo(f"  Error checking status: {e}")
+            else:
+                echo(style("⏱️ Deployment timeout reached", fg='yellow'))
+                echo("Use 'agenthub deploy status <deployment_id>' to check progress")
+        
+        if verbose:
+            echo("Full response:")
+            echo(json.dumps(result, indent=2))
+            
+    except Exception as e:
+        echo(style(f"✗ Error creating deployment: {e}", fg='red'))
+        sys.exit(1)
+
+
+@deploy.command()
+@click.argument('agent_id', type=int)
+@click.option('--base-url', help='Base URL of the AgentHub server')
+@click.option('--wait', '-w', is_flag=True, help='Wait for deployment completion')
+@click.option('--timeout', '-t', default=300, help='Timeout in seconds')
+@click.pass_context
+def start(ctx, agent_id, base_url, wait, timeout):
+    """Deploy an ACP server agent."""
+    verbose = ctx.obj.get('verbose', False)
+    
+    base_url = base_url or cli_config.get('base_url', 'http://localhost:8002')
+    
+    try:
+        echo(style(f"🚀 Deploying agent {agent_id}...", fg='blue'))
+        
+        async def deploy_agent():
+            async with AgentHubClient(base_url) as client:
+                result = await client.deploy_agent(agent_id)
+                return result
+        
+        result = asyncio.run(deploy_agent())
+        
+        echo(style("✅ Deployment initiated!", fg='green'))
+        echo(f"  Deployment ID: {result.get('deployment_id')}")
+        echo(f"  Status: {result.get('status')}")
+        echo(f"  Port: {result.get('port', 'TBD')}")
+        
+        if wait:
+            echo(style("⏳ Waiting for deployment to complete...", fg='yellow'))
+            import time
+            start_time = time.time()
+            
+            while time.time() - start_time < timeout:
+                time.sleep(5)  # Check every 5 seconds
+                
+                # Check deployment status
+                async def check_status():
+                    async with AgentHubClient(base_url) as client:
+                        status = await client.get_deployment_status(agent_id)
+                        return status
+                
+                status = asyncio.run(check_status())
+                current_status = status.get('status', 'unknown')
+                
+                if current_status == 'running':
+                    echo(style("🎉 Deployment completed successfully!", fg='green'))
+                    echo(f"  URL: {status.get('url')}")
+                    echo(f"  Health: {status.get('health_status')}")
+                    break
+                elif current_status == 'failed':
+                    echo(style("❌ Deployment failed!", fg='red'))
+                    echo(f"  Error: {status.get('error')}")
+                    sys.exit(1)
+                else:
+                    echo(f"  Status: {current_status}")
+            else:
+                echo(style("⏱️ Deployment timeout reached", fg='yellow'))
+                
+        if verbose:
+            echo("Full response:")
+            echo(json.dumps(result, indent=2))
+            
+    except Exception as e:
+        echo(style(f"✗ Error deploying agent: {e}", fg='red'))
+        sys.exit(1)
+
+
+@deploy.command()
+@click.argument('agent_id', type=int)
+@click.option('--base-url', help='Base URL of the AgentHub server')
+@click.pass_context
+def stop(ctx, agent_id, base_url):
+    """Stop a deployed ACP server agent."""
+    verbose = ctx.obj.get('verbose', False)
+    
+    base_url = base_url or cli_config.get('base_url', 'http://localhost:8002')
+    
+    try:
+        echo(style(f"🛑 Stopping deployment for agent {agent_id}...", fg='blue'))
+        
+        async def stop_agent():
+            async with AgentHubClient(base_url) as client:
+                result = await client.stop_deployment(agent_id)
+                return result
+        
+        result = asyncio.run(stop_agent())
+        
+        echo(style("✅ Deployment stopped!", fg='green'))
+        echo(f"  Status: {result.get('status')}")
+        
+        if verbose:
+            echo("Full response:")
+            echo(json.dumps(result, indent=2))
+            
+    except Exception as e:
+        echo(style(f"✗ Error stopping deployment: {e}", fg='red'))
+        sys.exit(1)
+
+
+@deploy.command(name='list')
+@click.option('--status', '-s', help='Filter by status')
+@click.option('--base-url', help='Base URL of the AgentHub server')
+@click.pass_context
+def list_deployments(ctx, status, base_url):
+    """List all agent deployments."""
+    verbose = ctx.obj.get('verbose', False)
+    
+    base_url = base_url or cli_config.get('base_url', 'http://localhost:8002')
+    
+    try:
+        echo(style("📋 Fetching deployments...", fg='blue'))
+        
+        async def get_deployments():
+            async with AgentHubClient(base_url) as client:
+                result = await client.list_deployments()
+                return result
+        
+        result = asyncio.run(get_deployments())
+        deployments = result.get('deployments', [])
+        
+        if status:
+            deployments = [d for d in deployments if d.get('status') == status]
+        
+        if not deployments:
+            echo(style("No deployments found.", fg='yellow'))
+            return
+        
+        echo(style(f"Found {len(deployments)} deployments:", fg='green'))
+        echo()
+        
+        for deployment in deployments:
+            status_color = {
+                'running': 'green',
+                'building': 'yellow',
+                'deploying': 'blue',
+                'failed': 'red',
+                'stopped': 'grey'
+            }.get(deployment.get('status'), 'white')
+            
+            echo(f"🚀 {style(deployment.get('agent_name', 'Unknown'), fg='cyan', bold=True)} (Agent ID: {deployment.get('agent_id')})")
+            echo(f"   Status: {style(deployment.get('status', 'unknown'), fg=status_color)}")
+            echo(f"   Port: {deployment.get('port', 'N/A')}")
+            echo(f"   URL: {deployment.get('url', 'N/A')}")
+            echo(f"   Health: {deployment.get('health_status', 'N/A')}")
+            if deployment.get('created_at'):
+                echo(f"   Created: {deployment.get('created_at')}")
+            echo()
+            
+    except Exception as e:
+        echo(style(f"✗ Error fetching deployments: {e}", fg='red'))
+        sys.exit(1)
+
+
+@deploy.command()
+@click.argument('agent_id', type=int)
+@click.option('--base-url', help='Base URL of the AgentHub server')
+@click.pass_context
+def status(ctx, agent_id, base_url):
+    """Check deployment status for an agent."""
+    verbose = ctx.obj.get('verbose', False)
+    
+    base_url = base_url or cli_config.get('base_url', 'http://localhost:8002')
+    
+    try:
+        echo(style(f"📊 Checking deployment status for agent {agent_id}...", fg='blue'))
+        
+        async def check_status():
+            async with AgentHubClient(base_url) as client:
+                result = await client.get_deployment_status(agent_id)
+                return result
+        
+        result = asyncio.run(check_status())
+        
+        status_color = {
+            'running': 'green',
+            'building': 'yellow',
+            'deploying': 'blue',
+            'failed': 'red',
+            'stopped': 'grey'
+        }.get(result.get('status'), 'white')
+        
+        echo(style("📊 Deployment Status:", fg='green'))
+        echo(f"  Agent ID: {result.get('agent_id')}")
+        echo(f"  Status: {style(result.get('status', 'unknown'), fg=status_color)}")
+        echo(f"  Port: {result.get('port', 'N/A')}")
+        echo(f"  URL: {result.get('url', 'N/A')}")
+        echo(f"  Health: {result.get('health_status', 'N/A')}")
+        
+        if result.get('error'):
+            echo(f"  Error: {style(result.get('error'), fg='red')}")
+        
+        if result.get('logs'):
+            echo(f"  Recent logs:")
+            for log in result.get('logs')[-5:]:  # Last 5 log entries
+                echo(f"    {log}")
+        
+        if verbose:
+            echo("Full response:")
+            echo(json.dumps(result, indent=2))
+            
+    except Exception as e:
+        echo(style(f"✗ Error checking deployment status: {e}", fg='red'))
+        sys.exit(1)
+
+
 def _create_agent_files(target_dir: Path, config: AgentConfig, agent_type: str, verbose: bool):
     """Create agent files in the target directory."""
+    
+    # For ACP server agents, modify the config to include ACP manifest
+    if agent_type == 'acp_server':
+        config_dict = config.to_dict()
+        config_dict['agent_type'] = 'acp_server'
+        config_dict['acp_manifest'] = {
+            "acp_version": "1.0.0",
+            "endpoints": {
+                "health": "/health",
+                "info": "/info", 
+                "chat": "/chat",
+                "status": "/"
+            },
+            "capabilities": [
+                "text_processing",
+                "session_management",
+                "persistent_service",
+                "health_monitoring"
+            ],
+            "deployment": {
+                "port": 8001,
+                "health_check_path": "/health",
+                "startup_timeout": 30,
+                "shutdown_timeout": 10,
+                "environment_variables": {
+                    "PORT": "Server port (default: 8001)",
+                    "HOST": "Server host (default: 0.0.0.0)", 
+                    "DEBUG": "Enable debug mode (default: false)",
+                    "CORS_ORIGINS": "Comma-separated allowed origins (default: *)",
+                    "MAX_MESSAGE_LENGTH": "Maximum message length (default: 10000)",
+                    "SESSION_TIMEOUT": "Session timeout in seconds (default: 3600)"
+                }
+            }
+        }
+    else:
+        config_dict = config.to_dict()
     
     # Create config.json
     config_file = target_dir / "config.json"
     with open(config_file, 'w') as f:
-        json.dump(config.to_dict(), f, indent=2)
+        json.dump(config_dict, f, indent=2)
     
     # Create main agent file
     agent_code = _generate_agent_code(config, agent_type)
@@ -920,7 +1380,13 @@ def _create_agent_files(target_dir: Path, config: AgentConfig, agent_type: str, 
     # Create requirements.txt
     requirements_file = target_dir / "requirements.txt"
     with open(requirements_file, 'w') as f:
-        if config.requirements:
+        if agent_type == 'acp_server':
+            # Add ACP server requirements
+            f.write("aiohttp>=3.8.0,<4.0.0\n")
+            f.write("aiohttp-cors>=0.7.0,<1.0.0\n")
+            if config.requirements:
+                f.write('\n'.join(config.requirements))
+        elif config.requirements:
             f.write('\n'.join(config.requirements))
         else:
             f.write("# Add your agent dependencies here\n")
@@ -928,12 +1394,18 @@ def _create_agent_files(target_dir: Path, config: AgentConfig, agent_type: str, 
     # Create README.md
     readme_file = target_dir / "README.md"
     with open(readme_file, 'w') as f:
-        f.write(_generate_readme(config))
+        f.write(_generate_readme(config, agent_type))
     
     # Create .gitignore
     gitignore_file = target_dir / ".gitignore"
     with open(gitignore_file, 'w') as f:
         f.write(_generate_gitignore())
+    
+    # Create Dockerfile for ACP server agents
+    if agent_type == 'acp_server':
+        dockerfile = target_dir / "Dockerfile"
+        with open(dockerfile, 'w') as f:
+            f.write(_generate_dockerfile(config))
     
     if verbose:
         echo(f"  Created: {config_file}")
@@ -941,6 +1413,8 @@ def _create_agent_files(target_dir: Path, config: AgentConfig, agent_type: str, 
         echo(f"  Created: {requirements_file}")
         echo(f"  Created: {readme_file}")
         echo(f"  Created: {gitignore_file}")
+        if agent_type == 'acp_server':
+            echo(f"  Created: {dockerfile}")
 
 
 def _generate_agent_code(config: AgentConfig, agent_type: str) -> str:
@@ -1142,12 +1616,481 @@ if __name__ == "__main__":
     print(json.dumps(result, indent=2))
 '''
     
+    elif agent_type == 'acp_server':
+        agent_class_name = config.name.replace(' ', '').replace('-', '_').replace('.', '_')
+        return f'''#!/usr/bin/env python3
+"""
+{config.name} - ACP Server Agent
+{config.description}
+
+This is an ACP (Agent Communication Protocol) server agent that provides
+HTTP endpoints for health monitoring, agent information, and chat processing.
+"""
+
+import asyncio
+import json
+import logging
+import os
+import traceback
+from datetime import datetime, timezone
+from typing import Dict, Any, List, Optional
+from aiohttp import web, ClientSession
+import aiohttp_cors
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+
+class {agent_class_name}:
+    """
+    {config.name} - ACP Server Agent
+    
+    This agent provides standard ACP endpoints and can be customized
+    for specific use cases.
+    """
+    
+    def __init__(self, 
+                 name: str = "{config.name}",
+                 version: str = "{config.version}",
+                 description: str = "{config.description}"):
+        self.name = name
+        self.version = version
+        self.description = description
+        self.started_at = None
+        self.session_count = 0
+        self.message_count = 0
+        self.sessions: Dict[str, Dict[str, Any]] = {{}}
+        
+        # Load configuration from environment
+        self.config = {{
+            'debug': os.getenv('DEBUG', 'false').lower() == 'true',
+            'cors_origins': os.getenv('CORS_ORIGINS', '*').split(','),
+            'max_message_length': int(os.getenv('MAX_MESSAGE_LENGTH', '10000')),
+            'session_timeout': int(os.getenv('SESSION_TIMEOUT', '3600')),  # 1 hour
+        }}
+        
+        logger.info(f"Initialized {{self.name}} v{{self.version}}")
+    
+    async def create_app(self) -> web.Application:
+        """Create and configure the aiohttp web application."""
+        app = web.Application()
+        
+        # Configure CORS
+        cors = aiohttp_cors.setup(app, defaults={{
+            origin: aiohttp_cors.ResourceOptions(
+                allow_credentials=True,
+                expose_headers="*",
+                allow_headers="*",
+                allow_methods="*"
+            ) for origin in self.config['cors_origins']
+        }})
+        
+        # Add routes
+        app.router.add_get('/health', self.health_check)
+        app.router.add_get('/info', self.get_info)
+        app.router.add_post('/chat', self.handle_chat)
+        app.router.add_get('/', self.get_status)
+        
+        # Add CORS to all routes
+        for route in list(app.router.routes()):
+            cors.add(route)
+        
+        # Add middleware (wrapped to handle self parameter correctly)
+        @web.middleware
+        async def error_middleware_wrapper(request, handler):
+            return await self.error_middleware(request, handler)
+        
+        @web.middleware
+        async def logging_middleware_wrapper(request, handler):
+            return await self.logging_middleware(request, handler)
+        
+        app.middlewares.append(error_middleware_wrapper)
+        app.middlewares.append(logging_middleware_wrapper)
+        
+        self.started_at = datetime.now(timezone.utc)
+        return app
+    
+    # =============================================================================
+    # STANDARD ACP ENDPOINTS
+    # =============================================================================
+    
+    async def health_check(self, request: web.Request) -> web.Response:
+        """Health check endpoint for monitoring and load balancers."""
+        uptime = (datetime.now(timezone.utc) - self.started_at).total_seconds() if self.started_at else 0
+        
+        health_data = {{
+            "status": "healthy",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "uptime_seconds": uptime,
+            "version": self.version,
+            "sessions_active": len(self.sessions),
+            "messages_processed": self.message_count
+        }}
+        
+        return web.json_response(health_data)
+    
+    async def get_info(self, request: web.Request) -> web.Response:
+        """Get comprehensive agent information and capabilities."""
+        info_data = {{
+            "name": self.name,
+            "version": self.version,
+            "description": self.description,
+            "agent_type": "acp_server",
+            "endpoints": {{
+                "health": "/health",
+                "info": "/info",
+                "chat": "/chat",
+                "status": "/"
+            }},
+            "capabilities": [
+                "text_processing",
+                "session_management", 
+                "persistent_service",
+                "health_monitoring"
+            ],
+            "configuration": {{
+                "max_message_length": self.config['max_message_length'],
+                "session_timeout": self.config['session_timeout'],
+                "cors_enabled": True
+            }},
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "stats": {{
+                "sessions_active": len(self.sessions),
+                "sessions_total": self.session_count,
+                "messages_processed": self.message_count
+            }}
+        }}
+        
+        return web.json_response(info_data)
+    
+    async def handle_chat(self, request: web.Request) -> web.Response:
+        """Handle chat messages with session management."""
+        try:
+            data = await request.json()
+            message = data.get('message', '')
+            session_id = data.get('session_id')
+            context = data.get('context', {{}})
+            
+            # Validate message
+            if not message:
+                return web.json_response({{
+                    "error": "Message cannot be empty",
+                    "code": "EMPTY_MESSAGE"
+                }}, status=400)
+            
+            # Get or create session
+            session = await self.get_or_create_session(session_id, context)
+            
+            # Process the message
+            response = await self.process_chat_message(message, session, context)
+            
+            # Update session history
+            session['messages'].append({{
+                'timestamp': datetime.now(timezone.utc).isoformat(),
+                'type': 'user',
+                'content': message
+            }})
+            session['messages'].append({{
+                'timestamp': datetime.now(timezone.utc).isoformat(),
+                'type': 'agent',
+                'content': response['response']
+            }})
+            session['last_activity'] = datetime.now(timezone.utc)
+            
+            self.message_count += 1
+            
+            # Return response
+            return web.json_response({{
+                **response,
+                "session_id": session['id'],
+                "message_count": len(session['messages'])
+            }})
+            
+        except json.JSONDecodeError:
+            return web.json_response({{
+                "error": "Invalid JSON payload",
+                "code": "INVALID_JSON"
+            }}, status=400)
+        except Exception as e:
+            logger.error(f"Error in chat handler: {{e}}")
+            return web.json_response({{
+                "error": "Internal server error",
+                "code": "INTERNAL_ERROR",
+                "details": str(e) if self.config['debug'] else None
+            }}, status=500)
+    
+    async def get_status(self, request: web.Request) -> web.Response:
+        """Get general server status and information."""
+        uptime = (datetime.now(timezone.utc) - self.started_at).total_seconds() if self.started_at else 0
+        
+        return web.json_response({{
+            "message": f"🚀 {{self.name}} is running!",
+            "agent": self.name,
+            "version": self.version,
+            "status": "operational",
+            "uptime_seconds": uptime,
+            "endpoints": ["/health", "/info", "/chat"],
+            "stats": {{
+                "sessions_active": len(self.sessions),
+                "sessions_total": self.session_count,
+                "messages_processed": self.message_count
+            }}
+        }})
+    
+    # =============================================================================
+    # CORE PROCESSING METHODS (CUSTOMIZE THESE)
+    # =============================================================================
+    
+    async def process_chat_message(self, message: str, session: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Process a chat message and generate a response.
+        
+        CUSTOMIZE THIS METHOD for your agent's specific functionality.
+        
+        Args:
+            message: The user's message
+            session: Session data including history
+            context: Additional context from the request
+            
+        Returns:
+            Dictionary with response data
+        """
+        # Default implementation - replace with your agent logic
+        response_text = f"Hello! I received your message: '{{message}}'. I'm {{self.name}}."
+        
+        # Add some context-aware responses
+        if 'hello' in message.lower():
+            response_text = f"Hello! Nice to meet you. I'm {{self.name}}, version {{self.version}}."
+        elif 'help' in message.lower():
+            response_text = "I'm here to help! You can chat with me. Try asking about my capabilities!"
+        elif 'capabilities' in message.lower():
+            response_text = "I can process text messages, maintain conversations, and provide information. You can customize my functionality by modifying the process_chat_message method."
+        
+        return {{
+            "agent": self.name,
+            "version": self.version,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "response": response_text,
+            "processed": True,
+            "message_id": f"msg_{{self.message_count + 1}}"
+        }}
+    
+    # =============================================================================
+    # UTILITY METHODS
+    # =============================================================================
+    
+    async def get_or_create_session(self, session_id: Optional[str] = None, context: Dict[str, Any] = None) -> Dict[str, Any]:
+        """Get existing session or create a new one."""
+        if session_id and session_id in self.sessions:
+            return self.sessions[session_id]
+        
+        # Create new session
+        if not session_id:
+            session_id = f"session_{{self.session_count + 1}}_{{int(datetime.now().timestamp())}}"
+        
+        self.session_count += 1
+        session = {{
+            'id': session_id,
+            'created_at': datetime.now(timezone.utc),
+            'last_activity': datetime.now(timezone.utc),
+            'messages': [],
+            'context': context or {{}}
+        }}
+        
+        self.sessions[session_id] = session
+        return session
+    
+    # =============================================================================
+    # MIDDLEWARE
+    # =============================================================================
+    
+    async def error_middleware(self, request: web.Request, handler):
+        """Global error handling middleware."""
+        try:
+            return await handler(request)
+        except web.HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Unhandled error: {{e}}\\n{{traceback.format_exc()}}")
+            return web.json_response({{
+                "error": "Internal server error",
+                "code": "UNHANDLED_ERROR",
+                "details": str(e) if self.config['debug'] else None
+            }}, status=500)
+    
+    async def logging_middleware(self, request: web.Request, handler):
+        """Request logging middleware."""
+        start_time = datetime.now()
+        response = await handler(request)
+        end_time = datetime.now()
+        
+        duration = (end_time - start_time).total_seconds() * 1000
+        logger.info(f"{{request.method}} {{request.path}} - {{response.status}} - {{duration:.2f}}ms")
+        
+        return response
+
+
+async def main():
+    """
+    Main entry point for the ACP agent server.
+    
+    Environment variables:
+        PORT: Server port (default: 8001)
+        HOST: Server host (default: 0.0.0.0)
+        DEBUG: Enable debug mode (default: false)
+        CORS_ORIGINS: Comma-separated list of allowed origins (default: *)
+        MAX_MESSAGE_LENGTH: Maximum message length (default: 10000)
+        SESSION_TIMEOUT: Session timeout in seconds (default: 3600)
+    """
+    # Create agent instance
+    agent = {agent_class_name}()
+    
+    # Create web application
+    app = await agent.create_app()
+    
+    # Get configuration from environment
+    host = os.getenv("HOST", "0.0.0.0")
+    port = int(os.getenv("PORT", 8001))
+    
+    # Start the server
+    runner = web.AppRunner(app)
+    await runner.setup()
+    
+    site = web.TCPSite(runner, host, port)
+    await site.start()
+    
+    logger.info(f"🚀 {{agent.name}} server started on {{host}}:{{port}}")
+    logger.info(f"Health check: http://{{host}}:{{port}}/health")
+    logger.info(f"Agent info: http://{{host}}:{{port}}/info")
+    logger.info(f"Chat endpoint: http://{{host}}:{{port}}/chat")
+    
+    # Keep the server running
+    try:
+        while True:
+            await asyncio.sleep(1)
+    except KeyboardInterrupt:
+        logger.info("Shutting down server...")
+    finally:
+        await runner.cleanup()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+'''
+    
     return ""
 
 
-def _generate_readme(config: AgentConfig) -> str:
+def _generate_readme(config: AgentConfig, agent_type: str) -> str:
     """Generate README file content."""
-    return f"""# {config.name}
+    if agent_type == 'acp_server':
+        return f"""# {config.name}
+
+{config.description}
+
+## Configuration
+
+- **Version**: {config.version}
+- **Author**: {config.author}
+- **Email**: {config.email}
+- **Category**: {config.category}
+- **Pricing**: {config.pricing_model}
+- **Agent Type**: ACP Server
+- **Entry Point**: {config.entry_point}
+
+## ACP Server Agent
+
+This is an ACP (Agent Communication Protocol) server agent that provides HTTP endpoints for communication.
+
+### Endpoints
+
+- `GET /health` - Health check and status
+- `GET /info` - Agent information and capabilities
+- `POST /chat` - Chat with the agent
+- `GET /` - Server status
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | `8001` | Server port |
+| `HOST` | `0.0.0.0` | Server host |
+| `DEBUG` | `false` | Enable debug mode |
+| `CORS_ORIGINS` | `*` | Allowed CORS origins (comma-separated) |
+| `MAX_MESSAGE_LENGTH` | `10000` | Maximum message length |
+| `SESSION_TIMEOUT` | `3600` | Session timeout in seconds |
+
+### Usage
+
+#### Local Testing
+
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Run the agent
+python {config.entry_point}
+
+# Test the endpoints
+curl http://localhost:8001/health
+curl http://localhost:8001/info
+curl -X POST http://localhost:8001/chat \\
+  -H "Content-Type: application/json" \\
+  -d '{{"message": "Hello!"}}'
+```
+
+#### Docker
+
+```bash
+# Build image
+docker build -t {config.name.lower().replace(' ', '-')} .
+
+# Run container
+docker run -d \\
+  --name {config.name.lower().replace(' ', '-')} \\
+  -p 8001:8001 \\
+  {config.name.lower().replace(' ', '-')}
+```
+
+#### Publishing to AgentHub
+
+```bash
+# Validate the agent
+agenthub agent validate
+
+# Publish to platform
+agenthub agent publish
+```
+
+### Customization
+
+To customize the agent's behavior, modify the `process_chat_message` method in `{config.entry_point}`:
+
+```python
+async def process_chat_message(self, message: str, session: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+    # Add your custom logic here
+    if "weather" in message.lower():
+        response = "I can help with weather information!"
+    else:
+        response = f"You said: {{message}}"
+    
+    return {{
+        "agent": self.name,
+        "response": response,
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }}
+```
+
+### Support
+
+For questions about agent development and deployment, refer to the AgentHub documentation.
+"""
+    else:
+        return f"""# {config.name}
 
 {config.description}
 
@@ -1170,34 +2113,23 @@ This agent can be executed through the AgentHub platform or tested locally.
 python {config.entry_point}
 ```
 
-### Using the CLI
+### Publishing to AgentHub
 
 ```bash
 # Validate the agent
 agenthub agent validate
 
-# Test the agent
-agenthub agent test
-
-# Publish the agent
+# Publish to platform
 agenthub agent publish
 ```
 
-## Requirements
-
-{chr(10).join(f'- {req}' for req in config.requirements) if config.requirements else 'No external requirements'}
-
-## Tags
-
-{', '.join(config.tags) if config.tags else 'No tags'}
-
 ## Development
 
-1. Modify the agent code in `{config.entry_point}`
-2. Update requirements in `requirements.txt`
-3. Test locally with sample data
-4. Validate with `agenthub agent validate`
-5. Publish with `agenthub agent publish`
+Add your agent logic to the main function in `{config.entry_point}`.
+
+## Support
+
+For questions about agent development, refer to the AgentHub documentation.
 """
 
 
@@ -1437,6 +2369,78 @@ def _generate_template(template_type: str) -> str:
     )
     
     return _generate_agent_code(base_config, template_type)
+
+
+def _generate_dockerfile(config: AgentConfig) -> str:
+    """Generate Dockerfile for ACP server agents."""
+    return f"""FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \\
+    gcc \\
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements and install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy agent code
+COPY . .
+
+# Expose ACP port
+EXPOSE 8080
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \\
+    CMD curl -f http://localhost:8080/health || exit 1
+
+# Run the agent
+CMD ["python", "{config.entry_point}"]
+"""
+
+
+def _generate_acp_manifest(config: AgentConfig) -> str:
+    """Generate ACP manifest.json for agent discovery."""
+    manifest = {
+        "name": config.name,
+        "version": config.version,
+        "description": config.description,
+        "author": config.author,
+        "email": config.email,
+        "acp_version": "1.0.0",
+        "agent_type": "acp_server",
+        "endpoints": {
+            "health": "/health",
+            "chat": "/chat",
+            "tools": "/tools"
+        },
+        "capabilities": [
+            "text_processing",
+            "tool_calling",
+            "async_processing"
+        ],
+        "requirements": {
+            "python": ">=3.8",
+            "acp_sdk": ">=0.1.0"
+        },
+        "deployment": {
+            "port": 8080,
+            "health_check_path": "/health",
+            "startup_timeout": 30,
+            "shutdown_timeout": 10
+        },
+        "tags": config.tags or [],
+        "category": config.category or "general",
+        "pricing": {
+            "model": config.pricing_model,
+            "price_per_use": config.price_per_use,
+            "monthly_price": config.monthly_price
+        }
+    }
+    
+    return json.dumps(manifest, indent=2)
 
 
 if __name__ == '__main__':
