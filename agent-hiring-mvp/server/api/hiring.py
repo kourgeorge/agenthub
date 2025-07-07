@@ -150,7 +150,7 @@ def suspend_hiring(
     notes: Optional[str] = None,
     db: Session = Depends(get_session_dependency)
 ):
-    """Suspend a hiring."""
+    """Suspend a hiring and automatically stop associated deployments."""
     hiring_service = HiringService(db)
     hiring = hiring_service.suspend_hiring(hiring_id, notes)
     
@@ -163,7 +163,7 @@ def suspend_hiring(
     return {
         "id": hiring.id,
         "status": hiring.status,
-        "message": "Hiring suspended successfully"
+        "message": "Hiring suspended successfully. Associated deployments have been stopped."
     }
 
 
@@ -173,7 +173,7 @@ def cancel_hiring(
     notes: Optional[str] = None,
     db: Session = Depends(get_session_dependency)
 ):
-    """Cancel a hiring."""
+    """Cancel a hiring and automatically stop associated deployments."""
     hiring_service = HiringService(db)
     hiring = hiring_service.cancel_hiring(hiring_id, notes)
     
@@ -186,7 +186,7 @@ def cancel_hiring(
     return {
         "id": hiring.id,
         "status": hiring.status,
-        "message": "Hiring cancelled successfully"
+        "message": "Hiring cancelled successfully. Associated deployments have been stopped."
     }
 
 
