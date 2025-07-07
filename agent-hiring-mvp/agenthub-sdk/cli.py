@@ -998,11 +998,36 @@ def info_hired(ctx, hiring_id, base_url):
     try:
         echo(style(f"🔍 Fetching hiring details for {hiring_id}...", fg='blue'))
         
-        # Note: This would require an API endpoint for hiring details
-        # For now, we'll show a placeholder
-        echo(style("⚠️  Hiring details feature requires server-side implementation", fg='yellow'))
-        echo("Contact your AgentHub administrator to enable hiring management.")
+        async def get_hiring_details():
+            async with AgentHubClient(base_url) as client:
+                result = await client.get_hiring_details(hiring_id)
+                return result
         
+        details = asyncio.run(get_hiring_details())
+        
+        # Display hiring details
+        echo(style(f"📋 Hiring Details (ID: {hiring_id})", fg='cyan', bold=True))
+        echo(f"   Status: {style(details['status'], fg='green' if details['status'] == 'active' else 'yellow')}")
+        echo(f"   Agent ID: {details['agent_id']}")
+        echo(f"   User ID: {details['user_id']}")
+        echo(f"   Hired At: {details['hired_at']}")
+        echo(f"   Total Executions: {details['total_executions']}")
+        
+        if details.get('last_executed_at'):
+            echo(f"   Last Executed: {details['last_executed_at']}")
+        
+        if details.get('expires_at'):
+            echo(f"   Expires At: {details['expires_at']}")
+        
+        # Display configuration if available
+        config = details.get('config', {})
+        if config:
+            echo(f"\n⚙️  Configuration:")
+            if verbose:
+                echo(json.dumps(config, indent=2))
+            else:
+                echo(f"   {len(config)} configuration items (use --verbose to see details)")
+            
     except Exception as e:
         echo(style(f"✗ Error fetching hiring details: {e}", fg='red'))
         sys.exit(1)

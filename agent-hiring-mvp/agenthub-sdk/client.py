@@ -293,6 +293,20 @@ class AgentHubClient:
             else:
                 error_text = await response.text()
                 raise Exception(f"Failed to list hired agents: {error_text}")
+
+    async def get_hiring_details(self, hiring_id: int) -> Dict[str, Any]:
+        """Get hiring information."""
+        if not self.session:
+            raise RuntimeError("Client not initialized. Use async context manager.")
+        
+        async with self.session.get(
+            f"{self.api_base}/hiring/{hiring_id}",
+        ) as response:
+            if response.status == 200:
+                return await response.json()
+            else:
+                error_text = await response.text()
+                raise Exception(f"Failed to get hiring details: {error_text}")
     
     async def cancel_hiring(self, hiring_id: int, notes: Optional[str] = None) -> Dict[str, Any]:
         """Cancel a hiring."""
