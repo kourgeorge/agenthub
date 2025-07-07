@@ -183,9 +183,9 @@ class DeploymentService:
             # TODO: Implement ZIP download and extraction
             pass
         elif agent.code:
-            # Write code directly to file
+            # Write code directly to file with UTF-8 encoding
             main_file = deploy_dir / "main.py"
-            main_file.write_text(agent.code)
+            main_file.write_text(agent.code, encoding='utf-8')
         else:
             raise ValueError("No agent code available")
         
@@ -193,7 +193,7 @@ class DeploymentService:
         requirements_file = deploy_dir / "requirements.txt"
         if not requirements_file.exists():
             requirements = agent.requirements or []
-            requirements_file.write_text("\n".join(requirements))
+            requirements_file.write_text("\n".join(requirements), encoding='utf-8')
         
         # Create basic Dockerfile if not exists
         dockerfile = deploy_dir / "Dockerfile"
@@ -222,7 +222,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \\
 # Run the application
 CMD ["python", "main.py"]
 """
-            dockerfile.write_text(dockerfile_content)
+            dockerfile.write_text(dockerfile_content, encoding='utf-8')
     
     def _build_docker_image(self, deploy_dir: Path, image_name: str):
         """Build Docker image for the agent."""

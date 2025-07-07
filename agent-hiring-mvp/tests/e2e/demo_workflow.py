@@ -151,59 +151,22 @@ def demo_agent_hiring_workflow():
     response = requests.get(f"{API_BASE}/execution/{execution_id}")
     print_response("Execution Details", response)
     
-    # Step 7: Demonstrate ACP communication
-    print_step("7", "ACP (AGENT COMMUNICATION PROTOCOL) DEMO")
-    print("Demonstrating ACP communication with the agent...")
+    # Step 7: Demonstrate ACP Protocol Information
+    print_step("7", "ACP (AGENT COMMUNICATION PROTOCOL) INFO")
+    print("Getting ACP protocol information...")
     
-    # Create ACP session
-    acp_data = {
-        "agent_id": agent_id,
-        "user_id": 1
-    }
+    # Get ACP discovery info
+    response = requests.get(f"{API_BASE}/acp/discovery")
+    print_response("ACP Discovery", response)
     
-    response = requests.post(f"{API_BASE}/acp/session", json=acp_data)
-    print_response("ACP Session Created", response)
+    # Get ACP capabilities
+    response = requests.get(f"{API_BASE}/acp/capabilities")
+    print_response("ACP Capabilities", response)
     
-    if response.status_code == 200:
-        acp_session = response.json()
-        session_id = acp_session["session_id"]
-        
-        # Send ACP message
-        acp_message = {
-            "type": "start",
-            "session_id": session_id
-        }
-        
-        response = requests.post(f"{API_BASE}/acp/{session_id}/message", json=acp_message)
-        print_response("ACP Start Message", response)
-        
-        # Call a tool via ACP
-        tool_call = {
-            "type": "tool_call",
-            "tool": "search",
-            "args": {"query": "data analysis best practices"}
-        }
-        
-        response = requests.post(f"{API_BASE}/acp/{session_id}/message", json=tool_call)
-        print_response("ACP Tool Call", response)
-        
-        # Submit result via ACP
-        result_message = {
-            "type": "result",
-            "result": {
-                "analysis": "Data analysis completed successfully",
-                "insights": ["Trend identified", "Anomaly detected"],
-                "recommendations": ["Implement monitoring", "Review data quality"]
-            }
-        }
-        
-        response = requests.post(f"{API_BASE}/acp/{session_id}/message", json=result_message)
-        print_response("ACP Result Submission", response)
-        
-        # End ACP session
-        end_message = {"type": "end"}
-        response = requests.post(f"{API_BASE}/acp/{session_id}/message", json=end_message)
-        print_response("ACP Session Ended", response)
+    print("Note: For actual agent communication, use the deployment + agent-proxy workflow:")
+    print("  1. Create deployment: POST /deployment/create/{hiring_id}")
+    print("  2. Chat with agent: POST /agent-proxy/chat/{hiring_id}")
+    print("  3. Get agent info: GET /agent-proxy/info/{hiring_id}")
     
     # Step 8: View hiring statistics
     print_step("8", "VIEW STATISTICS")
@@ -241,7 +204,7 @@ def demo_agent_hiring_workflow():
     print("4. ✅ Create an execution")
     print("5. ✅ Run the agent")
     print("6. ✅ Check execution status")
-    print("7. ✅ Use ACP communication")
+    print("7. ✅ ACP protocol information")
     print("8. ✅ View statistics")
     print("9. ✅ List user hirings")
     print("10. ✅ List agent executions")
