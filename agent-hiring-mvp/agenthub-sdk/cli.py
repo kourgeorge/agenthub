@@ -1014,13 +1014,14 @@ def info_hired(ctx, hiring_id, base_url):
 @click.option('--base-url', help='Base URL of the AgentHub server')
 @click.pass_context
 def cancel_hired(ctx, hiring_id, notes, base_url):
-    """Cancel a hired agent."""
+    """Cancel a hired agent and automatically stop associated deployments."""
     verbose = ctx.obj.get('verbose', False)
     
     base_url = base_url or cli_config.get('base_url', 'http://localhost:8002')
     
     try:
         echo(style(f"🚫 Cancelling hiring {hiring_id}...", fg='yellow'))
+        echo("   ⚠️  This will automatically stop all associated deployments")
         
         async def cancel_hiring():
             async with AgentHubClient(base_url) as client:
@@ -1033,6 +1034,7 @@ def cancel_hired(ctx, hiring_id, notes, base_url):
         echo(f"  Hiring ID: {result.get('id')}")
         echo(f"  Status: {result.get('status')}")
         echo(f"  Message: {result.get('message')}")
+        echo(style("  📦 Associated deployments have been automatically stopped", fg='blue'))
         
         if verbose:
             echo("Full response:")

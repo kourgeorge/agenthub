@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from ..models.hiring import Hiring, HiringStatus
 from ..models.agent import Agent
 from ..models.user import User
+from ..models.deployment import AgentDeployment
 
 logger = logging.getLogger(__name__)
 
@@ -98,11 +99,56 @@ class HiringService:
     
     def suspend_hiring(self, hiring_id: int, notes: Optional[str] = None) -> Optional[Hiring]:
         """Suspend a hiring."""
+        # When suspending, also stop deployments but don't remove them
+        self._stop_hiring_deployments(hiring_id, suspend_only=True)
         return self.update_hiring_status(hiring_id, HiringStatus.SUSPENDED, notes)
     
     def cancel_hiring(self, hiring_id: int, notes: Optional[str] = None) -> Optional[Hiring]:
-        """Cancel a hiring."""
+        """Cancel a hiring and automatically stop associated deployments."""
+        # First stop all deployments for this hiring
+        self._stop_hiring_deployments(hiring_id, suspend_only=False)
+        
+        # Then update hiring status
         return self.update_hiring_status(hiring_id, HiringStatus.CANCELLED, notes)
+    
+    def _stop_hiring_deployments(self, hiring_id: int, suspend_only: bool = False):
+        """Stop all deployments associated with a hiring."""
+        try:
+            # Import here to avoid circular imports
+            from .deployment_service import DeploymentService
+            
+            # Find all deployments for this hiring
+            deployments = self.db.query(AgentDeployment).filter(
+                AgentDeployment.hiring_id == hiring_id
+            ).all()
+            
+            if not deployments:
+                logger.info(f"No deployments found for hiring {hiring_id}")
+                return
+            
+            # Stop each deployment
+            deployment_service = DeploymentService(self.db)
+            stopped_deployments = []
+            failed_deployments = []
+            
+            for deployment in deployments:
+                try:
+                    result = deployment_service.stop_deployment(deployment.deployment_id)
+                    if "error" in result:
+                        failed_deployments.append(deployment.deployment_id)
+                        logger.error(f"Failed to stop deployment {deployment.deployment_id}: {result['error']}")
+                    else:
+                        stopped_deployments.append(deployment.deployment_id)
+                        logger.info(f"Successfully stopped deployment {deployment.deployment_id}")
+                except Exception as e:
+                    failed_deployments.append(deployment.deployment_id)
+                    logger.error(f"Exception stopping deployment {deployment.deployment_id}: {e}")
+            
+            action = "suspended" if suspend_only else "cancelled"
+            logger.info(f"Hiring {hiring_id} {action}: stopped {len(stopped_deployments)} deployments, {len(failed_deployments)} failed")
+            
+        except Exception as e:
+            logger.error(f"Failed to stop deployments for hiring {hiring_id}: {e}")
     
     def get_hiring_stats(self, user_id: Optional[int] = None, agent_id: Optional[int] = None) -> Dict[str, Any]:
         """Get hiring statistics."""
