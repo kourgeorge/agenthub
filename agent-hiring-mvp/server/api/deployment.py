@@ -101,11 +101,19 @@ async def health_check(
 @router.get("/list")
 def list_deployments(
     agent_id: Optional[int] = None,
+    deployment_status: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
-    """List all deployments."""
+    """List deployments with optional filtering by agent ID and status."""
     deployment_service = DeploymentService(db)
-    deployments = deployment_service.list_deployments(agent_id)
+    
+    try:
+        deployments = deployment_service.list_deployments(agent_id, deployment_status)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
     
     return {
         "deployments": deployments,

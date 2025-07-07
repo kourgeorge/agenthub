@@ -548,13 +548,21 @@ class AgentHubClient:
                 error_text = await response.text()
                 raise Exception(f"Failed to get deployment status: {error_text}")
     
-    async def list_deployments(self) -> Dict[str, Any]:
-        """List all deployments."""
+    async def list_deployments(self, agent_id: Optional[int] = None, status: Optional[str] = None) -> Dict[str, Any]:
+        """List deployments with optional filtering."""
         if not self.session:
             raise RuntimeError("Client not initialized. Use async context manager.")
         
+        # Build query parameters
+        params = {}
+        if agent_id:
+            params["agent_id"] = agent_id
+        if status and status != "all":
+            params["deployment_status"] = status
+        
         async with self.session.get(
             f"{self.api_base}/deployment/list",
+            params=params,
         ) as response:
             if response.status == 200:
                 return await response.json()

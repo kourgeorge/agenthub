@@ -396,14 +396,21 @@ CMD ["python", "main.py"]
             self.db.commit()
             return {"status": "unhealthy", "error": str(e)}
     
-    def list_deployments(self, agent_id: Optional[int] = None) -> List[Dict[str, Any]]:
-        """List all deployments."""
+    def list_deployments(self, agent_id: Optional[int] = None, status: Optional[str] = None) -> List[Dict[str, Any]]:
+        """List deployments with optional filtering."""
         query = self.db.query(AgentDeployment)
         
         if agent_id:
             query = query.filter(AgentDeployment.agent_id == agent_id)
         
-        deployments = query.all()
+        if status:
+            # Validate status value
+            valid_statuses = [s.value for s in DeploymentStatus]
+            if status not in valid_statuses:
+                raise ValueError(f"Invalid status: {status}. Valid statuses: {valid_statuses}")
+            query = query.filter(AgentDeployment.status == status)
+        
+        deployments = query.order_by(AgentDeployment.created_at.desc()).all()
         
         return [
             {
@@ -413,6 +420,8 @@ CMD ["python", "main.py"]
                 "status": deployment.status,
                 "proxy_endpoint": deployment.proxy_endpoint,
                 "created_at": deployment.created_at.isoformat(),
+                "started_at": deployment.started_at.isoformat() if deployment.started_at else None,
+                "stopped_at": deployment.stopped_at.isoformat() if deployment.stopped_at else None,
                 "is_healthy": deployment.is_healthy
             }
             for deployment in deployments

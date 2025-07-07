@@ -1454,44 +1454,73 @@ def stop(ctx, deployment_id, base_url):
 
 
 @deploy.command(name='list')
-@click.option('--status', '-s', help='Filter by status')
+@click.option('--status', '-s', 'deployment_status',
+              type=click.Choice(['running', 'building', 'deploying', 'pending', 'stopped', 'failed', 'crashed', 'all']),
+              default='running',
+              help='Filter by status (default: running)')
+@click.option('--all', '-a', 'show_all', is_flag=True, help='Show all deployments regardless of status')
+@click.option('--agent-id', type=int, help='Filter by agent ID')
 @click.option('--base-url', help='Base URL of the AgentHub server')
 @click.pass_context
-def list_deployments(ctx, status, base_url):
-    """List all agent deployments."""
+def list_deployments(ctx, deployment_status, show_all, agent_id, base_url):
+    """List agent deployments (running by default)."""
     verbose = ctx.obj.get('verbose', False)
     
     base_url = base_url or cli_config.get('base_url', 'http://localhost:8002')
     
+    # If --all is specified, override status filter
+    if show_all:
+        deployment_status = None
+    
     try:
-        echo(style("📋 Fetching deployments...", fg='blue'))
+        if deployment_status:
+            echo(style(f"📋 Fetching {deployment_status} deployments...", fg='blue'))
+        else:
+            echo(style("📋 Fetching all deployments...", fg='blue'))
         
         async def get_deployments():
             async with AgentHubClient(base_url) as client:
-                result = await client.list_deployments()
+                result = await client.list_deployments(agent_id=agent_id, status=deployment_status)
                 return result
         
         result = asyncio.run(get_deployments())
         deployments = result.get('deployments', [])
         
-        if status:
-            deployments = [d for d in deployments if d.get('status') == status]
-        
         if not deployments:
-            echo(style("No deployments found.", fg='yellow'))
+            if deployment_status:
+                echo(style(f"No {deployment_status} deployments found.", fg='yellow'))
+            else:
+                echo(style("No deployments found.", fg='yellow'))
             return
         
-        echo(style(f"Found {len(deployments)} deployments:", fg='green'))
+        # Count by status for summary
+        status_counts = {}
+        for deployment in deployments:
+            current_status = deployment.get('status', 'unknown')
+            status_counts[current_status] = status_counts.get(current_status, 0) + 1
+        
+        # Display header with status info
+        if deployment_status:
+            echo(style(f"Found {len(deployments)} {deployment_status} deployments:", fg='green'))
+        else:
+            echo(style(f"Found {len(deployments)} deployments:", fg='green'))
+            status_summary = ", ".join([f"{count} {status_name}" for status_name, count in status_counts.items()])
+            echo(style(f"Status breakdown: {status_summary}", fg='cyan'))
         echo()
         
         for deployment in deployments:
+            current_status = deployment.get('status', 'unknown')
+            
+            # Color code by status
             status_color = {
                 'running': 'green',
                 'building': 'yellow',
                 'deploying': 'blue',
+                'pending': 'cyan',
                 'failed': 'red',
+                'crashed': 'red',
                 'stopped': 'white'
-            }.get(deployment.get('status'), 'white')
+            }.get(current_status, 'white')
             
             # Extract port from proxy_endpoint
             proxy_endpoint = deployment.get('proxy_endpoint', '')
@@ -1504,9 +1533,9 @@ def list_deployments(ctx, status, base_url):
             if deployment.get('is_healthy') is None:
                 health_status = 'N/A'
             
-            # Display deployment info with corrected field mapping
+            # Display deployment info
             echo(f"🚀 Agent ID {deployment.get('agent_id')} (Deployment: {deployment.get('deployment_id', 'Unknown')[:16]}...)")
-            echo(f"   Status: {style(deployment.get('status', 'unknown'), fg=status_color)}")
+            echo(f"   Status: {style(current_status, fg=status_color)}")
             echo(f"   Port: {port}")
             echo(f"   URL: {deployment.get('proxy_endpoint', 'N/A')}")
             echo(f"   Health: {health_status}")
@@ -1568,6 +1597,86 @@ def status(ctx, agent_id, base_url):
             
     except Exception as e:
         echo(style(f"✗ Error checking deployment status: {e}", fg='red'))
+        sys.exit(1)
+
+
+@deploy.command(name='history')
+@click.option('--agent-id', type=int, help='Filter by agent ID')
+@click.option('--base-url', help='Base URL of the AgentHub server')
+@click.pass_context
+def history_deployments(ctx, agent_id, base_url):
+    """Show complete deployment history (including stopped and failed)."""
+    verbose = ctx.obj.get('verbose', False)
+    
+    base_url = base_url or cli_config.get('base_url', 'http://localhost:8002')
+    
+    try:
+        echo(style("📋 Fetching complete deployment history...", fg='blue'))
+        
+        async def get_deployments():
+            async with AgentHubClient(base_url) as client:
+                result = await client.list_deployments(agent_id=agent_id, status=None)
+                return result
+        
+        result = asyncio.run(get_deployments())
+        deployments = result.get('deployments', [])
+        
+        if not deployments:
+            echo(style("No deployment history found.", fg='yellow'))
+            return
+        
+        # Count by status for summary
+        status_counts = {}
+        for deployment in deployments:
+            current_status = deployment.get('status', 'unknown')
+            status_counts[current_status] = status_counts.get(current_status, 0) + 1
+        
+        # Display header with status info
+        echo(style(f"Found {len(deployments)} total deployments:", fg='green'))
+        status_summary = ", ".join([f"{count} {status_name}" for status_name, count in status_counts.items()])
+        echo(style(f"Status breakdown: {status_summary}", fg='cyan'))
+        echo()
+        
+        for deployment in deployments:
+            current_status = deployment.get('status', 'unknown')
+            
+            # Color code by status
+            status_color = {
+                'running': 'green',
+                'building': 'yellow',
+                'deploying': 'blue',
+                'pending': 'cyan',
+                'failed': 'red',
+                'crashed': 'red',
+                'stopped': 'white'
+            }.get(current_status, 'white')
+            
+            # Extract port from proxy_endpoint
+            proxy_endpoint = deployment.get('proxy_endpoint', '')
+            port = 'N/A'
+            if proxy_endpoint and ':' in proxy_endpoint:
+                port = proxy_endpoint.split(':')[-1]
+            
+            # Map health status
+            health_status = 'Healthy' if deployment.get('is_healthy') else 'Unhealthy'
+            if deployment.get('is_healthy') is None:
+                health_status = 'N/A'
+            
+            # Display deployment info with timing
+            echo(f"🚀 Agent ID {deployment.get('agent_id')} (Deployment: {deployment.get('deployment_id', 'Unknown')[:16]}...)")
+            echo(f"   Status: {style(current_status, fg=status_color)}")
+            echo(f"   Port: {port}")
+            echo(f"   URL: {deployment.get('proxy_endpoint', 'N/A')}")
+            echo(f"   Health: {health_status}")
+            echo(f"   Created: {deployment.get('created_at', 'Unknown')}")
+            if deployment.get('started_at'):
+                echo(f"   Started: {deployment.get('started_at')}")
+            if deployment.get('stopped_at'):
+                echo(f"   Stopped: {deployment.get('stopped_at')}")
+            echo()
+            
+    except Exception as e:
+        echo(style(f"✗ Error fetching deployment history: {e}", fg='red'))
         sys.exit(1)
 
 
