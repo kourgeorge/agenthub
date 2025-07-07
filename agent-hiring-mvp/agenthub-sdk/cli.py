@@ -1261,11 +1261,23 @@ def list_deployments(ctx, status, base_url):
                 'stopped': 'grey'
             }.get(deployment.get('status'), 'white')
             
-            echo(f"🚀 {style(deployment.get('agent_name', 'Unknown'), fg='cyan', bold=True)} (Agent ID: {deployment.get('agent_id')})")
+            # Extract port from proxy_endpoint
+            proxy_endpoint = deployment.get('proxy_endpoint', '')
+            port = 'N/A'
+            if proxy_endpoint and ':' in proxy_endpoint:
+                port = proxy_endpoint.split(':')[-1]
+            
+            # Map health status
+            health_status = 'Healthy' if deployment.get('is_healthy') else 'Unhealthy'
+            if deployment.get('is_healthy') is None:
+                health_status = 'N/A'
+            
+            # Display deployment info with corrected field mapping
+            echo(f"🚀 Agent ID {deployment.get('agent_id')} (Deployment: {deployment.get('deployment_id', 'Unknown')[:16]}...)")
             echo(f"   Status: {style(deployment.get('status', 'unknown'), fg=status_color)}")
-            echo(f"   Port: {deployment.get('port', 'N/A')}")
-            echo(f"   URL: {deployment.get('url', 'N/A')}")
-            echo(f"   Health: {deployment.get('health_status', 'N/A')}")
+            echo(f"   Port: {port}")
+            echo(f"   URL: {deployment.get('proxy_endpoint', 'N/A')}")
+            echo(f"   Health: {health_status}")
             if deployment.get('created_at'):
                 echo(f"   Created: {deployment.get('created_at')}")
             echo()
