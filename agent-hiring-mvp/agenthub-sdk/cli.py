@@ -1488,21 +1488,21 @@ def list_deployments(ctx, deployment_status, show_all, agent_id, base_url):
 
 
 @deploy.command()
-@click.argument('agent_id', type=int)
+@click.argument('deployment_id', type=str)
 @click.option('--base-url', help='Base URL of the AgentHub server')
 @click.pass_context
-def status(ctx, agent_id, base_url):
-    """Check deployment status for an agent."""
+def status(ctx, deployment_id, base_url):
+    """Check deployment status by deployment ID."""
     verbose = ctx.obj.get('verbose', False)
     
     base_url = base_url or cli_config.get('base_url', 'http://localhost:8002')
     
     try:
-        echo(style(f"📊 Checking deployment status for agent {agent_id}...", fg='blue'))
+        echo(style(f"📊 Checking deployment status for {deployment_id}...", fg='blue'))
         
         async def check_status():
             async with AgentHubClient(base_url) as client:
-                result = await client.get_deployment_status(agent_id)
+                result = await client.get_deployment_status_by_id(deployment_id)
                 return result
         
         result = asyncio.run(check_status())
@@ -1516,19 +1516,22 @@ def status(ctx, agent_id, base_url):
         }.get(result.get('status'), 'white')
         
         echo(style("📊 Deployment Status:", fg='green'))
+        echo(f"  Deployment ID: {result.get('deployment_id')}")
         echo(f"  Agent ID: {result.get('agent_id')}")
         echo(f"  Status: {style(result.get('status', 'unknown'), fg=status_color)}")
-        echo(f"  Port: {result.get('port', 'N/A')}")
-        echo(f"  URL: {result.get('url', 'N/A')}")
-        echo(f"  Health: {result.get('health_status', 'N/A')}")
+        echo(f"  Port: {result.get('external_port', 'N/A')}")
+        echo(f"  URL: {result.get('proxy_endpoint', 'N/A')}")
+        echo(f"  Health: {'Healthy' if result.get('is_healthy') else 'Unhealthy'}")
         
-        if result.get('error'):
-            echo(f"  Error: {style(result.get('error'), fg='red')}")
+        if result.get('created_at'):
+            echo(f"  Created: {result.get('created_at')}")
+        if result.get('started_at'):
+            echo(f"  Started: {result.get('started_at')}")
+        if result.get('stopped_at'):
+            echo(f"  Stopped: {result.get('stopped_at')}")
         
-        if result.get('logs'):
-            echo(f"  Recent logs:")
-            for log in result.get('logs')[-5:]:  # Last 5 log entries
-                echo(f"    {log}")
+        if result.get('status_message'):
+            echo(f"  Message: {result.get('status_message')}")
         
         if verbose:
             echo("Full response:")

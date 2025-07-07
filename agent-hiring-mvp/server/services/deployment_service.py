@@ -352,13 +352,19 @@ CMD ["python", "main.py"]
         
         return {
             "deployment_id": deployment_id,
+            "agent_id": deployment.agent_id,
+            "hiring_id": deployment.hiring_id,
             "status": deployment.status,
             "container_status": container_status,
             "proxy_endpoint": deployment.proxy_endpoint,
+            "external_port": deployment.external_port,
+            "internal_port": deployment.internal_port,
             "created_at": deployment.created_at.isoformat(),
             "started_at": deployment.started_at.isoformat() if deployment.started_at else None,
+            "stopped_at": deployment.stopped_at.isoformat() if deployment.stopped_at else None,
             "is_healthy": deployment.is_healthy,
-            "health_check_failures": deployment.health_check_failures
+            "health_check_failures": deployment.health_check_failures,
+            "status_message": deployment.status_message
         }
     
     async def health_check(self, deployment_id: str) -> Dict[str, Any]:
