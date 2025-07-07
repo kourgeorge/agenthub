@@ -392,7 +392,14 @@ def list_agents(ctx, query, category, limit, base_url):
             echo(f"🤖 {style(agent['name'], fg='cyan', bold=True)} (ID: {agent['id']})")
             echo(f"   {agent['description']}")
             echo(f"   Author: {agent['author']} | Category: {agent['category']}")
-            echo(f"   Pricing: {agent['pricing_model']}")
+            echo(f"   Type: {agent.get('agent_type', 'function')} | Pricing: {agent['pricing_model']}", nl=False)
+            
+            if agent.get('price_per_use'):
+                echo(f" (${agent['price_per_use']}/use)", nl=False)
+            if agent.get('monthly_price'):
+                echo(f" (${agent['monthly_price']}/month)", nl=False)
+            echo()
+            
             if agent.get('tags'):
                 echo(f"   Tags: {', '.join(agent['tags'])}")
             echo()
@@ -667,14 +674,7 @@ def search(ctx, query, category, pricing, limit, base_url):
             echo(f"🤖 {style(agent['name'], fg='cyan', bold=True)} (ID: {agent['id']})")
             echo(f"   {agent['description']}")
             echo(f"   Author: {agent['author']} | Category: {agent['category']}")
-            echo(f"   Pricing: {agent['pricing_model']}", nl=False)
-            
-            if agent.get('price_per_use'):
-                echo(f" (${agent['price_per_use']}/use)", nl=False)
-            if agent.get('monthly_price'):
-                echo(f" (${agent['monthly_price']}/month)", nl=False)
-            echo()
-            
+            echo(f"   Type: {agent.get('agent_type', 'function')} | Pricing: {agent['pricing_model']}")
             if agent.get('tags'):
                 echo(f"   Tags: {', '.join(agent['tags'])}")
             echo()
