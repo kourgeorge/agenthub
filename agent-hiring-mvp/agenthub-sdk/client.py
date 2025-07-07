@@ -99,6 +99,13 @@ class AgentHubClient:
             if config.monthly_price is not None:
                 form_data.add_field("monthly_price", str(config.monthly_price))
             
+            # Add agent type and ACP manifest
+            if config.agent_type:
+                form_data.add_field("agent_type", config.agent_type)
+            
+            if config.acp_manifest:
+                form_data.add_field("acp_manifest", json.dumps(config.acp_manifest))
+            
             # Add code file
             async with aiofiles.open(zip_path, "rb") as f:
                 code_content = await f.read()
@@ -177,6 +184,36 @@ class AgentHubClient:
             else:
                 error_text = await response.text()
                 raise Exception(f"Failed to get agent: {error_text}")
+
+    async def approve_agent(self, agent_id: int) -> Dict[str, Any]:
+        """Approve an agent (admin only)."""
+        if not self.session:
+            raise RuntimeError("Client not initialized. Use async context manager.")
+        
+        async with self.session.put(
+            f"{self.api_base}/agents/{agent_id}/approve",
+        ) as response:
+            if response.status == 200:
+                return await response.json()
+            else:
+                error_text = await response.text()
+                raise Exception(f"Failed to approve agent: {error_text}")
+
+    async def reject_agent(self, agent_id: int, reason: str) -> Dict[str, Any]:
+        """Reject an agent (admin only)."""
+        if not self.session:
+            raise RuntimeError("Client not initialized. Use async context manager.")
+        
+        data = {"reason": reason}
+        async with self.session.put(
+            f"{self.api_base}/agents/{agent_id}/reject",
+            json=data,
+        ) as response:
+            if response.status == 200:
+                return await response.json()
+            else:
+                error_text = await response.text()
+                raise Exception(f"Failed to reject agent: {error_text}")
     
     # =============================================================================
     # AGENT HIRING
@@ -374,6 +411,97 @@ class AgentHubClient:
             await asyncio.sleep(1)
     
     # =============================================================================
+    # DEPLOYMENT MANAGEMENT (ACP Server Agents)
+    # =============================================================================
+    
+    async def create_deployment(self, hiring_id: int) -> Dict[str, Any]:
+        """Create a deployment for a hired ACP agent."""
+        if not self.session:
+            raise RuntimeError("Client not initialized. Use async context manager.")
+        
+        async with self.session.post(
+            f"{self.api_base}/deployment/create/{hiring_id}",
+        ) as response:
+            if response.status == 200:
+                return await response.json()
+            else:
+                error_text = await response.text()
+                raise Exception(f"Failed to create deployment: {error_text}")
+
+    async def deploy_agent(self, agent_id: int) -> Dict[str, Any]:
+        """Deploy an ACP server agent."""
+        if not self.session:
+            raise RuntimeError("Client not initialized. Use async context manager.")
+        
+        async with self.session.post(
+            f"{self.api_base}/deployment/deploy",
+            json={"agent_id": agent_id},
+        ) as response:
+            if response.status == 200:
+                return await response.json()
+            else:
+                error_text = await response.text()
+                raise Exception(f"Failed to deploy agent: {error_text}")
+    
+    async def stop_deployment(self, agent_id: int) -> Dict[str, Any]:
+        """Stop a deployed ACP server agent."""
+        if not self.session:
+            raise RuntimeError("Client not initialized. Use async context manager.")
+        
+        async with self.session.post(
+            f"{self.api_base}/deployment/stop",
+            json={"agent_id": agent_id},
+        ) as response:
+            if response.status == 200:
+                return await response.json()
+            else:
+                error_text = await response.text()
+                raise Exception(f"Failed to stop deployment: {error_text}")
+    
+    async def get_deployment_status(self, agent_id: int) -> Dict[str, Any]:
+        """Get deployment status for an agent."""
+        if not self.session:
+            raise RuntimeError("Client not initialized. Use async context manager.")
+        
+        async with self.session.get(
+            f"{self.api_base}/deployment/status/{agent_id}",
+        ) as response:
+            if response.status == 200:
+                return await response.json()
+            else:
+                error_text = await response.text()
+                raise Exception(f"Failed to get deployment status: {error_text}")
+    
+    async def list_deployments(self) -> Dict[str, Any]:
+        """List all deployments."""
+        if not self.session:
+            raise RuntimeError("Client not initialized. Use async context manager.")
+        
+        async with self.session.get(
+            f"{self.api_base}/deployment/list",
+        ) as response:
+            if response.status == 200:
+                return await response.json()
+            else:
+                error_text = await response.text()
+                raise Exception(f"Failed to list deployments: {error_text}")
+    
+    async def get_deployment_logs(self, agent_id: int, tail: int = 50) -> Dict[str, Any]:
+        """Get logs for a deployed agent."""
+        if not self.session:
+            raise RuntimeError("Client not initialized. Use async context manager.")
+        
+        async with self.session.get(
+            f"{self.api_base}/deployment/logs/{agent_id}",
+            params={"tail": tail},
+        ) as response:
+            if response.status == 200:
+                return await response.json()
+            else:
+                error_text = await response.text()
+                raise Exception(f"Failed to get deployment logs: {error_text}")
+
+    # =============================================================================
     # UTILITY METHODS
     # =============================================================================
     
@@ -469,3 +597,40 @@ def run_agent_sync(
             )
     
     return asyncio.run(_run()) 
+
+
+def approve_agent_sync(
+    agent_id: int,
+    base_url: str = "http://localhost:8002",
+) -> Dict[str, Any]:
+    """Approve an agent synchronously."""
+    async def _approve():
+        async with AgentHubClient(base_url) as client:
+            return await client.approve_agent(agent_id)
+    
+    return asyncio.run(_approve())
+
+
+def reject_agent_sync(
+    agent_id: int,
+    reason: str,
+    base_url: str = "http://localhost:8002",
+) -> Dict[str, Any]:
+    """Reject an agent synchronously."""
+    async def _reject():
+        async with AgentHubClient(base_url) as client:
+            return await client.reject_agent(agent_id, reason)
+    
+    return asyncio.run(_reject())
+
+
+def create_deployment_sync(
+    hiring_id: int,
+    base_url: str = "http://localhost:8002",
+) -> Dict[str, Any]:
+    """Create a deployment synchronously."""
+    async def _create():
+        async with AgentHubClient(base_url) as client:
+            return await client.create_deployment(hiring_id)
+    
+    return asyncio.run(_create())
