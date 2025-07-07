@@ -505,7 +505,7 @@ class AgentHubClient:
         if not self.session:
             raise RuntimeError("Client not initialized. Use async context manager.")
         
-        async with self.session.put(
+        async with self.session.post(
             f"{self.api_base}/deployment/stop/{deployment_id}",
         ) as response:
             if response.status == 200:
