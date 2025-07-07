@@ -80,6 +80,44 @@ def stop_deployment(
     return result
 
 
+@router.post("/restart/{deployment_id}")
+def restart_deployment(
+    deployment_id: str,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    """Restart a stopped deployment."""
+    deployment_service = DeploymentService(db)
+    
+    # Check if deployment exists and is stopped
+    status_result = deployment_service.get_deployment_status(deployment_id)
+    if "error" in status_result:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=status_result["error"]
+        )
+    
+    current_status = status_result.get("status")
+    if current_status not in ["stopped", "failed", "crashed"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot restart deployment with status: {current_status}. Only stopped, failed, or crashed deployments can be restarted."
+        )
+    
+    # Start rebuild process to restart the deployment
+    background_tasks.add_task(
+        deployment_service.build_and_deploy,
+        deployment_id
+    )
+    
+    return {
+        "deployment_id": deployment_id,
+        "status": "restart_initiated",
+        "message": "Deployment restart initiated. Check status for progress.",
+        "previous_status": current_status
+    }
+
+
 @router.get("/health/{deployment_id}")
 async def health_check(
     deployment_id: str,
@@ -141,31 +179,5 @@ def get_deployment_by_hiring(
     return deployment_service.get_deployment_status(deployment.deployment_id)
 
 
-@router.post("/rebuild/{deployment_id}")
-def rebuild_deployment(
-    deployment_id: str,
-    background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db)
-):
-    """Rebuild and redeploy an agent."""
-    deployment_service = DeploymentService(db)
-    
-    # Stop existing deployment
-    stop_result = deployment_service.stop_deployment(deployment_id)
-    if "error" in stop_result:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Failed to stop existing deployment: {stop_result['error']}"
-        )
-    
-    # Start rebuild process
-    background_tasks.add_task(
-        deployment_service.build_and_deploy,
-        deployment_id
-    )
-    
-    return {
-        "deployment_id": deployment_id,
-        "status": "rebuild_started",
-        "message": "Rebuild started. Check status for progress."
-    } 
+# REMOVED: /rebuild endpoint - duplicate of /restart
+# Use /restart endpoint instead for better safety and consistency 

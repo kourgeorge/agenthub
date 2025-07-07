@@ -505,20 +505,8 @@ class AgentHubClient:
                 error_text = await response.text()
                 raise Exception(f"Failed to create deployment: {error_text}")
 
-    async def deploy_agent(self, agent_id: int) -> Dict[str, Any]:
-        """Deploy an ACP server agent."""
-        if not self.session:
-            raise RuntimeError("Client not initialized. Use async context manager.")
-        
-        async with self.session.post(
-            f"{self.api_base}/deployment/deploy",
-            json={"agent_id": agent_id},
-        ) as response:
-            if response.status == 200:
-                return await response.json()
-            else:
-                error_text = await response.text()
-                raise Exception(f"Failed to deploy agent: {error_text}")
+    # REMOVED: deploy_agent method - deployments must be created through proper hiring workflow
+    # Use: create_deployment(hiring_id) after hiring an agent
     
     async def stop_deployment(self, deployment_id: str) -> Dict[str, Any]:
         """Stop a deployed ACP server agent."""
@@ -534,6 +522,20 @@ class AgentHubClient:
                 error_text = await response.text()
                 raise Exception(f"Failed to stop deployment: {error_text}")
     
+    async def restart_deployment(self, deployment_id: str) -> Dict[str, Any]:
+        """Restart a stopped deployment."""
+        if not self.session:
+            raise RuntimeError("Client not initialized. Use async context manager.")
+        
+        async with self.session.post(
+            f"{self.api_base}/deployment/restart/{deployment_id}",
+        ) as response:
+            if response.status == 200:
+                return await response.json()
+            else:
+                error_text = await response.text()
+                raise Exception(f"Failed to restart deployment: {error_text}")
+    
     async def get_deployment_status(self, agent_id: int) -> Dict[str, Any]:
         """Get deployment status for an agent."""
         if not self.session:
@@ -541,6 +543,20 @@ class AgentHubClient:
         
         async with self.session.get(
             f"{self.api_base}/deployment/status/{agent_id}",
+        ) as response:
+            if response.status == 200:
+                return await response.json()
+            else:
+                error_text = await response.text()
+                raise Exception(f"Failed to get deployment status: {error_text}")
+    
+    async def get_deployment_status_by_id(self, deployment_id: str) -> Dict[str, Any]:
+        """Get deployment status by deployment ID."""
+        if not self.session:
+            raise RuntimeError("Client not initialized. Use async context manager.")
+        
+        async with self.session.get(
+            f"{self.api_base}/deployment/status/{deployment_id}",
         ) as response:
             if response.status == 200:
                 return await response.json()
@@ -680,7 +696,7 @@ def run_agent_sync(
                 agent_id, input_data, hiring_id, user_id, wait_for_completion, timeout
             )
     
-    return asyncio.run(_run()) 
+    return asyncio.run(_run())
 
 
 def approve_agent_sync(

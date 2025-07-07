@@ -1354,71 +1354,10 @@ def create(ctx, hiring_id, base_url, wait, timeout):
         sys.exit(1)
 
 
-@deploy.command()
-@click.argument('agent_id', type=int)
-@click.option('--base-url', help='Base URL of the AgentHub server')
-@click.option('--wait', '-w', is_flag=True, help='Wait for deployment completion')
-@click.option('--timeout', '-t', default=300, help='Timeout in seconds')
-@click.pass_context
-def start(ctx, agent_id, base_url, wait, timeout):
-    """Deploy an ACP server agent."""
-    verbose = ctx.obj.get('verbose', False)
-    
-    base_url = base_url or cli_config.get('base_url', 'http://localhost:8002')
-    
-    try:
-        echo(style(f"🚀 Deploying agent {agent_id}...", fg='blue'))
-        
-        async def deploy_agent():
-            async with AgentHubClient(base_url) as client:
-                result = await client.deploy_agent(agent_id)
-                return result
-        
-        result = asyncio.run(deploy_agent())
-        
-        echo(style("✅ Deployment initiated!", fg='green'))
-        echo(f"  Deployment ID: {result.get('deployment_id')}")
-        echo(f"  Status: {result.get('status')}")
-        echo(f"  Port: {result.get('port', 'TBD')}")
-        
-        if wait:
-            echo(style("⏳ Waiting for deployment to complete...", fg='yellow'))
-            import time
-            start_time = time.time()
-            
-            while time.time() - start_time < timeout:
-                time.sleep(5)  # Check every 5 seconds
-                
-                # Check deployment status
-                async def check_status():
-                    async with AgentHubClient(base_url) as client:
-                        status = await client.get_deployment_status(agent_id)
-                        return status
-                
-                status = asyncio.run(check_status())
-                current_status = status.get('status', 'unknown')
-                
-                if current_status == 'running':
-                    echo(style("🎉 Deployment completed successfully!", fg='green'))
-                    echo(f"  URL: {status.get('url')}")
-                    echo(f"  Health: {status.get('health_status')}")
-                    break
-                elif current_status == 'failed':
-                    echo(style("❌ Deployment failed!", fg='red'))
-                    echo(f"  Error: {status.get('error')}")
-                    sys.exit(1)
-                else:
-                    echo(f"  Status: {current_status}")
-            else:
-                echo(style("⏱️ Deployment timeout reached", fg='yellow'))
-                
-        if verbose:
-            echo("Full response:")
-            echo(json.dumps(result, indent=2))
-            
-    except Exception as e:
-        echo(style(f"✗ Error deploying agent: {e}", fg='red'))
-        sys.exit(1)
+# REMOVED: deploy start command
+# Deployments must be created through proper hiring workflow:
+# 1. agenthub hire agent <agent_id>
+# 2. agenthub deploy create <hiring_id>
 
 
 @deploy.command()
@@ -1677,6 +1616,76 @@ def history_deployments(ctx, agent_id, base_url):
             
     except Exception as e:
         echo(style(f"✗ Error fetching deployment history: {e}", fg='red'))
+        sys.exit(1)
+
+
+@deploy.command()
+@click.argument('deployment_id', type=str)
+@click.option('--base-url', help='Base URL of the AgentHub server')
+@click.option('--wait', '-w', is_flag=True, help='Wait for deployment completion')
+@click.option('--timeout', '-t', default=300, help='Timeout in seconds')
+@click.pass_context
+def restart(ctx, deployment_id, base_url, wait, timeout):
+    """Restart a stopped deployment."""
+    verbose = ctx.obj.get('verbose', False)
+    
+    base_url = base_url or cli_config.get('base_url', 'http://localhost:8002')
+    
+    try:
+        echo(style(f"🔄 Restarting deployment {deployment_id}...", fg='blue'))
+        
+        async def restart_deployment():
+            async with AgentHubClient(base_url) as client:
+                result = await client.restart_deployment(deployment_id)
+                return result
+        
+        result = asyncio.run(restart_deployment())
+        
+        echo(style("✅ Deployment restarted successfully!", fg='green'))
+        echo(f"  Deployment ID: {result.get('deployment_id')}")
+        echo(f"  Status: {result.get('status')}")
+        echo(f"  URL: {result.get('url', 'N/A')}")
+        echo(f"  Message: {result.get('message', 'Deployment restarted')}")
+        
+        if wait:
+            echo(style("⏳ Waiting for deployment to complete...", fg='yellow'))
+            import time
+            start_time = time.time()
+            
+            while time.time() - start_time < timeout:
+                time.sleep(5)  # Check every 5 seconds
+                
+                # Check deployment status via direct API call
+                import requests
+                try:
+                    response = requests.get(f"{base_url}/api/v1/deployment/status/{deployment_id}")
+                    if response.status_code == 200:
+                        status_data = response.json()
+                        current_status = status_data.get('status', 'unknown')
+                        
+                        echo(f"  Current status: {current_status}")
+                        
+                        if current_status == 'running':
+                            echo(style("🎉 Deployment completed successfully!", fg='green'))
+                            echo(f"  Container Status: {status_data.get('container_status')}")
+                            echo(f"  Health Check: {status_data.get('is_healthy')}")
+                            break
+                        elif current_status == 'failed':
+                            echo(style("❌ Deployment failed!", fg='red'))
+                            echo(f"  Error: {status_data.get('error')}")
+                            sys.exit(1)
+                except Exception as e:
+                    echo(f"  Error checking status: {e}")
+            else:
+                echo(style("⏱️ Deployment timeout reached", fg='yellow'))
+                echo("Use 'agenthub deploy status <deployment_id>' to check progress")
+        
+        if verbose:
+            echo("Full response:")
+            echo(json.dumps(result, indent=2))
+            
+    except Exception as e:
+        echo(style(f"✗ Error restarting deployment: {e}", fg='red'))
         sys.exit(1)
 
 
