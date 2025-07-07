@@ -82,12 +82,15 @@ class Endpoints:
     EXECUTION_AGENT = f"{API_BASE_PATH}/execution/agent/{{agent_id}}"
     EXECUTION_STATS = f"{API_BASE_PATH}/execution/stats/agent/{{agent_id}}"
     
-    # ACP Protocol
+    # ACP Protocol (simplified - info only)
     ACP_DISCOVERY = f"{API_BASE_PATH}/acp/discovery"
     ACP_CAPABILITIES = f"{API_BASE_PATH}/acp/capabilities"
-    ACP_SESSION = f"{API_BASE_PATH}/acp/session"
-    ACP_MESSAGE = f"{API_BASE_PATH}/acp/{{execution_id}}/message"
-    ACP_STATUS = f"{API_BASE_PATH}/acp/{{execution_id}}/status"
+    
+    # Deployment and Agent Proxy
+    DEPLOYMENT_CREATE = f"{API_BASE_PATH}/deployment/create/{{hiring_id}}"
+    DEPLOYMENT_STATUS = f"{API_BASE_PATH}/deployment/status/{{deployment_id}}"
+    AGENT_PROXY_CHAT = f"{API_BASE_PATH}/agent-proxy/chat/{{hiring_id}}"
+    AGENT_PROXY_INFO = f"{API_BASE_PATH}/agent-proxy/info/{{hiring_id}}"
 
 # =============================================================================
 # TEST CONFIGURATION
