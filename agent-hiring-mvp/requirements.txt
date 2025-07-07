@@ -13,6 +13,10 @@ python-dotenv
 pyyaml
 requests
 
+# ACP Server Support
+docker
+aiohttp
+
 # Testing
 pytest
 pytest-asyncio
