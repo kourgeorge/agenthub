@@ -426,7 +426,7 @@ CMD ["python", "main.py"]
             return {"status": "unhealthy", "error": str(e)}
     
     def list_deployments(self, agent_id: Optional[int] = None, status: Optional[str] = None) -> List[Dict[str, Any]]:
-        """List deployments with optional filtering."""
+        """List deployments with optional filtering and real-time health checks."""
         query = self.db.query(AgentDeployment)
         
         if agent_id:
@@ -441,8 +441,29 @@ CMD ["python", "main.py"]
         
         deployments = query.order_by(AgentDeployment.created_at.desc()).all()
         
-        return [
-            {
+        result = []
+        for deployment in deployments:
+            # Perform real-time health check for running deployments
+            real_time_health = deployment.is_healthy
+            if deployment.status == DeploymentStatus.RUNNING.value and deployment.proxy_endpoint:
+                try:
+                    health_url = f"{deployment.proxy_endpoint}/health"
+                    response = requests.get(health_url, timeout=1)  # Quick timeout for list
+                    if response.status_code == 200:
+                        real_time_health = True
+                        # Update database with fresh health status
+                        deployment.is_healthy = True
+                        deployment.health_check_failures = 0
+                        deployment.last_health_check = datetime.utcnow()
+                    else:
+                        real_time_health = False
+                        deployment.health_check_failures += 1
+                        deployment.last_health_check = datetime.utcnow()
+                except Exception:
+                    # Health check failed, but don't update database on temporary failures
+                    real_time_health = False
+            
+            result.append({
                 "deployment_id": deployment.deployment_id,
                 "agent_id": deployment.agent_id,
                 "hiring_id": deployment.hiring_id,
@@ -451,7 +472,10 @@ CMD ["python", "main.py"]
                 "created_at": deployment.created_at.isoformat(),
                 "started_at": deployment.started_at.isoformat() if deployment.started_at else None,
                 "stopped_at": deployment.stopped_at.isoformat() if deployment.stopped_at else None,
-                "is_healthy": deployment.is_healthy
-            }
-            for deployment in deployments
-        ] 
+                "is_healthy": real_time_health
+            })
+        
+        # Commit any health check updates
+        self.db.commit()
+        
+        return result 
