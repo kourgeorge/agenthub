@@ -27,6 +27,91 @@ except ImportError:
     from client import AgentHubClient
 
 
+def show_next_steps(command: str, **kwargs):
+    """Display helpful next steps after a command completes successfully."""
+    echo()
+    echo(style("💡 Next steps:", fg='cyan', bold=True))
+    
+    if command == "agent init":
+        echo("  (use 'agenthub agent validate' to check your agent configuration)")
+        echo("  (use 'agenthub agent test' to test your agent locally)")
+        echo("  (use 'agenthub agent publish' to publish your agent to the platform)")
+        
+    elif command == "agent validate":
+        echo("  (use 'agenthub agent test' to test your agent locally)")
+        echo("  (use 'agenthub agent publish' to publish your agent to the platform)")
+        
+    elif command == "agent test":
+        echo("  (use 'agenthub agent publish' to publish your agent to the platform)")
+        echo("  (use 'agenthub agent validate' to re-validate if you made changes)")
+        
+    elif command == "agent publish":
+        agent_id = kwargs.get('agent_id')
+        if agent_id:
+            echo(f"  (use 'agenthub agent approve {agent_id}' to approve your agent)")
+            echo(f"  (use 'agenthub agent info {agent_id}' to view agent details)")
+        else:
+            echo("  (use 'agenthub agent approve <agent_id>' to approve your agent)")
+            echo("  (use 'agenthub agent list' to see all your agents)")
+            
+    elif command == "agent approve":
+        agent_id = kwargs.get('agent_id')
+        if agent_id:
+            echo(f"  (use 'agenthub hire agent {agent_id}' to hire your approved agent)")
+            echo(f"  (use 'agenthub agent info {agent_id}' to view agent details)")
+        else:
+            echo("  (use 'agenthub hire agent <agent_id>' to hire your approved agent)")
+            echo("  (use 'agenthub agent list' to see all your agents)")
+            
+    elif command == "hire agent":
+        hiring_id = kwargs.get('hiring_id')
+        if hiring_id:
+            echo(f"  (use 'agenthub deploy create {hiring_id}' to deploy your hired agent)")
+            echo(f"  (use 'agenthub hired info {hiring_id}' to view hiring details)")
+        else:
+            echo("  (use 'agenthub deploy create <hiring_id>' to deploy your hired agent)")
+            echo("  (use 'agenthub hired list' to see all your hirings)")
+            
+    elif command == "deploy create":
+        deployment_id = kwargs.get('deployment_id')
+        if deployment_id:
+            echo(f"  (use 'agenthub deploy status {deployment_id}' to check deployment status)")
+            echo(f"  (use 'agenthub deploy list' to see all your deployments)")
+        else:
+            echo("  (use 'agenthub deploy status <deployment_id>' to check deployment status)")
+            echo("  (use 'agenthub deploy list' to see all your deployments)")
+            
+    elif command == "deploy status":
+        deployment_id = kwargs.get('deployment_id')
+        status = kwargs.get('status', 'unknown')
+        if status == 'running':
+            echo("  (use 'curl http://your-domain:port/health' to test your deployed agent)")
+            echo("  (use 'agenthub deploy list' to see all your deployments)")
+        elif status in ['building', 'deploying']:
+            echo("  (use 'agenthub deploy status <deployment_id>' to check progress)")
+            echo("  (use 'agenthub deploy list' to see all your deployments)")
+        else:
+            echo("  (use 'agenthub deploy restart <deployment_id>' to restart if needed)")
+            echo("  (use 'agenthub deploy list' to see all your deployments)")
+            
+    elif command == "agent list":
+        echo("  (use 'agenthub agent info <agent_id>' to get detailed information)")
+        echo("  (use 'agenthub agent approve <agent_id>' to approve an agent)")
+        echo("  (use 'agenthub hire agent <agent_id>' to hire an approved agent)")
+        
+    elif command == "hired list":
+        echo("  (use 'agenthub deploy create <hiring_id>' to deploy a hired agent)")
+        echo("  (use 'agenthub hired info <hiring_id>' to view hiring details)")
+        echo("  (use 'agenthub hired cancel <hiring_id>' to cancel a hiring)")
+        
+    elif command == "deploy list":
+        echo("  (use 'agenthub deploy status <deployment_id>' to check specific deployment)")
+        echo("  (use 'agenthub deploy stop <deployment_id>' to stop a deployment)")
+        echo("  (use 'agenthub deploy restart <deployment_id>' to restart a deployment)")
+        
+    echo()
+
+
 class CLIConfig:
     """Configuration for the CLI."""
     
@@ -154,11 +239,7 @@ def init(ctx, name, agent_type, author, email, description, category, pricing, p
         echo(style(f"✓ Agent '{name}' initialized successfully!", fg='green'))
         echo(f"  Location: {target_dir}")
         echo(f"  Type: {agent_type}")
-        echo(f"  Next steps:")
-        echo(f"    1. cd {target_dir}")
-        echo(f"    2. agenthub agent validate")
-        echo(f"    3. agenthub agent test")
-        echo(f"    4. agenthub agent publish")
+        show_next_steps("agent init")
     except Exception as e:
         echo(style(f"✗ Error creating agent: {e}", fg='red'))
         sys.exit(1)
@@ -211,6 +292,7 @@ def validate(ctx, directory):
             echo(f"  Entry point: {config.entry_point}")
             echo(f"  Category: {config.category}")
             echo(f"  Pricing: {config.pricing_model}")
+        show_next_steps("agent validate")
             
     except Exception as e:
         echo(style(f"✗ Validation error: {e}", fg='red'))
@@ -255,6 +337,7 @@ def test(ctx, directory, input, config):
         echo(style("✓ Agent test completed!", fg='green'))
         echo("Result:")
         echo(json.dumps(result, indent=2))
+        show_next_steps("agent test")
         
     except Exception as e:
         echo(style(f"✗ Test error: {e}", fg='red'))
@@ -344,6 +427,7 @@ def publish(ctx, directory, api_key, base_url, dry_run):
         echo(style("✓ Agent published successfully!", fg='green'))
         echo(f"  Agent ID: {result.get('agent_id', 'Unknown')}")
         echo(f"  Status: {result.get('status', 'Unknown')}")
+        show_next_steps("agent publish", agent_id=result.get('agent_id'))
         
         if verbose:
             echo("Full response:")
@@ -403,6 +487,8 @@ def list_agents(ctx, query, category, limit, base_url):
             if agent.get('tags'):
                 echo(f"   Tags: {', '.join(agent['tags'])}")
             echo()
+        
+        show_next_steps("agent list")
             
     except Exception as e:
         echo(style(f"✗ Error listing agents: {e}", fg='red'))
@@ -485,6 +571,7 @@ def approve(ctx, agent_id, base_url):
         echo(f"  Agent ID: {result.get('agent_id')}")
         echo(f"  Status: {result.get('status')}")
         echo(f"  Message: {result.get('message')}")
+        show_next_steps("agent approve", agent_id=result.get('agent_id'))
         
         if verbose:
             echo("Full response:")
@@ -751,6 +838,7 @@ def hire_agent_cmd(ctx, agent_id, config, billing_cycle, user_id, base_url):
         echo(f"  Hiring ID: {result.get('hiring_id')}")
         echo(f"  Status: {result.get('status')}")
         echo(f"  Billing cycle: {result.get('billing_cycle')}")
+        show_next_steps("hire agent", hiring_id=result.get('hiring_id'))
         
         if verbose:
             echo("Full response:")
@@ -1016,6 +1104,8 @@ def list_hired(ctx, user_id, hiring_status, show_all, base_url):
             echo(f"   Hired: {hiring.get('hired_at')} | Status: {style(current_status, fg=status_color)}")
             echo(f"   Billing: {hiring.get('billing_cycle')}")
             echo()
+        
+        show_next_steps("hired list")
             
     except Exception as e:
         echo(style(f"✗ Error fetching hired agents: {e}", fg='red'))
@@ -1285,10 +1375,10 @@ def config(ctx, base_url, api_key, author, email, show):
 @deploy.command()
 @click.argument('hiring_id', type=int)
 @click.option('--base-url', help='Base URL of the AgentHub server')
-@click.option('--wait', '-w', is_flag=True, help='Wait for deployment completion')
-@click.option('--timeout', '-t', default=300, help='Timeout in seconds')
+@click.option('--no-wait', is_flag=True, help='Return immediately without waiting for completion')
+@click.option('--timeout', '-t', default=300, help='Timeout in seconds (when waiting)')
 @click.pass_context
-def create(ctx, hiring_id, base_url, wait, timeout):
+def create(ctx, hiring_id, base_url, no_wait, timeout):
     """Create a deployment for a hired ACP agent."""
     verbose = ctx.obj.get('verbose', False)
     
@@ -1309,8 +1399,9 @@ def create(ctx, hiring_id, base_url, wait, timeout):
         echo(f"  Status: {result.get('status')}")
         echo(f"  Proxy Endpoint: {result.get('proxy_endpoint')}")
         echo(f"  Message: {result.get('message')}")
+        show_next_steps("deploy create", deployment_id=result.get('deployment_id'))
         
-        if wait and result.get('deployment_id'):
+        if not no_wait and result.get('deployment_id'):
             echo(style("⏳ Waiting for deployment to complete...", fg='yellow'))
             import time
             
@@ -1481,6 +1572,8 @@ def list_deployments(ctx, deployment_status, show_all, agent_id, base_url):
             if deployment.get('created_at'):
                 echo(f"   Created: {deployment.get('created_at')}")
             echo()
+        
+        show_next_steps("deploy list")
             
     except Exception as e:
         echo(style(f"✗ Error fetching deployments: {e}", fg='red'))
@@ -1532,6 +1625,8 @@ def status(ctx, deployment_id, base_url):
         
         if result.get('status_message'):
             echo(f"  Message: {result.get('status_message')}")
+        
+        show_next_steps("deploy status", deployment_id=deployment_id, status=result.get('status'))
         
         if verbose:
             echo("Full response:")
@@ -1625,10 +1720,10 @@ def history_deployments(ctx, agent_id, base_url):
 @deploy.command()
 @click.argument('deployment_id', type=str)
 @click.option('--base-url', help='Base URL of the AgentHub server')
-@click.option('--wait', '-w', is_flag=True, help='Wait for deployment completion')
-@click.option('--timeout', '-t', default=300, help='Timeout in seconds')
+@click.option('--no-wait', is_flag=True, help='Return immediately without waiting for completion')
+@click.option('--timeout', '-t', default=300, help='Timeout in seconds (when waiting)')
 @click.pass_context
-def restart(ctx, deployment_id, base_url, wait, timeout):
+def restart(ctx, deployment_id, base_url, no_wait, timeout):
     """Restart a stopped deployment."""
     verbose = ctx.obj.get('verbose', False)
     
@@ -1650,7 +1745,7 @@ def restart(ctx, deployment_id, base_url, wait, timeout):
         echo(f"  URL: {result.get('url', 'N/A')}")
         echo(f"  Message: {result.get('message', 'Deployment restarted')}")
         
-        if wait:
+        if not no_wait:
             echo(style("⏳ Waiting for deployment to complete...", fg='yellow'))
             import time
             start_time = time.time()
