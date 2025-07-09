@@ -80,8 +80,17 @@ Simple Echo Agent
 This agent simply echoes back the input message with some processing.
 """
 
-def main():
+def main(input_data=None, config=None):
     """Main agent function."""
+    # Use provided input_data or load from file as fallback
+    if input_data is None:
+        try:
+            import json
+            with open('input.json', 'r') as f:
+                input_data = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            input_data = {}
+    
     # Get input data from the environment
     message = input_data.get('message', 'Hello World!')
     prefix = input_data.get('prefix', 'Echo: ')
@@ -100,6 +109,9 @@ def main():
     # Print the result (this will be captured by the runtime)
     print(f"Agent Response: {result['response']}")
     print(f"Processing complete for message: {message}")
+    
+    # Return the result (this is what the runtime expects)
+    return result
 
 if __name__ == "__main__":
     main()''',
@@ -124,8 +136,17 @@ Calculator Agent
 This agent performs mathematical operations on input data.
 """
 
-def main():
+def main(input_data=None, config=None):
     """Main agent function."""
+    # Use provided input_data or load from file as fallback
+    if input_data is None:
+        try:
+            import json
+            with open('input.json', 'r') as f:
+                input_data = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            input_data = {}
+    
     # Get input data
     operation = input_data.get('operation', 'add')
     numbers = input_data.get('numbers', [1, 2])
@@ -133,7 +154,7 @@ def main():
     # Validate input
     if not isinstance(numbers, list) or len(numbers) < 2:
         print("Error: At least 2 numbers required")
-        return
+        return {"error": "At least 2 numbers required"}
     
     # Perform calculation
     result = None
@@ -148,13 +169,13 @@ def main():
     elif operation == 'divide':
         if 0 in numbers[1:]:
             print("Error: Division by zero")
-            return
+            return {"error": "Division by zero"}
         result = numbers[0]
         for num in numbers[1:]:
             result /= num
     else:
         print(f"Error: Unknown operation '{operation}'")
-        return
+        return {"error": f"Unknown operation '{operation}'"}
     
     # Format output
     print(f"Operation: {operation}")
@@ -170,6 +191,7 @@ def main():
     }
     
     print(f"Calculation complete: {output}")
+    return output
 
 if __name__ == "__main__":
     main()''',
@@ -194,8 +216,17 @@ Text Processor Agent
 This agent processes and analyzes text input.
 """
 
-def main():
+def main(input_data=None, config=None):
     """Main agent function."""
+    # Use provided input_data or load from file as fallback
+    if input_data is None:
+        try:
+            import json
+            with open('input.json', 'r') as f:
+                input_data = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            input_data = {}
+    
     # Get input data
     text = input_data.get('text', 'Hello World!')
     operation = input_data.get('operation', 'analyze')
@@ -221,6 +252,8 @@ def main():
         print(f"Line count: {analysis['line_count']}")
         print(f"Average word length: {analysis['average_word_length']:.2f}")
         
+        result = analysis
+        
     elif operation == 'uppercase':
         result = text.upper()
         print(f"Uppercase text: {result}")
@@ -242,12 +275,15 @@ def main():
         print(f"Word frequency:")
         for word, count in word_freq.items():
             print(f"  '{word}': {count}")
+        
+        result = word_freq
             
     else:
         print(f"Error: Unknown operation '{operation}'")
-        return
+        return {"error": f"Unknown operation '{operation}'"}
     
     print(f"Text processing complete for operation: {operation}")
+    return result
 
 if __name__ == "__main__":
     main()''',
