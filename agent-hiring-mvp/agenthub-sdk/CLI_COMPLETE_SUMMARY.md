@@ -48,8 +48,8 @@ agenthub jobs status abc-123                 # Track execution
 | `marketplace search` | Find agents | `agenthub marketplace search --query "data"` |
 | `marketplace categories` | List categories | `agenthub marketplace categories` |
 | `hire agent` | Hire an agent | `agenthub hire agent 123 --billing-cycle monthly` |
-| `execute agent` | Execute with JSON | `agenthub execute agent 123 --input '{"data":[1,2,3]}'` |
-| `execute file` | Execute with file | `agenthub execute file 123 input.json --wait` |
+| `execute hiring` | Execute with JSON | `agenthub execute hiring 456 --input '{"data":[1,2,3]}'` |
+| `execute file` | Execute with file | `agenthub execute file 456 input.json --wait` |
 | `jobs list` | List executions | `agenthub jobs list --status completed` |
 | `jobs status` | Check job status | `agenthub jobs status abc-123` |
 | `hired list` | List hired agents | `agenthub hired list` |
@@ -196,7 +196,7 @@ agenthub agent info 123
 agenthub hire agent 123 --billing-cycle per_use
 
 # 4. Execute agent
-agenthub execute agent 123 \
+agenthub execute hiring 456 \
   --input '{"data": [10,20,30,40,50], "operation": "sum"}' \
   --wait
 

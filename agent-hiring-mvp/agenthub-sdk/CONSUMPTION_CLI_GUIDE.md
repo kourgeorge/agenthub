@@ -22,7 +22,7 @@ agenthub
 ├── hire                 # Hire agents
 │   └── agent           # Hire a specific agent
 ├── execute             # Execute hired agents
-│   ├── agent           # Execute with JSON input
+│   ├── hiring          # Execute with JSON input
 │   └── file            # Execute with file input
 ├── jobs                # Manage execution jobs
 │   ├── list            # List recent jobs
@@ -99,20 +99,20 @@ agenthub hire agent 123 --user-id 456 --billing-cycle "per_use"
 ### Execute with JSON Input
 
 ```bash
-# Basic execution
-agenthub execute agent 123 --input '{"message": "Hello, world!"}'
+# Basic execution (requires hiring ID)
+agenthub execute hiring <hiring_id> --input '{"message": "Hello, world!"}'
 
 # Execute and wait for completion
-agenthub execute agent 123 --input '{"data": [1,2,3]}' --wait
+agenthub execute hiring <hiring_id> --input '{"data": [1,2,3]}' --wait
 
 # Execute with configuration
-agenthub execute agent 123 \
+agenthub execute hiring <hiring_id> \
   --input '{"message": "Process this"}' \
   --config '{"debug": true}' \
   --wait
 
 # Execute with custom timeout
-agenthub execute agent 123 \
+agenthub execute hiring <hiring_id> \
   --input '{"task": "long_running"}' \
   --wait \
   --timeout 300
@@ -122,10 +122,10 @@ agenthub execute agent 123 \
 
 ```bash
 # Execute with input from file
-agenthub execute file 123 input.json --wait
+agenthub execute file <hiring_id> input.json --wait
 
 # Execute file with configuration
-agenthub execute file 123 data.json \
+agenthub execute file <hiring_id> data.json \
   --config '{"format": "csv"}' \
   --wait
 ```
@@ -141,13 +141,14 @@ agenthub execute file 123 data.json \
 
 ### Execution Options
 
-- `--input, -i`: JSON input data (required for `agent` command)
+- `--input, -i`: JSON input data (required for `hiring` command)
 - `--config, -c`: JSON configuration for the agent
-- `--hiring-id, -h`: Hiring ID if already hired
 - `--user-id, -u`: User ID
 - `--wait, -w`: Wait for completion (synchronous execution)
 - `--timeout, -t`: Timeout in seconds (default: 60)
 - `--base-url`: AgentHub server URL
+
+**Note**: Execution now requires a hiring ID. You must hire an agent first before you can execute it.
 
 ## Job Management
 
@@ -235,8 +236,8 @@ agenthub agent info 123
 # 3. Hire the agent
 agenthub hire agent 123 --billing-cycle "per_use"
 
-# 4. Execute the agent
-agenthub execute agent 123 \
+# 4. Execute the agent (using hiring ID from step 3)
+agenthub execute hiring 456 \
   --input '{"data": [1,2,3,4,5], "operation": "average"}' \
   --wait
 
@@ -253,8 +254,8 @@ agenthub marketplace search --category "data-processing"
 # Hire a data processor
 agenthub hire agent 125 --config '{"output_format": "csv"}'
 
-# Process a data file
-agenthub execute file 125 large_dataset.json \
+# Process a data file (using hiring ID from previous step)
+agenthub execute file 789 large_dataset.json \
   --config '{"batch_size": 1000}' \
   --wait \
   --timeout 600
@@ -273,12 +274,12 @@ agenthub marketplace search --category "communication" --pricing "free"
 agenthub hire agent 130
 
 # Start conversation
-agenthub execute agent 130 \
+agenthub execute hiring 456 \
   --input '{"message": "Hello, how can you help me?"}' \
   --wait
 
 # Continue conversation with history
-agenthub execute agent 130 \
+agenthub execute hiring 456 \
   --input '{
     "message": "What services do you offer?",
     "conversation_history": [

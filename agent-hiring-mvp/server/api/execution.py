@@ -18,15 +18,23 @@ def create_execution(
 ):
     """Create a new execution."""
     execution_service = ExecutionService(db)
-    execution = execution_service.create_execution(execution_data)
     
-    return {
-        "execution_id": execution.execution_id,
-        "agent_id": execution.agent_id,
-        "status": execution.status,
-        "created_at": execution.created_at.isoformat(),
-        "message": "Execution created successfully"
-    }
+    try:
+        execution = execution_service.create_execution(execution_data)
+        
+        return {
+            "execution_id": execution.execution_id,
+            "agent_id": execution.agent_id,
+            "hiring_id": execution.hiring_id,
+            "status": execution.status,
+            "created_at": execution.created_at.isoformat(),
+            "message": "Execution created successfully"
+        }
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
 
 
 @router.get("/{execution_id}", response_model=dict)

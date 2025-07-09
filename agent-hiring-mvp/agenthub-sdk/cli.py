@@ -849,18 +849,17 @@ def hire_agent_cmd(ctx, agent_id, config, billing_cycle, user_id, base_url):
         sys.exit(1)
 
 
-@execute.command(name='agent')
-@click.argument('agent_id', type=int)
+@execute.command(name='hiring')
+@click.argument('hiring_id', type=int)
 @click.option('--input', '-i', required=True, help='JSON input data for the agent')
 @click.option('--config', '-c', help='JSON configuration for the agent')
-@click.option('--hiring-id', '-h', type=int, help='Hiring ID (if already hired)')
 @click.option('--user-id', '-u', type=int, help='User ID')
 @click.option('--wait', '-w', is_flag=True, help='Wait for completion')
 @click.option('--timeout', '-t', default=60, help='Timeout in seconds')
 @click.option('--base-url', help='Base URL of the AgentHub server')
 @click.pass_context
-def execute_agent_cmd(ctx, agent_id, input, config, hiring_id, user_id, wait, timeout, base_url):
-    """Execute an agent with input data."""
+def execute_hiring_cmd(ctx, hiring_id, input, config, user_id, wait, timeout, base_url):
+    """Execute a hired agent with input data."""
     verbose = ctx.obj.get('verbose', False)
     
     base_url = base_url or cli_config.get('base_url', 'http://localhost:8002')
@@ -870,7 +869,7 @@ def execute_agent_cmd(ctx, agent_id, input, config, hiring_id, user_id, wait, ti
         input_data = json.loads(input)
         agent_config = json.loads(config) if config else {}
         
-        echo(style(f"🚀 Executing agent {agent_id}...", fg='blue'))
+        echo(style(f"🚀 Executing hired agent (hiring ID: {hiring_id})...", fg='blue'))
         if verbose:
             echo(f"Input: {json.dumps(input_data, indent=2)}")
             echo(f"Config: {json.dumps(agent_config, indent=2)}")
@@ -878,19 +877,17 @@ def execute_agent_cmd(ctx, agent_id, input, config, hiring_id, user_id, wait, ti
         async def execute_agent():
             async with AgentHubClient(base_url) as client:
                 if wait:
-                    result = await client.run_agent(
-                        agent_id=agent_id,
-                        input_data=input_data,
+                    result = await client.run_hired_agent(
                         hiring_id=hiring_id,
+                        input_data=input_data,
                         user_id=user_id,
                         wait_for_completion=True,
                         timeout=timeout
                     )
                 else:
-                    result = await client.execute_agent(
-                        agent_id=agent_id,
-                        input_data=input_data,
+                    result = await client.execute_hired_agent(
                         hiring_id=hiring_id,
+                        input_data=input_data,
                         user_id=user_id
                     )
                 return result
@@ -926,17 +923,16 @@ def execute_agent_cmd(ctx, agent_id, input, config, hiring_id, user_id, wait, ti
 
 
 @execute.command()
-@click.argument('agent_id', type=int)
+@click.argument('hiring_id', type=int)
 @click.argument('input_file', type=click.Path(exists=True))
 @click.option('--config', '-c', help='JSON configuration for the agent')
-@click.option('--hiring-id', '-h', type=int, help='Hiring ID (if already hired)')
 @click.option('--user-id', '-u', type=int, help='User ID')
 @click.option('--wait', '-w', is_flag=True, help='Wait for completion')
 @click.option('--timeout', '-t', default=60, help='Timeout in seconds')
 @click.option('--base-url', help='Base URL of the AgentHub server')
 @click.pass_context
-def file(ctx, agent_id, input_file, config, hiring_id, user_id, wait, timeout, base_url):
-    """Execute an agent with input from a file."""
+def file(ctx, hiring_id, input_file, config, user_id, wait, timeout, base_url):
+    """Execute a hired agent with input from a file."""
     verbose = ctx.obj.get('verbose', False)
     
     try:
@@ -947,8 +943,8 @@ def file(ctx, agent_id, input_file, config, hiring_id, user_id, wait, timeout, b
         echo(style(f"📁 Loading input from: {input_file}", fg='blue'))
         
         # Call the agent execution with the loaded data
-        ctx.invoke(execute_agent_cmd, agent_id=agent_id, input=json.dumps(input_data), 
-                  config=config, hiring_id=hiring_id, user_id=user_id, 
+        ctx.invoke(execute_hiring_cmd, hiring_id=hiring_id, input=json.dumps(input_data), 
+                  config=config, user_id=user_id, 
                   wait=wait, timeout=timeout, base_url=base_url)
         
     except Exception as e:
@@ -1720,10 +1716,8 @@ def history_deployments(ctx, agent_id, base_url):
 @deploy.command()
 @click.argument('deployment_id', type=str)
 @click.option('--base-url', help='Base URL of the AgentHub server')
-@click.option('--no-wait', is_flag=True, help='Return immediately without waiting for completion')
-@click.option('--timeout', '-t', default=300, help='Timeout in seconds (when waiting)')
 @click.pass_context
-def restart(ctx, deployment_id, base_url, no_wait, timeout):
+def restart(ctx, deployment_id, base_url):
     """Restart a stopped deployment."""
     verbose = ctx.obj.get('verbose', False)
     

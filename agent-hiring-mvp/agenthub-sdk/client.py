@@ -487,6 +487,99 @@ class AgentHubClient:
             # Wait before checking again
             await asyncio.sleep(1)
     
+    async def execute_hired_agent(
+        self,
+        hiring_id: int,
+        input_data: Dict[str, Any],
+        user_id: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Execute a hired agent."""
+        if not self.session:
+            raise RuntimeError("Client not initialized. Use async context manager.")
+        
+        data = {
+            "hiring_id": hiring_id,
+            "input_data": input_data,
+        }
+        
+        if user_id:
+            data["user_id"] = user_id
+        
+        # Step 1: Create execution
+        async with self.session.post(
+            f"{self.api_base}/execution",
+            json=data,
+        ) as response:
+            if response.status == 200:
+                result = await response.json()
+            else:
+                error_text = await response.text()
+                raise Exception(f"Failed to create execution: {error_text}")
+        
+        # Step 2: Trigger execution automatically
+        execution_id = result.get("execution_id")
+        if not execution_id:
+            raise Exception("No execution ID returned")
+        
+        async with self.session.post(
+            f"{self.api_base}/execution/{execution_id}/run",
+        ) as response:
+            if response.status == 200:
+                # Return the execution result for immediate executions
+                execution_result = await response.json()
+                return {
+                    "execution_id": execution_id,
+                    "status": "running",
+                    "result": execution_result.get("result"),
+                    "message": "Execution triggered successfully"
+                }
+            else:
+                error_text = await response.text()
+                raise Exception(f"Failed to trigger execution: {error_text}")
+
+    async def run_hired_agent(
+        self,
+        hiring_id: int,
+        input_data: Dict[str, Any],
+        user_id: Optional[int] = None,
+        wait_for_completion: bool = True,
+        timeout: int = 60,
+    ) -> Dict[str, Any]:
+        """Run a hired agent and optionally wait for completion."""
+        # Create and trigger execution
+        execution_result = await self.execute_hired_agent(
+            hiring_id=hiring_id,
+            input_data=input_data,
+            user_id=user_id,
+        )
+        
+        execution_id = execution_result.get("execution_id")
+        if not execution_id:
+            raise Exception("No execution ID returned")
+        
+        if not wait_for_completion:
+            return execution_result
+        
+        # Wait for completion
+        start_time = asyncio.get_event_loop().time()
+        while True:
+            if asyncio.get_event_loop().time() - start_time > timeout:
+                raise Exception(f"Execution timeout after {timeout} seconds")
+            
+            status_result = await self.get_execution_status(execution_id)
+            # Check both possible response formats
+            status = status_result.get("status")
+            if not status:
+                # Try nested format
+                execution = status_result.get("execution", {})
+                status = execution.get("status")
+            
+            if status in ["completed", "failed"]:
+                return status_result
+            
+            # Wait before checking again
+            await asyncio.sleep(1)
+    
     # =============================================================================
     # DEPLOYMENT MANAGEMENT (ACP Server Agents)
     # =============================================================================

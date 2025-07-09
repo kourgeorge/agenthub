@@ -19,8 +19,7 @@ logger = logging.getLogger(__name__)
 
 class ExecutionCreateRequest(BaseModel):
     """Request model for creating an execution."""
-    agent_id: int
-    hiring_id: Optional[int] = None
+    hiring_id: int  # Now required
     user_id: Optional[int] = None
     input_data: Optional[Dict[str, Any]] = None
 
@@ -38,8 +37,16 @@ class ExecutionService:
         """Create a new execution record."""
         execution_id = str(uuid.uuid4())
         
+        # Validate hiring exists and is active
+        hiring = self.db.query(Hiring).filter(Hiring.id == execution_data.hiring_id).first()
+        if not hiring:
+            raise ValueError("Hiring not found")
+        
+        if hiring.status != "active":
+            raise ValueError(f"Hiring is not active (status: {hiring.status})")
+        
         execution = Execution(
-            agent_id=execution_data.agent_id,
+            agent_id=hiring.agent_id,  # Get agent_id from hiring
             hiring_id=execution_data.hiring_id,
             user_id=execution_data.user_id,
             status=ExecutionStatus.PENDING.value,
