@@ -19,7 +19,7 @@ agenthub
 ├── marketplace          # Browse and discover agents
 │   ├── search           # Search for agents
 │   └── categories       # List categories
-├── hire                 # Hire agents
+├── hire                 # Hire agents (unified experience)
 │   └── agent           # Hire a specific agent
 ├── execute             # Execute hired agents
 │   ├── hiring          # Execute with JSON input
@@ -29,7 +29,10 @@ agenthub
 │   └── status          # Check job status
 └── hired               # Manage hired agents
     ├── list            # List hired agents
-    └── info            # Get hiring details
+    ├── info            # Get hiring details
+    ├── suspend         # Suspend hiring
+    ├── activate        # Activate hiring
+    └── cancel          # Cancel hiring
 ```
 
 ## Marketplace Commands
@@ -75,24 +78,49 @@ Available categories:
 ### Hire an Agent
 
 ```bash
-# Basic hiring
-agenthub hire agent 123
+# Basic hiring (automatically handles deployment for ACP agents)
+agenthub hire agent <agent_id>
 
 # Hire with specific billing cycle
-agenthub hire agent 123 --billing-cycle "monthly"
+agenthub hire agent <agent_id> --billing-cycle "per_use"
 
 # Hire with configuration
-agenthub hire agent 123 --config '{"api_key": "your-key", "timeout": 30}'
-
-# Multi-user hiring
-agenthub hire agent 123 --user-id 456 --billing-cycle "per_use"
+agenthub hire agent <agent_id> --config '{"api_key": "your-key", "timeout": 30}'
 ```
 
-**Options:**
-- `--config, -c`: JSON configuration for the agent
-- `--billing-cycle, -b`: Billing cycle (per_use, monthly)
-- `--user-id, -u`: User ID for multi-user scenarios
-- `--base-url`: AgentHub server URL
+**What happens when you hire:**
+- **Function Agents**: Ready for immediate execution
+- **ACP Server Agents**: Automatically creates and starts Docker container deployment
+- **Both**: Creates a hiring record with billing cycle and configuration
+
+**For ACP Server Agents:**
+- Container is automatically deployed and started
+- Endpoint information is provided (URL and port)
+- Agent is immediately accessible via the provided endpoint
+
+### Manage Hirings
+
+```bash
+# List your hired agents
+agenthub hired list
+
+# Get detailed hiring information
+agenthub hired info <hiring_id>
+
+# Suspend a hiring (ACP agents: stops container, Function agents: no action)
+agenthub hired suspend <hiring_id>
+
+# Activate a suspended hiring (ACP agents: restarts container)
+agenthub hired activate <hiring_id>
+
+# Cancel a hiring (ACP agents: stops and removes container)
+agenthub hired cancel <hiring_id>
+```
+
+**For ACP Server Agents:**
+- **Activate**: Restarts the container and provides endpoint information
+- **Suspend**: Stops the container but keeps it (minimal resource usage)
+- **Cancel**: Stops and removes the container completely
 
 ## Agent Execution
 
@@ -233,7 +261,7 @@ agenthub marketplace search --query "data analysis" --limit 5
 # 2. Get agent details
 agenthub agent info 123
 
-# 3. Hire the agent
+# 3. Hire the agent (automatically handles deployment for ACP agents)
 agenthub hire agent 123 --billing-cycle "per_use"
 
 # 4. Execute the agent (using hiring ID from step 3)
@@ -243,6 +271,12 @@ agenthub execute hiring 456 \
 
 # 5. Check execution history
 agenthub jobs list --limit 5
+
+# 6. Manage your hiring
+agenthub hired list                    # See all your hirings
+agenthub hired suspend 456            # Suspend if not needed
+agenthub hired activate 456           # Reactivate when needed
+agenthub hired cancel 456             # Cancel when done
 ```
 
 ### Data Processing Workflow

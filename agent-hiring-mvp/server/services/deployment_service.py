@@ -333,6 +333,33 @@ CMD ["python", "main.py"]
             logger.error(f"Failed to stop deployment {deployment_id}: {e}")
             return {"error": str(e)}
     
+    def restart_deployment(self, deployment_id: str) -> Dict[str, Any]:
+        """Restart a deployment."""
+        try:
+            deployment = self.db.query(AgentDeployment).filter(
+                AgentDeployment.deployment_id == deployment_id
+            ).first()
+            
+            if not deployment:
+                return {"error": "Deployment not found"}
+            
+            # Stop the current deployment
+            stop_result = self.stop_deployment(deployment_id)
+            if "error" in stop_result:
+                return stop_result
+            
+            # Rebuild and deploy
+            deploy_result = self.build_and_deploy(deployment_id)
+            if "error" in deploy_result:
+                return deploy_result
+            
+            logger.info(f"Successfully restarted deployment {deployment_id}")
+            return {"deployment_id": deployment_id, "status": "restarted"}
+            
+        except Exception as e:
+            logger.error(f"Failed to restart deployment {deployment_id}: {e}")
+            return {"error": str(e)}
+    
     def get_deployment_status(self, deployment_id: str) -> Dict[str, Any]:
         """Get deployment status with real-time health check."""
         deployment = self.db.query(AgentDeployment).filter(

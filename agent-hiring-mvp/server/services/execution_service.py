@@ -136,7 +136,7 @@ class ExecutionService:
             
             if agent_type == 'acp_server':
                 # Handle ACP server agents
-                runtime_result = self._execute_acp_server_agent(agent, execution.input_data or {})
+                runtime_result = self._execute_acp_server_agent(agent, execution.input_data or {}, execution_id)
             else:
                 # Handle traditional function-based agents
                 runtime_service = AgentRuntimeService()
@@ -199,92 +199,113 @@ class ExecutionService:
                 "error": error_msg
             }
     
-    def _execute_acp_server_agent(self, agent: Agent, input_data: Dict[str, Any]):
-        """Execute an ACP server agent using its compatibility mode."""
-        import tempfile
-        import subprocess
-        import sys
+    def _execute_acp_server_agent(self, agent: Agent, input_data: Dict[str, Any], execution_id: str):
+        """Execute an ACP server agent by making HTTP requests to the running server."""
+        import requests
         import json
         import time
         from .agent_runtime import RuntimeResult, RuntimeStatus
+        from ..models.deployment import AgentDeployment
+        from ..models.hiring import Hiring
         
         start_time = time.time()
         
         try:
-            # Create temporary execution directory
-            with tempfile.TemporaryDirectory() as temp_dir:
-                logger.info(f"Executing ACP server agent {agent.id} in compatibility mode")
-                
-                # Write agent code to file
-                if not agent.code:
-                    return RuntimeResult(
-                        status=RuntimeStatus.FAILED,
-                        error="No agent code available",
-                        execution_time=time.time() - start_time
-                    )
-                
-                agent_file = f"{temp_dir}/agent_code.py"
-                with open(agent_file, 'w') as f:
-                    f.write(agent.code)
-                
-                # Create execution script that calls the agent's main function
-                exec_script = f"""
-import sys
-import json
-import logging
-sys.path.insert(0, '{temp_dir}')
-
-# Suppress logging during execution to avoid interfering with JSON output
-logging.getLogger().setLevel(logging.ERROR)
-
-try:
-    from agent_code import main
-    input_data = {json.dumps(input_data)}
-    config_data = {{}}
-    result = main(input_data, config_data)
-    print(json.dumps(result))
-except Exception as e:
-    error_result = {{"status": "error", "error": str(e)}}
-    print(json.dumps(error_result))
-"""
-                
-                # Execute the script
-                process = subprocess.run(
-                    [sys.executable, '-c', exec_script],
-                    cwd=temp_dir,
-                    capture_output=True,
-                    text=True,
-                    timeout=30  # 30 second timeout
+            # Get the execution to find the hiring_id
+            execution = self.get_execution(execution_id)
+            if not execution:
+                return RuntimeResult(
+                    status=RuntimeStatus.FAILED,
+                    error="Execution not found",
+                    execution_time=time.time() - start_time
                 )
-                
-                execution_time = time.time() - start_time
-                
-                if process.returncode == 0:
-                    # Parse the output as JSON
-                    try:
-                        result_data = json.loads(process.stdout.strip())
-                        return RuntimeResult(
-                            status=RuntimeStatus.COMPLETED,
-                            output=json.dumps(result_data),
-                            execution_time=execution_time
-                        )
-                    except json.JSONDecodeError:
-                        return RuntimeResult(
-                            status=RuntimeStatus.FAILED,
-                            error=f"Invalid JSON output: {process.stdout}",
-                            execution_time=execution_time
-                        )
-                else:
+            
+            # Get the hiring associated with this execution
+            hiring = self.db.query(Hiring).filter(Hiring.id == execution.hiring_id).first()
+            if not hiring:
+                return RuntimeResult(
+                    status=RuntimeStatus.FAILED,
+                    error="No active hiring found for this agent",
+                    execution_time=time.time() - start_time
+                )
+            
+            # Get the deployment associated with this hiring
+            deployment = self.db.query(AgentDeployment).filter(
+                AgentDeployment.hiring_id == hiring.id,
+                AgentDeployment.status == "running"
+            ).first()
+            
+            if not deployment:
+                return RuntimeResult(
+                    status=RuntimeStatus.FAILED,
+                    error="No running deployment found for this agent",
+                    execution_time=time.time() - start_time
+                )
+            
+            # Determine the endpoint URL
+            if deployment.proxy_endpoint:
+                base_url = deployment.proxy_endpoint.rstrip('/')
+            elif deployment.external_port:
+                base_url = f"http://localhost:{deployment.external_port}"
+            else:
+                return RuntimeResult(
+                    status=RuntimeStatus.FAILED,
+                    error="No endpoint available for ACP agent",
+                    execution_time=time.time() - start_time
+                )
+            
+            # Prepare the request payload for the ACP server
+            # ACP agents expect a specific format for chat messages
+            chat_payload = {
+                "message": input_data.get("message", str(input_data)),
+                "session_id": input_data.get("session_id"),
+                "context": input_data.get("context", {})
+            }
+            
+            # Make HTTP request to the ACP server's chat endpoint
+            chat_url = f"{base_url}/chat"
+            logger.info(f"Making request to ACP agent at {chat_url}")
+            
+            response = requests.post(
+                chat_url,
+                json=chat_payload,
+                headers={"Content-Type": "application/json"},
+                timeout=30
+            )
+            
+            execution_time = time.time() - start_time
+            
+            if response.status_code == 200:
+                try:
+                    result_data = response.json()
                     return RuntimeResult(
-                        status=RuntimeStatus.FAILED,
-                        error=process.stderr or f"Agent execution failed with code {process.returncode}",
+                        status=RuntimeStatus.COMPLETED,
+                        output=json.dumps(result_data),
                         execution_time=execution_time
                     )
+                except json.JSONDecodeError:
+                    return RuntimeResult(
+                        status=RuntimeStatus.FAILED,
+                        error=f"Invalid JSON response from ACP agent: {response.text}",
+                        execution_time=execution_time
+                    )
+            else:
+                return RuntimeResult(
+                    status=RuntimeStatus.FAILED,
+                    error=f"ACP agent returned status {response.status_code}: {response.text}",
+                    execution_time=execution_time
+                )
                     
-        except subprocess.TimeoutExpired:
+        except requests.exceptions.Timeout:
             return RuntimeResult(
                 status=RuntimeStatus.TIMEOUT,
-                error="Agent execution timeout",
+                error="Request to ACP agent timed out",
+                execution_time=time.time() - start_time
+            )
+        except requests.exceptions.ConnectionError:
+            return RuntimeResult(
+                status=RuntimeStatus.FAILED,
+                error="Could not connect to ACP agent server",
                 execution_time=time.time() - start_time
             )
         except Exception as e:

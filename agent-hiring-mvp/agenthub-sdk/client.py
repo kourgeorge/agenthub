@@ -248,12 +248,16 @@ class AgentHubClient:
         ) as response:
             if response.status == 200:
                 result = await response.json()
-                # Convert to format expected by CLI
+                # Return the full response with agent type and deployment info
                 return {
-                    "hiring_id": result.get("id"),
+                    "hiring_id": result.get("hiring_id") or result.get("id"),
+                    "agent_id": result.get("agent_id"),
+                    "agent_name": result.get("agent_name"),
+                    "agent_type": result.get("agent_type", "unknown"),
                     "status": result.get("status"),
-                    "billing_cycle": billing_cycle or "per_use",
-                    "message": result.get("message", "Agent hired successfully")
+                    "billing_cycle": result.get("billing_cycle") or billing_cycle or "per_use",
+                    "message": result.get("message", "Agent hired successfully"),
+                    "deployment_status": result.get("deployment_status")
                 }
             else:
                 error_text = await response.text()

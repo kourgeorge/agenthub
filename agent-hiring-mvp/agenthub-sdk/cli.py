@@ -66,11 +66,13 @@ def show_next_steps(command: str, **kwargs):
     elif command == "hire agent":
         hiring_id = kwargs.get('hiring_id')
         if hiring_id:
-            echo(f"  (use 'agenthub deploy create {hiring_id}' to deploy your hired agent)")
+            echo(f"  (use 'agenthub execute hiring {hiring_id} --input '{{\"data\": \"your input\"}}' to execute your hired agent)")
             echo(f"  (use 'agenthub hired info {hiring_id}' to view hiring details)")
+            echo(f"  (use 'agenthub hired suspend {hiring_id}' to suspend the hiring)")
         else:
-            echo("  (use 'agenthub deploy create <hiring_id>' to deploy your hired agent)")
+            echo("  (use 'agenthub execute hiring <hiring_id> --input '{\"data\": \"your input\"}' to execute your hired agent)")
             echo("  (use 'agenthub hired list' to see all your hirings)")
+            echo("  (use 'agenthub hired suspend <hiring_id>' to suspend a hiring)")
             
     elif command == "deploy create":
         deployment_id = kwargs.get('deployment_id')
@@ -806,10 +808,16 @@ def categories(ctx, base_url):
 @click.option('--config', '-c', help='JSON configuration for the agent')
 @click.option('--billing-cycle', '-b', help='Billing cycle (per_use, monthly)')
 @click.option('--user-id', '-u', type=int, help='User ID (for multi-user scenarios)')
+@click.option('--wait', '-w', is_flag=True, help='Wait for deployment completion (for ACP agents)')
+@click.option('--timeout', '-t', default=300, help='Timeout in seconds when waiting for deployment')
 @click.option('--base-url', help='Base URL of the AgentHub server')
 @click.pass_context
-def hire_agent_cmd(ctx, agent_id, config, billing_cycle, user_id, base_url):
-    """Hire an agent by ID."""
+def hire_agent_cmd(ctx, agent_id, config, billing_cycle, user_id, wait, timeout, base_url):
+    """Hire an agent by ID. Automatically handles deployment for ACP server agents.
+    
+    For ACP server agents, use --wait to wait for deployment completion before returning.
+    This ensures the agent is ready for immediate execution.
+    """
     verbose = ctx.obj.get('verbose', False)
     
     base_url = base_url or cli_config.get('base_url', 'http://localhost:8002')
@@ -830,6 +838,26 @@ def hire_agent_cmd(ctx, agent_id, config, billing_cycle, user_id, base_url):
                     billing_cycle=billing_cycle,
                     user_id=user_id
                 )
+                
+                # If waiting for deployment completion and it's an ACP agent
+                if wait and result.get('agent_type') == 'acp_server':
+                    hiring_id = result.get('hiring_id')
+                    if hiring_id:
+                        echo(style("  🐳 ACP Server Agent - Waiting for deployment completion...", fg='cyan'))
+                        echo(style("  ⏳ Container deployment is in progress...", fg='yellow'))
+                        
+                        # Poll deployment status until ready
+                        deployment_ready = await _wait_for_deployment_ready(client, hiring_id, timeout)
+                        
+                        if deployment_ready:
+                            echo(style("  ✅ Deployment completed successfully!", fg='green'))
+                            # Get updated deployment info
+                            deployment_info = await _get_deployment_info(client, hiring_id)
+                            if deployment_info:
+                                result['deployment'] = deployment_info
+                        else:
+                            echo(style("  ⚠️  Deployment timeout - agent may still be starting", fg='yellow'))
+                
                 return result
         
         result = asyncio.run(hire_agent())
@@ -838,6 +866,27 @@ def hire_agent_cmd(ctx, agent_id, config, billing_cycle, user_id, base_url):
         echo(f"  Hiring ID: {result.get('hiring_id')}")
         echo(f"  Status: {result.get('status')}")
         echo(f"  Billing cycle: {result.get('billing_cycle')}")
+        
+        # Show agent type specific information
+        agent_type = result.get('agent_type', 'unknown')
+        if agent_type == 'acp_server':
+            deployment_status = result.get('deployment_status', 'unknown')
+            if deployment_status == 'starting' and not wait:
+                echo(style("  🐳 ACP Server Agent - Deployment starting in background", fg='cyan'))
+                echo(style("  ⏳ Container deployment is in progress...", fg='yellow'))
+                echo(style("  💡 You can execute the agent once deployment completes", fg='green'))
+            else:
+                echo(style("  🐳 ACP Server Agent - Container deployment handled automatically", fg='cyan'))
+                if result.get('deployment'):
+                    deployment = result['deployment']
+                    echo(f"  Deployment ID: {deployment.get('deployment_id')}")
+                    echo(f"  Container Status: {deployment.get('status')}")
+                    echo(f"  Endpoint: {deployment.get('proxy_endpoint')}")
+                    echo(f"  Port: {deployment.get('external_port')}")
+                    echo(style("  💡 Your ACP agent is now accessible at the endpoint above", fg='green'))
+        elif agent_type == 'function':
+            echo(style("  ⚡ Function Agent - Ready for immediate execution", fg='cyan'))
+        
         show_next_steps("hire agent", hiring_id=result.get('hiring_id'))
         
         if verbose:
@@ -1038,70 +1087,56 @@ def status(ctx, execution_id, base_url):
 @click.option('--base-url', help='Base URL of the AgentHub server')
 @click.pass_context
 def list_hired(ctx, user_id, hiring_status, show_all, base_url):
-    """List your hired agents (active by default)."""
+    """List hired agents with deployment status for ACP agents."""
     verbose = ctx.obj.get('verbose', False)
     
     base_url = base_url or cli_config.get('base_url', 'http://localhost:8002')
     
-    # If --all is specified, override status filter
-    if show_all:
-        hiring_status = None
-    
     try:
-        if hiring_status:
-            echo(style(f"📋 Fetching {hiring_status} hired agents...", fg='blue'))
-        else:
-            echo(style("📋 Fetching all hired agents...", fg='blue'))
+        echo(style("📋 Fetching hired agents...", fg='blue'))
         
         async def get_hired_agents():
             async with AgentHubClient(base_url) as client:
-                result = await client.list_hired_agents(user_id=user_id, status=hiring_status)
+                result = await client.list_hired_agents(
+                    user_id=user_id,
+                    status=hiring_status if not show_all else None
+                )
                 return result
         
         result = asyncio.run(get_hired_agents())
-        hired_agents = result.get('hired_agents', [])
         
-        if not hired_agents:
-            if hiring_status:
-                echo(style(f"No {hiring_status} hired agents found.", fg='yellow'))
-            else:
-                echo(style("No hired agents found.", fg='yellow'))
+        if not result.get('hirings'):
+            echo(style("No hired agents found.", fg='yellow'))
             return
         
-        # Count by status for summary
-        status_counts = {}
-        for hiring in hired_agents:
-            agent_status = hiring.get('status', 'unknown')
-            status_counts[agent_status] = status_counts.get(agent_status, 0) + 1
-        
-        # Display header with status info
-        if hiring_status:
-            echo(style(f"Found {len(hired_agents)} {hiring_status} hired agents:", fg='green'))
-        else:
-            echo(style(f"Found {len(hired_agents)} hired agents:", fg='green'))
-            status_summary = ", ".join([f"{count} {status_name}" for status_name, count in status_counts.items()])
-            echo(style(f"Status breakdown: {status_summary}", fg='cyan'))
+        echo(style("✅ Hired Agents:", fg='green'))
         echo()
         
-        for hiring in hired_agents:
-            agent = hiring.get('agent', {})
-            current_status = hiring.get('status', 'unknown')
+        for hiring in result['hirings']:
+            # Basic hiring info
+            echo(f"  Hiring ID: {hiring.get('hiring_id')}")
+            echo(f"  Agent: {hiring.get('agent_name')} (ID: {hiring.get('agent_id')})")
+            echo(f"  Type: {hiring.get('agent_type', 'unknown')}")
+            echo(f"  Status: {hiring.get('status')}")
+            echo(f"  Billing: {hiring.get('billing_cycle', 'unknown')}")
             
-            # Color code by status
-            status_color = {
-                'active': 'green',
-                'suspended': 'yellow', 
-                'cancelled': 'red',
-                'expired': 'white'
-            }.get(current_status, 'white')
+            # Show deployment info for ACP agents
+            deployment = hiring.get('deployment')
+            if deployment:
+                echo(f"  🐳 Deployment: {deployment.get('deployment_id')}")
+                echo(f"    Status: {deployment.get('status')}")
+                echo(f"    Endpoint: {deployment.get('proxy_endpoint')}")
+            else:
+                echo(f"  ⚡ Function Agent - Ready for execution")
             
-            echo(f"🤖 {style(agent.get('name', 'Unknown'), fg='cyan', bold=True)} (Hiring ID: {hiring.get('id')})")
-            echo(f"   Agent ID: {agent.get('id')} | Category: {agent.get('category')}")
-            echo(f"   Hired: {hiring.get('hired_at')} | Status: {style(current_status, fg=status_color)}")
-            echo(f"   Billing: {hiring.get('billing_cycle')}")
+            echo(f"  Hired: {hiring.get('hired_at')}")
+            if hiring.get('last_executed_at'):
+                echo(f"  Last Executed: {hiring.get('last_executed_at')}")
             echo()
         
-        show_next_steps("hired list")
+        if verbose:
+            echo("Full response:")
+            echo(json.dumps(result, indent=2))
             
     except Exception as e:
         echo(style(f"✗ Error fetching hired agents: {e}", fg='red'))
@@ -1234,7 +1269,7 @@ def suspend_hired(ctx, hiring_id, notes, base_url):
 @click.option('--base-url', help='Base URL of the AgentHub server')
 @click.pass_context
 def activate_hired(ctx, hiring_id, notes, base_url):
-    """Activate a hired agent."""
+    """Activate a suspended hiring."""
     verbose = ctx.obj.get('verbose', False)
     
     base_url = base_url or cli_config.get('base_url', 'http://localhost:8002')
@@ -1250,9 +1285,24 @@ def activate_hired(ctx, hiring_id, notes, base_url):
         result = asyncio.run(activate_hiring())
         
         echo(style("✅ Hiring activated successfully!", fg='green'))
-        echo(f"  Hiring ID: {result.get('id')}")
+        echo(f"  Hiring ID: {result.get('hiring_id')}")
+        echo(f"  Agent: {result.get('agent_name')} (ID: {result.get('agent_id')})")
+        echo(f"  Type: {result.get('agent_type', 'unknown')}")
         echo(f"  Status: {result.get('status')}")
         echo(f"  Message: {result.get('message')}")
+        
+        # Show deployment information for ACP agents
+        deployment = result.get('deployment')
+        if deployment:
+            echo(style("  🐳 ACP Agent Deployment:", fg='cyan'))
+            echo(f"    Deployment ID: {deployment.get('deployment_id')}")
+            echo(f"    Status: {deployment.get('status')}")
+            echo(f"    Endpoint: {deployment.get('proxy_endpoint')}")
+            echo(f"    Port: {deployment.get('external_port')}")
+            if deployment.get('started_at'):
+                echo(f"    Started: {deployment.get('started_at')}")
+            
+            echo(style("  💡 You can now access your ACP agent at the endpoint above", fg='green'))
         
         if verbose:
             echo("Full response:")
@@ -2895,6 +2945,59 @@ def _generate_acp_manifest(config: AgentConfig) -> str:
     }
     
     return json.dumps(manifest, indent=2)
+
+
+async def _wait_for_deployment_ready(client: AgentHubClient, hiring_id: int, timeout: int) -> bool:
+    """Wait for deployment to be ready, polling status every 5 seconds."""
+    import time
+    
+    start_time = time.time()
+    poll_interval = 5  # seconds
+    
+    while time.time() - start_time < timeout:
+        try:
+            # Get deployment status for this hiring
+            deployments = await client.list_deployments()
+            hiring_deployments = [
+                d for d in deployments.get('deployments', [])
+                if d.get('hiring_id') == hiring_id
+            ]
+            
+            if hiring_deployments:
+                deployment = hiring_deployments[0]
+                status = deployment.get('status', 'unknown')
+                
+                if status == 'running':
+                    return True
+                elif status in ['failed', 'crashed']:
+                    return False
+                # Continue waiting for other statuses (building, deploying, pending)
+            
+            await asyncio.sleep(poll_interval)
+            
+        except Exception as e:
+            # Log error but continue polling
+            print(f"Warning: Error checking deployment status: {e}")
+            await asyncio.sleep(poll_interval)
+    
+    return False
+
+
+async def _get_deployment_info(client: AgentHubClient, hiring_id: int) -> Optional[Dict[str, Any]]:
+    """Get deployment information for a hiring."""
+    try:
+        deployments = await client.list_deployments()
+        hiring_deployments = [
+            d for d in deployments.get('deployments', [])
+            if d.get('hiring_id') == hiring_id
+        ]
+        
+        if hiring_deployments:
+            return hiring_deployments[0]
+    except Exception:
+        pass
+    
+    return None
 
 
 if __name__ == '__main__':

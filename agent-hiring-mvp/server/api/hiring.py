@@ -27,14 +27,29 @@ def create_hiring(
             detail=str(e)
         )
     
-    return {
+    # Get agent information
+    from ..models.agent import Agent
+    agent = db.query(Agent).filter(Agent.id == hiring.agent_id).first()
+    
+    response = {
         "id": hiring.id,
+        "hiring_id": hiring.id,  # For consistency with CLI
         "agent_id": hiring.agent_id,
+        "agent_name": agent.name if agent else f"Agent {hiring.agent_id}",
+        "agent_type": agent.agent_type if agent else "unknown",
         "user_id": hiring.user_id,
         "status": hiring.status,
+        "billing_cycle": hiring.billing_cycle,
         "hired_at": hiring.hired_at.isoformat(),
         "message": "Hiring created successfully"
     }
+    
+    # Add deployment status for ACP agents
+    if agent and agent.agent_type == "acp_server":
+        response["message"] += ". ACP agent deployment is starting in the background."
+        response["deployment_status"] = "starting"
+    
+    return response
 
 
 @router.get("/{hiring_id}", response_model=dict)
@@ -136,19 +151,29 @@ def activate_hiring(
 ):
     """Activate a hiring."""
     hiring_service = HiringService(db)
-    hiring = hiring_service.activate_hiring(hiring_id, notes)
+    result = hiring_service.activate_hiring(hiring_id, notes)
     
-    if not hiring:
+    if not result:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Hiring not found"
         )
     
-    return {
-        "id": hiring.id,
-        "status": hiring.status,
+    response = {
+        "hiring_id": result["hiring_id"],
+        "agent_id": result["agent_id"],
+        "agent_name": result["agent_name"],
+        "agent_type": result["agent_type"],
+        "status": result["status"],
         "message": "Hiring activated successfully"
     }
+    
+    # Add deployment information for ACP agents
+    if result.get("deployment"):
+        response["deployment"] = result["deployment"]
+        response["message"] += ". ACP agent deployment is now active."
+    
+    return response
 
 
 @router.put("/{hiring_id}/suspend")

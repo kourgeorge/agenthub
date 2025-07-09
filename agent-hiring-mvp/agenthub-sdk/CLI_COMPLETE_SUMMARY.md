@@ -47,13 +47,16 @@ agenthub jobs status abc-123                 # Track execution
 |---------|---------|---------|
 | `marketplace search` | Find agents | `agenthub marketplace search --query "data"` |
 | `marketplace categories` | List categories | `agenthub marketplace categories` |
-| `hire agent` | Hire an agent | `agenthub hire agent 123 --billing-cycle monthly` |
+| `hire agent` | Hire an agent (unified) | `agenthub hire agent 123 --billing-cycle monthly` |
 | `execute hiring` | Execute with JSON | `agenthub execute hiring 456 --input '{"data":[1,2,3]}'` |
 | `execute file` | Execute with file | `agenthub execute file 456 input.json --wait` |
 | `jobs list` | List executions | `agenthub jobs list --status completed` |
 | `jobs status` | Check job status | `agenthub jobs status abc-123` |
 | `hired list` | List hired agents | `agenthub hired list` |
 | `hired info` | Hiring details | `agenthub hired info 456` |
+| `hired suspend` | Suspend hiring | `agenthub hired suspend 456` |
+| `hired activate` | Activate hiring | `agenthub hired activate 456` |
+| `hired cancel` | Cancel hiring | `agenthub hired cancel 456` |
 
 ### **Configuration Commands**
 | Command | Purpose | Example |
@@ -192,7 +195,7 @@ agenthub marketplace search --query "data analysis" --category analytics
 # 2. Get details
 agenthub agent info 123
 
-# 3. Hire agent
+# 3. Hire agent (automatically handles deployment for ACP agents)
 agenthub hire agent 123 --billing-cycle per_use
 
 # 4. Execute agent
@@ -202,6 +205,12 @@ agenthub execute hiring 456 \
 
 # 5. Check results
 agenthub jobs list --limit 5
+
+# 6. Manage hiring lifecycle
+agenthub hired list                    # See all hirings
+agenthub hired suspend 456            # Suspend when not needed
+agenthub hired activate 456           # Reactivate when needed
+agenthub hired cancel 456             # Cancel when done
 ```
 
 ### **Power User Workflow**
@@ -300,3 +309,274 @@ We have successfully delivered:
 The AgentHub CLI is now a **complete, professional-grade command-line interface** that serves the entire agent ecosystem - from creation to consumption. It provides an intuitive, powerful, and reliable toolset that matches industry standards and significantly improves the developer and user experience on the AgentHub platform.
 
 **The CLI is ready for immediate use and deployment! 🚀** 
+
+## Simple Python Code to Execute a Hiring
+
+### **1. Basic Example (Async)**
+
+```python
+<code_block_to_apply_changes_from>
+```
+
+### **2. Complete Example with Error Handling**
+
+```python
+#!/usr/bin/env python3
+"""
+Complete example with error handling and different agent types
+"""
+
+import asyncio
+import json
+from agenthub_sdk.client import AgentHubClient
+
+async def execute_hiring_complete():
+    """Complete example with error handling."""
+    
+    base_url = "http://localhost:8002"
+    agent_id = 1
+    user_id = 1  # Optional
+    
+    print("🚀 AgentHub Hiring and Execution Example")
+    print("=" * 50)
+    
+    async with AgentHubClient(base_url) as client:
+        try:
+            # Step 1: Hire the agent
+            print(f"\n1️⃣ Hiring agent {agent_id}...")
+            
+            hiring_result = await client.hire_agent(
+                agent_id=agent_id,
+                config={"timeout": 30},  # Optional configuration
+                billing_cycle="per_use",
+                user_id=user_id
+            )
+            
+            hiring_id = hiring_result.get('hiring_id')
+            agent_type = hiring_result.get('agent_type', 'unknown')
+            
+            print(f"✅ Agent hired successfully!")
+            print(f"   Hiring ID: {hiring_id}")
+            print(f"   Agent Type: {agent_type}")
+            print(f"   Status: {hiring_result.get('status')}")
+            
+            # Show deployment info for ACP agents
+            if agent_type == 'acp_server' and hiring_result.get('deployment'):
+                deployment = hiring_result['deployment']
+                print(f"    ACP Deployment:")
+                print(f"      Endpoint: {deployment.get('proxy_endpoint')}")
+                print(f"      Status: {deployment.get('status')}")
+            
+            # Step 2: Execute the hired agent
+            print(f"\n2️⃣ Executing hired agent...")
+            
+            # Prepare input data (adjust based on your agent's requirements)
+            input_data = {
+                "message": "Hello from Python!",
+                "prefix": "Python says: "
+            }
+            
+            # Execute with wait for completion
+            execution_result = await client.run_hired_agent(
+                hiring_id=hiring_id,
+                input_data=input_data,
+                user_id=user_id,
+                wait_for_completion=True,
+                timeout=60
+            )
+            
+            print(f"✅ Execution completed!")
+            print(f"   Execution ID: {execution_result.get('execution_id')}")
+            print(f"   Status: {execution_result.get('status')}")
+            
+            # Display the result
+            output_data = execution_result.get('output_data')
+            if output_data:
+                print(f"\n📊 Result:")
+                if isinstance(output_data, dict):
+                    if 'output' in output_data:
+                        print(f"   {output_data['output']}")
+                    else:
+                        print(f"   {json.dumps(output_data, indent=2)}")
+                else:
+                    print(f"   {str(output_data)}")
+            
+            return execution_result
+            
+        except Exception as e:
+            print(f"❌ Error: {e}")
+            raise
+
+if __name__ == "__main__":
+    asyncio.run(execute_hiring_complete())
+```
+
+### **3. Synchronous Version (Simpler)**
+
+```python
+#!/usr/bin/env python3
+"""
+Synchronous version using helper functions
+"""
+
+from agenthub_sdk.client import hire_agent_sync, run_agent_sync
+
+def execute_hiring_sync():
+    """Execute hiring using synchronous functions."""
+    
+    try:
+        # Step 1: Hire agent (synchronous)
+        print(" Hiring agent...")
+        hiring = hire_agent_sync(
+            agent_id=1,
+            base_url="http://localhost:8002",
+            billing_cycle="per_use"
+        )
+        
+        hiring_id = hiring['hiring_id']
+        print(f"✅ Hired! Hiring ID: {hiring_id}")
+        
+        # Step 2: Execute (synchronous)
+        print(" Executing agent...")
+        result = run_agent_sync(
+            agent_id=1,  # Note: still need agent_id for sync version
+            input_data={"message": "Hello from sync!"},
+            base_url="http://localhost:8002",
+            hiring_id=hiring_id,
+            wait_for_completion=True
+        )
+        
+        print(f"✅ Execution completed!")
+        print(f"Result: {result.get('output_data')}")
+        
+        return result
+        
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        raise
+
+if __name__ == "__main__":
+    execute_hiring_sync()
+```
+
+### **4. Multiple Executions Example**
+
+```python
+#!/usr/bin/env python3
+"""
+Execute the same hiring multiple times
+"""
+
+import asyncio
+from agenthub_sdk.client import AgentHubClient
+
+async def execute_multiple_times():
+    """Execute the same hiring multiple times."""
+    
+    async with AgentHubClient("http://localhost:8002") as client:
+        # Hire once
+        hiring = await client.hire_agent(agent_id=1)
+        hiring_id = hiring['hiring_id']
+        
+        # Execute multiple times
+        messages = ["First message", "Second message", "Third message"]
+        
+        for i, message in enumerate(messages, 1):
+            print(f"\n--- Execution {i} ---")
+            
+            result = await client.run_hired_agent(
+                hiring_id=hiring_id,
+                input_data={"message": message},
+                wait_for_completion=True
+            )
+            
+            output = result.get('output_data', {})
+            if isinstance(output, dict) and 'output' in output:
+                print(f"Response: {output['output']}")
+            else:
+                print(f"Response: {output}")
+
+if __name__ == "__main__":
+    asyncio.run(execute_multiple_times())
+```
+
+### **5. Function vs ACP Agent Example**
+
+```python
+#!/usr/bin/env python3
+"""
+Handle different agent types (function vs ACP server)
+"""
+
+import asyncio
+from agenthub_sdk.client import AgentHubClient
+
+async def handle_different_agent_types():
+    """Example showing how to handle different agent types."""
+    
+    async with AgentHubClient("http://localhost:8002") as client:
+        # List available agents
+        agents = await client.list_agents(limit=5)
+        
+        for agent in agents.get('agents', []):
+            agent_id = agent['id']
+            agent_type = agent.get('agent_type', 'function')
+            agent_name = agent['name']
+            
+            print(f"\n--- Testing {agent_name} (Type: {agent_type}) ---")
+            
+            try:
+                # Hire the agent
+                hiring = await client.hire_agent(agent_id=agent_id)
+                hiring_id = hiring['hiring_id']
+                
+                # Prepare input based on agent type
+                if agent_type == 'acp_server':
+                    # ACP agents might expect different input format
+                    input_data = {"task": "process", "data": "test data"}
+                else:
+                    # Function agents
+                    input_data = {"message": f"Testing {agent_name}"}
+                
+                # Execute
+                result = await client.run_hired_agent(
+                    hiring_id=hiring_id,
+                    input_data=input_data,
+                    wait_for_completion=True,
+                    timeout=30
+                )
+                
+                print(f"✅ Success: {result.get('status')}")
+                
+                # Show deployment info for ACP agents
+                if agent_type == 'acp_server' and hiring.get('deployment'):
+                    deployment = hiring['deployment']
+                    print(f"   Endpoint: {deployment.get('proxy_endpoint')}")
+                
+            except Exception as e:
+                print(f"❌ Failed: {e}")
+
+if __name__ == "__main__":
+    asyncio.run(handle_different_agent_types())
+```
+
+## Key Points:
+
+1. **Async vs Sync**: Use async version for better performance, sync version for simplicity
+2. **Hiring First**: Always hire an agent before executing it
+3. **Input Format**: Adjust input data based on your agent's requirements
+4. **Error Handling**: Always wrap in try-catch for production code
+5. **Agent Types**: Function agents and ACP server agents work the same way from the client perspective
+6. **Reuse Hiring**: You can execute the same hiring multiple times
+
+## Installation:
+
+```bash
+# Install the SDK
+pip install -e agent-hiring-mvp/agenthub-sdk/
+
+# Or install dependencies
+pip install aiohttp aiofiles
+```
+
+The examples above show you how to hire and execute agents programmatically using the AgentHub SDK! 

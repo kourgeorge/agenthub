@@ -1,6 +1,7 @@
 """Hiring service for managing agent hiring workflow."""
 
 import logging
+import threading
 from datetime import datetime
 from typing import Dict, Any, Optional, List
 
@@ -8,7 +9,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
 from ..models.hiring import Hiring, HiringStatus
-from ..models.agent import Agent
+from ..models.agent import Agent, AgentType
 from ..models.user import User
 from ..models.deployment import AgentDeployment
 
@@ -22,6 +23,7 @@ class HiringCreateRequest(BaseModel):
     requirements: Optional[Dict[str, Any]] = None
     budget: Optional[float] = None
     duration_hours: Optional[int] = None
+    billing_cycle: Optional[str] = "per_use"  # per_use, monthly
 
 
 class HiringService:
@@ -31,17 +33,22 @@ class HiringService:
         self.db = db
     
     def create_hiring(self, hiring_data: HiringCreateRequest) -> Hiring:
-        """Create a new hiring record."""
+        """Create a new hiring record and handle agent-specific setup."""
         # Validate that the agent exists
         agent = self.db.query(Agent).filter(Agent.id == hiring_data.agent_id).first()
         if not agent:
             raise ValueError(f"Agent with ID {hiring_data.agent_id} does not exist")
+        
+        # Check if agent is approved
+        if agent.status != "approved":
+            raise ValueError(f"Agent {agent.id} is not approved (status: {agent.status})")
         
         hiring = Hiring(
             agent_id=hiring_data.agent_id,
             user_id=hiring_data.user_id,
             status=HiringStatus.ACTIVE.value,
             config=hiring_data.requirements or {},
+            billing_cycle=hiring_data.billing_cycle,
             hired_at=datetime.utcnow(),
         )
         
@@ -50,7 +57,92 @@ class HiringService:
         self.db.refresh(hiring)
         
         logger.info(f"Created hiring: {hiring.id} for agent {hiring_data.agent_id}")
+        
+        # Handle agent-specific setup based on agent type
+        if agent.agent_type == AgentType.ACP_SERVER.value:
+            # For ACP agents, start deployment in background thread
+            self._setup_acp_agent_deployment_async(hiring, agent)
+        elif agent.agent_type == AgentType.FUNCTION.value:
+            # Function agents don't need deployment setup
+            logger.info(f"Function agent {agent.id} hired - no deployment needed")
+        else:
+            logger.warning(f"Unknown agent type {agent.agent_type} for agent {agent.id}")
+        
         return hiring
+    
+    def _setup_acp_agent_deployment_async(self, hiring: Hiring, agent: Agent):
+        """Setup deployment for ACP server agent in background thread."""
+        def deploy_in_background():
+            try:
+                # Create a new database session for the background thread
+                from ..database.config import get_engine
+                from sqlalchemy.orm import sessionmaker
+                
+                engine = get_engine()
+                SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+                db = SessionLocal()
+                
+                try:
+                    # Import here to avoid circular imports
+                    from .deployment_service import DeploymentService
+                    
+                    deployment_service = DeploymentService(db)
+                    
+                    # Create deployment
+                    deployment_result = deployment_service.create_deployment(hiring.id)
+                    if "error" in deployment_result:
+                        logger.error(f"Failed to create deployment for hiring {hiring.id}: {deployment_result['error']}")
+                        return
+                    
+                    deployment_id = deployment_result["deployment_id"]
+                    logger.info(f"Created deployment {deployment_id} for hiring {hiring.id}")
+                    
+                    # Build and deploy the container
+                    deploy_result = deployment_service.build_and_deploy(deployment_id)
+                    if "error" in deploy_result:
+                        logger.error(f"Failed to deploy {deployment_id}: {deploy_result['error']}")
+                        return
+                    
+                    logger.info(f"Successfully deployed ACP agent {agent.id} for hiring {hiring.id}")
+                    
+                finally:
+                    db.close()
+                    
+            except Exception as e:
+                logger.error(f"Exception in ACP agent deployment setup: {e}")
+        
+        # Start deployment in background thread
+        deployment_thread = threading.Thread(target=deploy_in_background, daemon=True)
+        deployment_thread.start()
+        logger.info(f"Started ACP agent deployment in background for hiring {hiring.id}")
+    
+    def _setup_acp_agent_deployment(self, hiring: Hiring, agent: Agent):
+        """Setup deployment for ACP server agent (synchronous version - kept for compatibility)."""
+        try:
+            # Import here to avoid circular imports
+            from .deployment_service import DeploymentService
+            
+            deployment_service = DeploymentService(self.db)
+            
+            # Create deployment
+            deployment_result = deployment_service.create_deployment(hiring.id)
+            if "error" in deployment_result:
+                logger.error(f"Failed to create deployment for hiring {hiring.id}: {deployment_result['error']}")
+                return
+            
+            deployment_id = deployment_result["deployment_id"]
+            logger.info(f"Created deployment {deployment_id} for hiring {hiring.id}")
+            
+            # Build and deploy the container
+            deploy_result = deployment_service.build_and_deploy(deployment_id)
+            if "error" in deploy_result:
+                logger.error(f"Failed to deploy {deployment_id}: {deploy_result['error']}")
+                return
+            
+            logger.info(f"Successfully deployed ACP agent {agent.id} for hiring {hiring.id}")
+            
+        except Exception as e:
+            logger.error(f"Exception in ACP agent deployment setup: {e}")
     
     def get_hiring(self, hiring_id: int) -> Optional[Hiring]:
         """Get a hiring by ID."""
@@ -58,27 +150,120 @@ class HiringService:
     
     def update_hiring_status(self, hiring_id: int, status: HiringStatus, 
                            notes: Optional[str] = None) -> Optional[Hiring]:
-        """Update hiring status."""
+        """Update hiring status and handle agent-specific actions."""
         hiring = self.get_hiring(hiring_id)
         if not hiring:
             return None
         
+        old_status = hiring.status
         hiring.status = status.value
         
         if status == HiringStatus.ACTIVE:
             hiring.hired_at = datetime.utcnow()
+            # If reactivating a suspended ACP agent, restart deployment
+            if old_status == HiringStatus.SUSPENDED.value:
+                self._handle_acp_agent_activation(hiring)
         elif status == HiringStatus.SUSPENDED:
-            # Update last_executed_at as a proxy for updated_at
             hiring.last_executed_at = datetime.utcnow()
+            # For ACP agents, suspend the deployment (keep container but stop processing)
+            self._handle_acp_agent_suspension(hiring)
         elif status == HiringStatus.CANCELLED:
-            # Update last_executed_at as a proxy for updated_at
             hiring.last_executed_at = datetime.utcnow()
+            # For ACP agents, stop and remove the deployment
+            self._handle_acp_agent_cancellation(hiring)
         
         self.db.commit()
         self.db.refresh(hiring)
         
         logger.info(f"Updated hiring {hiring_id} status to {status.value}")
         return hiring
+    
+    def _handle_acp_agent_activation(self, hiring: Hiring) -> Optional[Dict[str, Any]]:
+        """Handle ACP agent activation (restart deployment)."""
+        try:
+            agent = hiring.agent
+            if agent and agent.agent_type == AgentType.ACP_SERVER.value:
+                from .deployment_service import DeploymentService
+                deployment_service = DeploymentService(self.db)
+                
+                # Find existing deployment
+                deployment = self.db.query(AgentDeployment).filter(
+                    AgentDeployment.hiring_id == hiring.id
+                ).first()
+                
+                if deployment:
+                    # Restart the deployment
+                    restart_result = deployment_service.restart_deployment(deployment.deployment_id)
+                    if "error" in restart_result:
+                        logger.error(f"Failed to restart deployment {deployment.deployment_id}: {restart_result['error']}")
+                        return None
+                    else:
+                        logger.info(f"Successfully restarted deployment {deployment.deployment_id}")
+                        
+                        # Return deployment information for CLI display
+                        return {
+                            "deployment_id": deployment.deployment_id,
+                            "status": deployment.status,
+                            "proxy_endpoint": deployment.proxy_endpoint,
+                            "external_port": deployment.external_port,
+                            "container_id": deployment.container_id,
+                            "started_at": deployment.started_at.isoformat() if deployment.started_at else None
+                        }
+            return None
+        except Exception as e:
+            logger.error(f"Exception handling ACP agent activation: {e}")
+            return None
+    
+    def _handle_acp_agent_suspension(self, hiring: Hiring):
+        """Handle ACP agent suspension (suspend deployment)."""
+        try:
+            agent = hiring.agent
+            if agent and agent.agent_type == AgentType.ACP_SERVER.value:
+                from .deployment_service import DeploymentService
+                deployment_service = DeploymentService(self.db)
+                
+                # Find existing deployment
+                deployment = self.db.query(AgentDeployment).filter(
+                    AgentDeployment.hiring_id == hiring.id
+                ).first()
+                
+                if deployment:
+                    # Suspend the deployment (stop container but keep it)
+                    stop_result = deployment_service.stop_deployment(deployment.deployment_id)
+                    if "error" in stop_result:
+                        logger.error(f"Failed to suspend deployment {deployment.deployment_id}: {stop_result['error']}")
+                    else:
+                        logger.info(f"Successfully suspended deployment {deployment.deployment_id}")
+        except Exception as e:
+            logger.error(f"Exception handling ACP agent suspension: {e}")
+    
+    def _handle_acp_agent_cancellation(self, hiring: Hiring):
+        """Handle ACP agent cancellation (stop and remove deployment)."""
+        try:
+            agent = hiring.agent
+            if agent and agent.agent_type == AgentType.ACP_SERVER.value:
+                from .deployment_service import DeploymentService
+                deployment_service = DeploymentService(self.db)
+                
+                # Find existing deployment
+                deployment = self.db.query(AgentDeployment).filter(
+                    AgentDeployment.hiring_id == hiring.id
+                ).first()
+                
+                if deployment:
+                    # Stop and remove the deployment
+                    stop_result = deployment_service.stop_deployment(deployment.deployment_id)
+                    if "error" in stop_result:
+                        logger.error(f"Failed to stop deployment {deployment.deployment_id}: {stop_result['error']}")
+                    else:
+                        logger.info(f"Successfully stopped deployment {deployment.deployment_id}")
+                        
+                    # Remove the deployment record
+                    self.db.delete(deployment)
+                    self.db.commit()
+                    logger.info(f"Removed deployment record for hiring {hiring.id}")
+        except Exception as e:
+            logger.error(f"Exception handling ACP agent cancellation: {e}")
     
     def get_user_hirings(self, user_id: int, status: Optional[HiringStatus] = None) -> List[Hiring]:
         """Get hirings for a user."""
@@ -98,62 +283,45 @@ class HiringService:
         
         return query.order_by(Hiring.created_at.desc()).all()
     
-    def activate_hiring(self, hiring_id: int, notes: Optional[str] = None) -> Optional[Hiring]:
-        """Activate a hiring."""
-        return self.update_hiring_status(hiring_id, HiringStatus.ACTIVE, notes)
+    def activate_hiring(self, hiring_id: int, notes: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """Activate a hiring and return deployment info for ACP agents."""
+        hiring = self.update_hiring_status(hiring_id, HiringStatus.ACTIVE, notes)
+        if not hiring:
+            return None
+        
+        # Get deployment information for ACP agents
+        deployment_info = None
+        if hiring.agent.agent_type == AgentType.ACP_SERVER.value:
+            deployment = self.db.query(AgentDeployment).filter(
+                AgentDeployment.hiring_id == hiring_id
+            ).first()
+            
+            if deployment:
+                deployment_info = {
+                    "deployment_id": deployment.deployment_id,
+                    "status": deployment.status,
+                    "proxy_endpoint": deployment.proxy_endpoint,
+                    "external_port": deployment.external_port,
+                    "container_id": deployment.container_id,
+                    "started_at": deployment.started_at.isoformat() if deployment.started_at else None
+                }
+        
+        return {
+            "hiring_id": hiring.id,
+            "agent_id": hiring.agent_id,
+            "agent_name": hiring.agent.name,
+            "agent_type": hiring.agent.agent_type,
+            "status": hiring.status,
+            "deployment": deployment_info
+        }
     
     def suspend_hiring(self, hiring_id: int, notes: Optional[str] = None) -> Optional[Hiring]:
         """Suspend a hiring."""
-        # When suspending, also stop deployments but don't remove them
-        self._stop_hiring_deployments(hiring_id, suspend_only=True)
         return self.update_hiring_status(hiring_id, HiringStatus.SUSPENDED, notes)
     
     def cancel_hiring(self, hiring_id: int, notes: Optional[str] = None) -> Optional[Hiring]:
-        """Cancel a hiring and automatically stop associated deployments."""
-        # First stop all deployments for this hiring
-        self._stop_hiring_deployments(hiring_id, suspend_only=False)
-        
-        # Then update hiring status
+        """Cancel a hiring."""
         return self.update_hiring_status(hiring_id, HiringStatus.CANCELLED, notes)
-    
-    def _stop_hiring_deployments(self, hiring_id: int, suspend_only: bool = False):
-        """Stop all deployments associated with a hiring."""
-        try:
-            # Import here to avoid circular imports
-            from .deployment_service import DeploymentService
-            
-            # Find all deployments for this hiring
-            deployments = self.db.query(AgentDeployment).filter(
-                AgentDeployment.hiring_id == hiring_id
-            ).all()
-            
-            if not deployments:
-                logger.info(f"No deployments found for hiring {hiring_id}")
-                return
-            
-            # Stop each deployment
-            deployment_service = DeploymentService(self.db)
-            stopped_deployments = []
-            failed_deployments = []
-            
-            for deployment in deployments:
-                try:
-                    result = deployment_service.stop_deployment(deployment.deployment_id)
-                    if "error" in result:
-                        failed_deployments.append(deployment.deployment_id)
-                        logger.error(f"Failed to stop deployment {deployment.deployment_id}: {result['error']}")
-                    else:
-                        stopped_deployments.append(deployment.deployment_id)
-                        logger.info(f"Successfully stopped deployment {deployment.deployment_id}")
-                except Exception as e:
-                    failed_deployments.append(deployment.deployment_id)
-                    logger.error(f"Exception stopping deployment {deployment.deployment_id}: {e}")
-            
-            action = "suspended" if suspend_only else "cancelled"
-            logger.info(f"Hiring {hiring_id} {action}: stopped {len(stopped_deployments)} deployments, {len(failed_deployments)} failed")
-            
-        except Exception as e:
-            logger.error(f"Failed to stop deployments for hiring {hiring_id}: {e}")
     
     def get_hiring_stats(self, user_id: Optional[int] = None, agent_id: Optional[int] = None) -> Dict[str, Any]:
         """Get hiring statistics."""
@@ -202,25 +370,35 @@ class HiringService:
         if not hiring:
             return None
         
+        # Get deployment info for ACP agents
+        deployment_info = None
+        if hiring.agent.agent_type == AgentType.ACP_SERVER.value:
+            deployment = self.db.query(AgentDeployment).filter(
+                AgentDeployment.hiring_id == hiring_id
+            ).first()
+            
+            if deployment:
+                deployment_info = {
+                    "deployment_id": deployment.deployment_id,
+                    "status": deployment.status,
+                    "proxy_endpoint": deployment.proxy_endpoint,
+                    "external_port": deployment.external_port,
+                    "container_id": deployment.container_id,
+                    "started_at": deployment.started_at.isoformat() if deployment.started_at else None
+                }
+        
         return {
-            "id": hiring.id,
+            "hiring_id": hiring.id,
+            "agent_id": hiring.agent_id,
+            "agent_name": hiring.agent.name,
+            "agent_type": hiring.agent.agent_type,
+            "agent_description": hiring.agent.description,
+            "user_id": hiring.user_id,
+            "username": hiring.user.username,
             "status": hiring.status,
+            "billing_cycle": hiring.billing_cycle,
             "config": hiring.config,
             "hired_at": hiring.hired_at.isoformat(),
-            "expires_at": hiring.expires_at.isoformat() if hiring.expires_at else None,
-            "total_executions": hiring.total_executions,
             "last_executed_at": hiring.last_executed_at.isoformat() if hiring.last_executed_at else None,
-            "billing_cycle": hiring.billing_cycle,
-            "next_billing_date": hiring.next_billing_date.isoformat() if hiring.next_billing_date else None,
-            "agent": {
-                "id": hiring.agent.id,
-                "name": hiring.agent.name,
-                "description": hiring.agent.description,
-                "creator_id": hiring.agent.creator_id,
-            },
-            "user": {
-                "id": hiring.user.id,
-                "username": hiring.user.username,
-                "email": hiring.user.email,
-            }
+            "deployment": deployment_info
         } 

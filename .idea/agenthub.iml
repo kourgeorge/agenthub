@@ -5,7 +5,7 @@
       <sourceFolder url="file://$MODULE_DIR$/agent-hiring-mvp/server" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/apps/beeai-server/src" isTestSource="false" />
     </content>
-    <orderEntry type="inheritedJdk" />
+    <orderEntry type="jdk" jdkName="agenthubtest" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
   </component>
   <component name="PyDocumentationSettings">
