@@ -106,7 +106,8 @@ class DeploymentService:
                 return {"error": "Deployment already exists", "deployment_id": existing_deployment.deployment_id}
             
             # Generate deployment ID
-            deployment_id = f"agent-{agent.id}-{uuid.uuid4().hex[:8]}"
+            user_id = hiring.user_id or "anon"
+            deployment_id = f"user-{user_id}-agent-{agent.id}-hire-{hiring_id}-{uuid.uuid4().hex[:8]}"
             
             # Get available port
             external_port = self.get_available_port()
@@ -123,7 +124,8 @@ class DeploymentService:
                     "PORT": "8001",
                     "DEPLOYMENT_ID": deployment_id,
                     "AGENT_ID": str(agent.id),
-                    "HIRING_ID": str(hiring_id)
+                    "HIRING_ID": str(hiring_id),
+                    "USER_ID": str(user_id)
                 }
             )
             
@@ -169,7 +171,8 @@ class DeploymentService:
             self._extract_agent_code(agent, deploy_dir)
             
             # Build Docker image
-            image_name = f"agent-{agent.id}:{deployment_id}"
+            user_id = deployment.hiring.user_id or "anon"
+            image_name = f"user-{user_id}-agent-{agent.id}-hire-{deployment.hiring_id}:{deployment_id}"
             image = self._build_docker_image(deploy_dir, image_name)
             
             # Update deployment with image info
@@ -277,7 +280,8 @@ CMD ["python", "main.py"]
     
     def _deploy_container(self, deployment: AgentDeployment, image_name: str):
         """Deploy Docker container for the agent."""
-        container_name = f"agent-{deployment.agent_id}-{deployment.deployment_id}"
+        user_id = deployment.hiring.user_id or "anon"
+        container_name = f"user-{user_id}-agent-{deployment.agent_id}-hire-{deployment.hiring_id}-{deployment.deployment_id}"
         
         logger.info(f"Deploying container {container_name}")
         
@@ -302,8 +306,8 @@ CMD ["python", "main.py"]
         
         return container
     
-    def stop_deployment(self, deployment_id: str) -> Dict[str, Any]:
-        """Stop a deployment."""
+    def stop_deployment(self, deployment_id: str, timeout: int = 30) -> Dict[str, Any]:
+        """Stop a deployment and wait for resources to be terminated."""
         try:
             deployment = self.db.query(AgentDeployment).filter(
                 AgentDeployment.deployment_id == deployment_id
@@ -316,11 +320,35 @@ CMD ["python", "main.py"]
             if deployment.container_id:
                 try:
                     container = self.docker_client.containers.get(deployment.container_id)
-                    container.stop()
+                    logger.info(f"Stopping container {deployment.container_id}...")
+                    
+                    # Stop the container
+                    container.stop(timeout=timeout)
+                    logger.info(f"Container {deployment.container_id} stopped, removing...")
+                    
+                    # Remove the container
                     container.remove()
-                    logger.info(f"Stopped container {deployment.container_id}")
+                    logger.info(f"Container {deployment.container_id} removed")
+                    
+                    # Wait for container to be fully removed
+                    import time
+                    start_time = time.time()
+                    while time.time() - start_time < timeout:
+                        try:
+                            # Try to get the container - if it doesn't exist, it's been removed
+                            self.docker_client.containers.get(deployment.container_id)
+                            time.sleep(0.5)  # Wait 500ms before checking again
+                        except docker.errors.NotFound:
+                            logger.info(f"Container {deployment.container_id} fully terminated")
+                            break
+                    else:
+                        logger.warning(f"Container {deployment.container_id} removal timeout after {timeout}s")
+                        
                 except docker.errors.NotFound:
                     logger.warning(f"Container {deployment.container_id} not found")
+                except Exception as e:
+                    logger.error(f"Error stopping container {deployment.container_id}: {e}")
+                    return {"error": f"Failed to stop container: {str(e)}"}
             
             # Update deployment status
             deployment.status = DeploymentStatus.STOPPED.value

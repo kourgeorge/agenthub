@@ -156,6 +156,13 @@ class HiringService:
             return None
         
         old_status = hiring.status
+        
+        # Check if hiring is already in the target status
+        if old_status == status.value:
+            # Return the hiring without making changes, but log the attempt
+            logger.info(f"Hiring {hiring_id} is already {status.value}")
+            return hiring
+        
         hiring.status = status.value
         
         if status == HiringStatus.ACTIVE:
@@ -170,7 +177,9 @@ class HiringService:
         elif status == HiringStatus.CANCELLED:
             hiring.last_executed_at = datetime.utcnow()
             # For ACP agents, stop and remove the deployment
-            self._handle_acp_agent_cancellation(hiring)
+            cancellation_success = self._handle_acp_agent_cancellation(hiring, timeout=60)
+            if not cancellation_success:
+                logger.warning(f"Some resources may not have been fully terminated for hiring {hiring_id}")
         
         self.db.commit()
         self.db.refresh(hiring)
@@ -237,7 +246,7 @@ class HiringService:
         except Exception as e:
             logger.error(f"Exception handling ACP agent suspension: {e}")
     
-    def _handle_acp_agent_cancellation(self, hiring: Hiring):
+    def _handle_acp_agent_cancellation(self, hiring: Hiring, timeout: int = 60):
         """Handle ACP agent cancellation (stop and remove deployment)."""
         try:
             agent = hiring.agent
@@ -251,10 +260,13 @@ class HiringService:
                 ).first()
                 
                 if deployment:
-                    # Stop and remove the deployment
-                    stop_result = deployment_service.stop_deployment(deployment.deployment_id)
+                    logger.info(f"Starting cancellation process for deployment {deployment.deployment_id}")
+                    
+                    # Stop and remove the deployment with timeout
+                    stop_result = deployment_service.stop_deployment(deployment.deployment_id, timeout=timeout)
                     if "error" in stop_result:
                         logger.error(f"Failed to stop deployment {deployment.deployment_id}: {stop_result['error']}")
+                        return False
                     else:
                         logger.info(f"Successfully stopped deployment {deployment.deployment_id}")
                         
@@ -262,8 +274,11 @@ class HiringService:
                     self.db.delete(deployment)
                     self.db.commit()
                     logger.info(f"Removed deployment record for hiring {hiring.id}")
+                    return True
+            return True  # No deployment to cancel
         except Exception as e:
             logger.error(f"Exception handling ACP agent cancellation: {e}")
+            return False
     
     def get_user_hirings(self, user_id: int, status: Optional[HiringStatus] = None) -> List[Hiring]:
         """Get hirings for a user."""

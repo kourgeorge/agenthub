@@ -317,7 +317,7 @@ class AgentHubClient:
                 error_text = await response.text()
                 raise Exception(f"Failed to get hiring details: {error_text}")
     
-    async def cancel_hiring(self, hiring_id: int, notes: Optional[str] = None) -> Dict[str, Any]:
+    async def cancel_hiring(self, hiring_id: int, notes: Optional[str] = None, timeout: Optional[int] = 60) -> Dict[str, Any]:
         """Cancel a hiring."""
         if not self.session:
             raise RuntimeError("Client not initialized. Use async context manager.")
@@ -325,6 +325,8 @@ class AgentHubClient:
         data = {}
         if notes:
             data["notes"] = notes
+        if timeout:
+            data["timeout"] = timeout
         
         async with self.session.put(
             f"{self.api_base}/hiring/{hiring_id}/cancel",

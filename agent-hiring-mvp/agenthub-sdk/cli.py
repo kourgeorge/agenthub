@@ -1228,9 +1228,10 @@ def info_hired(ctx, hiring_id, base_url):
 @hired.command(name='cancel')
 @click.argument('hiring_id', type=int)
 @click.option('--notes', '-n', help='Cancellation notes')
+@click.option('--timeout', '-t', default=60, help='Timeout in seconds for resource termination')
 @click.option('--base-url', help='Base URL of the AgentHub server')
 @click.pass_context
-def cancel_hired(ctx, hiring_id, notes, base_url):
+def cancel_hired(ctx, hiring_id, notes, timeout, base_url):
     """Cancel a hired agent and automatically stop associated deployments."""
     verbose = ctx.obj.get('verbose', False)
     
@@ -1239,19 +1240,27 @@ def cancel_hired(ctx, hiring_id, notes, base_url):
     try:
         echo(style(f"🚫 Cancelling hiring {hiring_id}...", fg='yellow'))
         echo("   ⚠️  This will automatically stop all associated deployments")
+        echo(f"   ⏱️  Timeout: {timeout} seconds for resource termination")
         
         async def cancel_hiring():
             async with AgentHubClient(base_url) as client:
-                result = await client.cancel_hiring(hiring_id, notes)
+                result = await client.cancel_hiring(hiring_id, notes, timeout)
                 return result
         
         result = asyncio.run(cancel_hiring())
         
-        echo(style("✅ Hiring cancelled successfully!", fg='green'))
-        echo(f"  Hiring ID: {result.get('id')}")
-        echo(f"  Status: {result.get('status')}")
-        echo(f"  Message: {result.get('message')}")
-        echo(style("  📦 Associated deployments have been automatically stopped", fg='blue'))
+        # Check if hiring was already cancelled
+        if result.get('already_cancelled', False):
+            echo(style("ℹ️  Hiring is already cancelled", fg='blue'))
+            echo(f"  Hiring ID: {result.get('id')}")
+            echo(f"  Status: {result.get('status')}")
+            echo(f"  Message: {result.get('message')}")
+        else:
+            echo(style("✅ Hiring cancelled successfully!", fg='green'))
+            echo(f"  Hiring ID: {result.get('id')}")
+            echo(f"  Status: {result.get('status')}")
+            echo(f"  Message: {result.get('message')}")
+            echo(style("  🧹 All resources have been terminated", fg='blue'))
         
         if verbose:
             echo("Full response:")

@@ -203,22 +203,37 @@ def suspend_hiring(
 def cancel_hiring(
     hiring_id: int,
     notes: Optional[str] = None,
+    timeout: Optional[int] = 60,
     db: Session = Depends(get_session_dependency)
 ):
     """Cancel a hiring and automatically stop associated deployments."""
     hiring_service = HiringService(db)
-    hiring = hiring_service.cancel_hiring(hiring_id, notes)
     
-    if not hiring:
+    # First check the current status
+    current_hiring = hiring_service.get_hiring(hiring_id)
+    if not current_hiring:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Hiring not found"
         )
     
+    # If already cancelled, return appropriate message
+    if current_hiring.status == HiringStatus.CANCELLED.value:
+        return {
+            "id": current_hiring.id,
+            "status": current_hiring.status,
+            "message": "Hiring is already cancelled.",
+            "already_cancelled": True
+        }
+    
+    # Perform the cancellation (this will wait for resource termination for ACP agents)
+    hiring = hiring_service.cancel_hiring(hiring_id, notes)
+    
     return {
         "id": hiring.id,
         "status": hiring.status,
-        "message": "Hiring cancelled successfully. Associated deployments have been stopped."
+        "message": "Hiring cancelled successfully. All resources have been terminated.",
+        "already_cancelled": False
     }
 
 
