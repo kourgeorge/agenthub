@@ -874,7 +874,17 @@ def hire_agent_cmd(ctx, agent_id, config, billing_cycle, user_id, wait, timeout,
             if deployment_status == 'starting' and not wait:
                 echo(style("  🐳 ACP Server Agent - Deployment starting in background", fg='cyan'))
                 echo(style("  ⏳ Container deployment is in progress...", fg='yellow'))
-                echo(style("  💡 You can execute the agent once deployment completes", fg='green'))
+                
+                # Show endpoint information even when not waiting
+                hiring_id = result.get('hiring_id')
+                if hiring_id:
+                    # Construct the proxy endpoint URL
+                    proxy_base = base_url.rstrip('/')
+                    proxy_endpoint = f"{proxy_base}/api/v1/agent-proxy/{hiring_id}/acp"
+                    echo(f"  🔗 Proxy Endpoint: {proxy_endpoint}")
+                    echo(f"  📡 Direct Endpoint: Will be available once deployment completes")
+                    echo(style("  💡 Use the proxy endpoint to connect with ACP SDK clients", fg='green'))
+                    echo(style("  💡 Use 'agenthub hired info {hiring_id}' to check deployment status", fg='blue'))
             else:
                 echo(style("  🐳 ACP Server Agent - Container deployment handled automatically", fg='cyan'))
                 if result.get('deployment'):

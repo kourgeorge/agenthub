@@ -236,6 +236,7 @@ def get_agent_endpoint(
             "chat": f"/api/v1/agent-proxy/chat/{hiring_id}",
             "message": f"/api/v1/agent-proxy/message/{hiring_id}",
             "info": f"/api/v1/agent-proxy/info/{hiring_id}",
+            "acp_proxy": f"/api/v1/agent-proxy/{hiring_id}/acp",
             "direct_proxy": deployment.proxy_endpoint
         },
         "status": deployment.status,
@@ -301,6 +302,148 @@ async def proxy_request(
                     "content": content.decode() if content else None,
                     "deployment_id": deployment.deployment_id
                 }
+    
+    except aiohttp.ClientError as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Failed to proxy request to agent: {str(e)}"
+        )
+
+
+@router.api_route("/{hiring_id}/acp", methods=["GET", "POST", "PUT", "DELETE"])
+async def acp_proxy_root(
+    hiring_id: int,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """Simple ACP proxy root endpoint - forwards to the ACP agent container root."""
+    
+    # Get the deployment for this hiring
+    deployment = db.query(AgentDeployment).filter(
+        AgentDeployment.hiring_id == hiring_id
+    ).first()
+    
+    if not deployment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No deployment found for this hiring"
+        )
+    
+    # Check if deployment is running
+    if deployment.status != DeploymentStatus.RUNNING.value:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Agent deployment is not running. Status: {deployment.status}"
+        )
+    
+    # Proxy the request
+    try:
+        async with aiohttp.ClientSession() as session:
+            # Use the direct container endpoint (root)
+            target_url = deployment.proxy_endpoint
+            
+            # Get request body if present
+            body = None
+            if request.method in ["POST", "PUT"]:
+                body = await request.body()
+            
+            # Forward request to agent with minimal processing
+            async with session.request(
+                method=request.method,
+                url=target_url,
+                data=body,
+                headers={
+                    key: value for key, value in request.headers.items()
+                    if key.lower() not in ["host", "content-length"]
+                },
+                params=dict(request.query_params),  # Forward all query params
+                timeout=aiohttp.ClientTimeout(total=60)
+            ) as response:
+                
+                # Return the response directly (like a true proxy)
+                content = await response.read()
+                
+                # Create a streaming response to avoid memory issues
+                from fastapi.responses import StreamingResponse
+                import io
+                
+                return StreamingResponse(
+                    io.BytesIO(content),
+                    media_type=response.headers.get("content-type", "application/json"),
+                    headers=dict(response.headers)
+                )
+    
+    except aiohttp.ClientError as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Failed to proxy request to agent: {str(e)}"
+        )
+
+
+@router.api_route("/{hiring_id}/acp/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
+async def acp_proxy(
+    hiring_id: int,
+    path: str,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """Simple ACP proxy - forwards everything directly to the ACP agent container.
+    This is like a port mapping/forwarding service."""
+    
+    # Get the deployment for this hiring
+    deployment = db.query(AgentDeployment).filter(
+        AgentDeployment.hiring_id == hiring_id
+    ).first()
+    
+    if not deployment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No deployment found for this hiring"
+        )
+    
+    # Check if deployment is running
+    if deployment.status != DeploymentStatus.RUNNING.value:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Agent deployment is not running. Status: {deployment.status}"
+        )
+    
+    # Proxy the request
+    try:
+        async with aiohttp.ClientSession() as session:
+            # Construct the target URL with the path
+            target_url = f"{deployment.proxy_endpoint}/{path}"
+            
+            # Get request body if present
+            body = None
+            if request.method in ["POST", "PUT"]:
+                body = await request.body()
+            
+            # Forward request to agent with minimal processing
+            async with session.request(
+                method=request.method,
+                url=target_url,
+                data=body,
+                headers={
+                    key: value for key, value in request.headers.items()
+                    if key.lower() not in ["host", "content-length"]
+                },
+                params=dict(request.query_params),  # Forward all query params
+                timeout=aiohttp.ClientTimeout(total=60)
+            ) as response:
+                
+                # Return the response directly (like a true proxy)
+                content = await response.read()
+                
+                # Create a streaming response to avoid memory issues
+                from fastapi.responses import StreamingResponse
+                import io
+                
+                return StreamingResponse(
+                    io.BytesIO(content),
+                    media_type=response.headers.get("content-type", "application/json"),
+                    headers=dict(response.headers)
+                )
     
     except aiohttp.ClientError as e:
         raise HTTPException(
