@@ -1,0 +1,74 @@
+{
+  "name": "acp_rag_agent",
+  "description": "A RAG (Retrieval-Augmented Generation) agent using ACP SDK with LlamaIndex for document-based question answering.",
+  "version": "1.0.0",
+  "author": "AgentHub Team",
+  "email": "team@agenthub.com",
+  "entry_point": "agent.py",
+  "requirements": [
+    "acp-sdk",
+    "llama_index",
+    "python-dotenv",
+    "ollama"
+  ],
+  "config_schema": {
+    "type": "object",
+    "properties": {
+      "debug": {
+        "type": "boolean",
+        "default": false,
+        "description": "Enable debug mode"
+      },
+      "model_name": {
+        "type": "string",
+        "default": "qwen2.5",
+        "description": "Ollama model to use for LLM"
+      },
+      "embedding_model": {
+        "type": "string",
+        "default": "nomic-embed-text",
+        "description": "Ollama model to use for embeddings"
+      },
+      "document_url": {
+        "type": "string",
+        "default": "https://arxiv.org/pdf/2408.09869",
+        "description": "URL of the document to load for RAG"
+      },
+      "temperature": {
+        "type": "number",
+        "default": 0,
+        "description": "Temperature for LLM responses"
+      }
+    }
+  },
+  "tags": [
+    "rag",
+    "acp",
+    "llamaindex",
+    "document-qa",
+    "knowledge-base",
+    "ollama"
+  ],
+  "category": "research",
+  "pricing_model": "free",
+  "max_execution_time": 0,
+  "memory_limit": "1GB",
+  "agent_type": "acp_server",
+  "acp_manifest": {
+    "acp_version": "1.0.0",
+    "endpoints": {
+      "runs": "/runs"
+    },
+    "capabilities": [
+      "document_question_answering",
+      "knowledge_retrieval",
+      "rag_processing",
+      "streaming_responses"
+    ],
+    "deployment": {
+      "port": 8001,
+      "startup_timeout": 60,
+      "shutdown_timeout": 10
+    }
+  }
+} 
