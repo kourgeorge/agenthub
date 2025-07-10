@@ -289,12 +289,13 @@ class AgentHubClient:
                         {
                             "hiring_id": hiring.get("id"),
                             "agent_id": hiring.get("agent_id"),
-                            "agent_name": f"Agent {hiring.get('agent_id')}",
-                            "agent_type": "function",  # Default, will be updated with actual agent info
+                            "agent_name": hiring.get("agent_name", f"Agent {hiring.get('agent_id')}"),
+                            "agent_type": hiring.get("agent_type", "unknown"),
                             "status": hiring.get("status"),
                             "hired_at": hiring.get("hired_at"),
                             "billing_cycle": "per_use",
-                            "total_executions": hiring.get("total_executions", 0)
+                            "total_executions": hiring.get("total_executions", 0),
+                            "deployment": hiring.get("deployment")
                         }
                         for hiring in (hired_agents if isinstance(hired_agents, list) else [])
                     ]

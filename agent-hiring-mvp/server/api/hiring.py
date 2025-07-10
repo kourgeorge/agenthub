@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from ..database.config import get_session_dependency
 from ..services.hiring_service import HiringService, HiringCreateRequest
 from ..models.hiring import Hiring, HiringStatus
+from ..models.deployment import AgentDeployment
 
 router = APIRouter(prefix="/hiring", tags=["hiring"])
 
@@ -98,16 +99,43 @@ def get_user_hirings(
     else:
         hirings = hiring_service.get_user_hirings(user_id)
     
-    return [
-        {
+    result = []
+    for hiring in hirings:
+        hiring_data = {
             "id": hiring.id,
             "agent_id": hiring.agent_id,
             "status": hiring.status,
             "hired_at": hiring.hired_at.isoformat(),
             "total_executions": hiring.total_executions,
         }
-        for hiring in hirings
-    ]
+        
+        # Add agent information
+        if hiring.agent:
+            hiring_data.update({
+                "agent_name": hiring.agent.name,
+                "agent_type": hiring.agent.agent_type,
+                "agent_description": hiring.agent.description,
+            })
+        
+        # Add deployment information for ACP agents
+        if hiring.agent and hiring.agent.agent_type == "acp_server":
+            deployment = db.query(AgentDeployment).filter(
+                AgentDeployment.hiring_id == hiring.id
+            ).first()
+            
+            if deployment:
+                hiring_data["deployment"] = {
+                    "deployment_id": deployment.deployment_id,
+                    "status": deployment.status,
+                    "proxy_endpoint": deployment.proxy_endpoint,
+                    "external_port": deployment.external_port,
+                    "container_id": deployment.container_id,
+                    "started_at": deployment.started_at.isoformat() if deployment.started_at else None
+                }
+        
+        result.append(hiring_data)
+    
+    return result
 
 
 @router.get("/agent/{agent_id}", response_model=List[dict])

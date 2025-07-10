@@ -519,6 +519,7 @@ def info(ctx, agent_id, base_url):
         
         echo(style(f"🤖 {agent['name']}", fg='cyan', bold=True))
         echo(f"   ID: {agent['id']}")
+        echo(f"   Type: {agent.get('agent_type', 'unknown')}")
         echo(f"   Description: {agent['description']}")
         echo(f"   Author: {agent['author']} <{agent['email']}>")
         echo(f"   Version: {agent['version']}")
@@ -534,8 +535,12 @@ def info(ctx, agent_id, base_url):
             echo(f"   Tags: {', '.join(agent['tags'])}")
         
         echo(f"   Entry point: {agent['entry_point']}")
-        echo(f"   Max execution time: {agent['max_execution_time']}s")
-        echo(f"   Memory limit: {agent['memory_limit']}")
+        
+        # Safely display optional fields
+        if agent.get('max_execution_time'):
+            echo(f"   Max execution time: {agent['max_execution_time']}s")
+        if agent.get('memory_limit'):
+            echo(f"   Memory limit: {agent['memory_limit']}")
         
         if agent.get('requirements'):
             echo(f"   Requirements: {', '.join(agent['requirements'])}")
