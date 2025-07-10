@@ -1177,6 +1177,40 @@ def info_hired(ctx, hiring_id, base_url):
         if details.get('expires_at'):
             echo(f"   Expires At: {details['expires_at']}")
         
+        # Display API endpoints if available
+        api_endpoints = details.get('api_endpoints', {})
+        if api_endpoints:
+            echo(style(f"\n🔗 Available APIs", fg='cyan', bold=True))
+            
+            # Platform endpoints
+            platform_endpoints = api_endpoints.get('platform_endpoints', {})
+            if platform_endpoints:
+                echo(style("  Platform APIs:", fg='yellow'))
+                for name, url in platform_endpoints.items():
+                    echo(f"    {name}: {url}")
+            
+            # Agent proxy endpoints (for ACP agents)
+            agent_proxy = api_endpoints.get('agent_proxy', {})
+            if agent_proxy:
+                echo(style("  Agent Proxy APIs:", fg='yellow'))
+                for name, url in agent_proxy.items():
+                    echo(f"    {name}: {url}")
+            
+            # ACP-specific endpoints
+            acp_endpoints = api_endpoints.get('acp_endpoints', {})
+            if acp_endpoints:
+                echo(style("  ACP Agent APIs:", fg='yellow'))
+                for name, url in acp_endpoints.items():
+                    echo(f"    {name}: {url}")
+            
+            # Show usage examples
+            echo(style(f"\n💡 Usage Examples:", fg='cyan', bold=True))
+            echo(f"  # Execute the agent")
+            echo(f"  agenthub execute hiring {hiring_id} --input '{{\"message\": \"Hello\"}}'")
+            echo(f"  # Activate/suspend hiring")
+            echo(f"  agenthub hired activate {hiring_id}")
+            echo(f"  agenthub hired suspend {hiring_id}")
+        
         # Display configuration if available
         config = details.get('config', {})
         if config:

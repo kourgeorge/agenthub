@@ -285,17 +285,16 @@ class AgentHubClient:
                 hired_agents = await response.json()
                 # Convert to format expected by CLI
                 return {
-                    "hired_agents": [
+                    "hirings": [
                         {
-                            "id": hiring.get("id"),
-                            "agent": {
-                                "id": hiring.get("agent_id"),
-                                "name": f"Agent {hiring.get('agent_id')}",
-                                "category": "general"
-                            },
+                            "hiring_id": hiring.get("id"),
+                            "agent_id": hiring.get("agent_id"),
+                            "agent_name": f"Agent {hiring.get('agent_id')}",
+                            "agent_type": "function",  # Default, will be updated with actual agent info
                             "status": hiring.get("status"),
                             "hired_at": hiring.get("hired_at"),
-                            "billing_cycle": "per_use"
+                            "billing_cycle": "per_use",
+                            "total_executions": hiring.get("total_executions", 0)
                         }
                         for hiring in (hired_agents if isinstance(hired_agents, list) else [])
                     ]
