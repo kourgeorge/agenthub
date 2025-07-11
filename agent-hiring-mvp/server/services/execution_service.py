@@ -3,7 +3,7 @@
 import logging
 import uuid
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from ..models.execution import Execution, ExecutionStatus
 from ..models.agent import Agent
 from ..models.hiring import Hiring
+from ..models.agent_file import AgentFile
 from ..database.config import get_session
 from .agent_runtime import AgentRuntimeService, RuntimeStatus
 
@@ -140,12 +141,25 @@ class ExecutionService:
             else:
                 # Handle traditional function-based agents
                 runtime_service = AgentRuntimeService()
-                runtime_result = runtime_service.execute_agent(
-                    agent_id=execution.agent_id,
-                    input_data=execution.input_data or {},
-                    agent_code=agent.code if hasattr(agent, 'code') else None,
-                    agent_file_path=agent.file_path if hasattr(agent, 'file_path') else None
-                )
+                
+                # Try to get agent files (new multi-file approach)
+                agent_files = self._get_agent_files(agent.id)
+                
+                if agent_files:
+                    # Use new multi-file approach
+                    runtime_result = runtime_service.execute_agent(
+                        agent_id=execution.agent_id,
+                        input_data=execution.input_data or {},
+                        agent_files=agent_files
+                    )
+                else:
+                    # Fallback to legacy single-file approach
+                    runtime_result = runtime_service.execute_agent(
+                        agent_id=execution.agent_id,
+                        input_data=execution.input_data or {},
+                        agent_code=agent.code if hasattr(agent, 'code') else None,
+                        agent_file_path=agent.file_path if hasattr(agent, 'file_path') else None
+                    )
             
             # Process runtime result
             if runtime_result.status == RuntimeStatus.COMPLETED:
@@ -198,6 +212,13 @@ class ExecutionService:
                 "execution_id": execution_id,
                 "error": error_msg
             }
+    
+    def _get_agent_files(self, agent_id: int) -> Optional[List[Dict[str, Any]]]:
+        """Get all files for an agent."""
+        agent_files = self.db.query(AgentFile).filter(AgentFile.agent_id == agent_id).all()
+        if agent_files:
+            return [file.to_dict() for file in agent_files]
+        return None
     
     def _execute_acp_server_agent(self, agent: Agent, input_data: Dict[str, Any], execution_id: str):
         """Execute an ACP server agent by making HTTP requests to the running server."""
@@ -295,23 +316,11 @@ class ExecutionService:
                     error=f"ACP agent returned status {response.status_code}: {response.text}",
                     execution_time=execution_time
                 )
-                    
-        except requests.exceptions.Timeout:
-            return RuntimeResult(
-                status=RuntimeStatus.TIMEOUT,
-                error="Request to ACP agent timed out",
-                execution_time=time.time() - start_time
-            )
-        except requests.exceptions.ConnectionError:
-            return RuntimeResult(
-                status=RuntimeStatus.FAILED,
-                error="Could not connect to ACP agent server",
-                execution_time=time.time() - start_time
-            )
+        
         except Exception as e:
             return RuntimeResult(
                 status=RuntimeStatus.FAILED,
-                error=f"ACP server agent execution error: {str(e)}",
+                error=f"ACP execution error: {str(e)}",
                 execution_time=time.time() - start_time
             )
     

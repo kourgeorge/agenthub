@@ -555,6 +555,64 @@ def info(ctx, agent_id, base_url):
 
 
 @agent.command()
+@click.argument("agent_id", type=int)
+@click.option("--file-path", help="Specific file path to show content")
+@click.option('--base-url', help='Base URL of the AgentHub server')
+@click.pass_context
+def files(ctx, agent_id, file_path, base_url):
+    """List files for an agent or show specific file content."""
+    verbose = ctx.obj.get('verbose', False)
+    
+    base_url = base_url or cli_config.get('base_url', 'http://localhost:8002')
+    
+    try:
+        async def get_files():
+            async with AgentHubClient(base_url) as client:
+                if file_path:
+                    # Show specific file content
+                    result = await client.get_agent_file_content(agent_id, file_path)
+                else:
+                    # List all files
+                    result = await client.get_agent_files(agent_id)
+                return result
+        
+        result = asyncio.run(get_files())
+        
+        if result.get("status") == "success":
+            if file_path:
+                # Show specific file content
+                file_data = result["data"]
+                echo(style(f"\n=== File: {file_path} ===", fg='cyan', bold=True))
+                echo(file_data["content"])
+            else:
+                # List all files
+                files_data = result["data"]
+                echo(style(f"\n=== Files for Agent: {files_data['agent_name']} ===", fg='cyan', bold=True))
+                echo(f"Total files: {files_data['total_files']}\n")
+                
+                for file_info in files_data["files"]:
+                    file_type = file_info.get("file_type", "")
+                    is_main = " (MAIN)" if file_info.get("is_main_file") == "Y" else ""
+                    is_exec = " [EXEC]" if file_info.get("is_executable") == "Y" else ""
+                    size = file_info.get("file_size", 0)
+                    
+                    echo(f"  {file_info['file_path']}{is_main}{is_exec}")
+                    echo(f"    Type: {file_type}, Size: {size} bytes")
+                    echo()
+            
+            if verbose:
+                echo("\nFull response:")
+                echo(json.dumps(result, indent=2))
+        else:
+            echo(style(f"✗ Error: {result.get('message', 'Unknown error')}", fg='red'))
+            sys.exit(1)
+    
+    except Exception as e:
+        echo(style(f"✗ Error fetching agent files: {e}", fg='red'))
+        sys.exit(1)
+
+
+@agent.command()
 @click.argument('agent_id', type=int)
 @click.option('--base-url', help='Base URL of the AgentHub server')
 @click.pass_context

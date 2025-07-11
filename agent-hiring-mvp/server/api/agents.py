@@ -250,3 +250,58 @@ async def delete_agent(
     db.commit()
     
     return {"message": "Agent deleted successfully"} 
+
+
+@router.get("/{agent_id}/files")
+async def get_agent_files(
+    agent_id: int,
+    db: Session = Depends(get_session_dependency),
+):
+    """Get all files for an agent."""
+    agent_service = AgentService(db)
+    agent = agent_service.get_agent(agent_id)
+    
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    
+    if not agent.is_public or agent.status != AgentStatus.APPROVED.value:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    
+    # Get all files for the agent
+    files = agent_service.get_agent_files(agent_id)
+    
+    return {
+        "agent_id": agent_id,
+        "agent_name": agent.name,
+        "files": files,
+        "total_files": len(files)
+    }
+
+
+@router.get("/{agent_id}/files/{file_path:path}")
+async def get_agent_file_content(
+    agent_id: int,
+    file_path: str,
+    db: Session = Depends(get_session_dependency),
+):
+    """Get content of a specific file for an agent."""
+    agent_service = AgentService(db)
+    agent = agent_service.get_agent(agent_id)
+    
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    
+    if not agent.is_public or agent.status != AgentStatus.APPROVED.value:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    
+    # Get file content
+    file_content = agent_service.get_agent_file_content(agent_id, file_path)
+    
+    if not file_content:
+        raise HTTPException(status_code=404, detail="File not found")
+    
+    return {
+        "agent_id": agent_id,
+        "file_path": file_path,
+        "content": file_content
+    } 

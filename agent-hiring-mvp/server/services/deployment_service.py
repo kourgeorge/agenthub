@@ -216,8 +216,11 @@ class DeploymentService:
             # Download and extract ZIP
             # TODO: Implement ZIP download and extraction
             pass
+        elif agent.files:
+            # Use new multi-file approach
+            self._extract_agent_files(agent, deploy_dir)
         elif agent.code:
-            # Write code directly to file with UTF-8 encoding
+            # Legacy single-file approach
             main_file = deploy_dir / "main.py"
             main_file.write_text(agent.code, encoding='utf-8')
         else:
@@ -257,6 +260,31 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \\
 CMD ["python", "main.py"]
 """
             dockerfile.write_text(dockerfile_content, encoding='utf-8')
+    
+    def _extract_agent_files(self, agent: Agent, deploy_dir: Path):
+        """Extract all agent files to deployment directory."""
+        for agent_file in agent.files:
+            # Create directory structure if needed
+            file_path = deploy_dir / agent_file.file_path
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Write file content
+            file_path.write_text(agent_file.file_content, encoding='utf-8')
+            
+            logger.info(f"Extracted file: {agent_file.file_path}")
+        
+        # Ensure main.py exists (for backward compatibility)
+        main_file = deploy_dir / "main.py"
+        if not main_file.exists():
+            # Find the main file
+            main_agent_file = agent.get_main_file()
+            if main_agent_file:
+                main_file.write_text(main_agent_file.file_content, encoding='utf-8')
+            else:
+                # Fallback to first Python file
+                python_files = [f for f in agent.files if f.file_type == '.py']
+                if python_files:
+                    main_file.write_text(python_files[0].file_content, encoding='utf-8')
     
     def _build_docker_image(self, deploy_dir: Path, image_name: str):
         """Build Docker image for the agent."""

@@ -733,6 +733,35 @@ class AgentHubClient:
         except:
             return False
 
+    async def get_agent_files(self, agent_id: int) -> Dict[str, Any]:
+        """Get all files for an agent."""
+        url = f"{self.base_url}/api/v1/agents/{agent_id}/files"
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    return {"status": "success", "data": data}
+                else:
+                    error_text = await response.text()
+                    return {"status": "error", "message": f"HTTP {response.status}: {error_text}"}
+    
+    async def get_agent_file_content(self, agent_id: int, file_path: str) -> Dict[str, Any]:
+        """Get content of a specific file for an agent."""
+        # URL encode the file path for the API
+        import urllib.parse
+        encoded_path = urllib.parse.quote(file_path, safe='')
+        url = f"{self.base_url}/api/v1/agents/{agent_id}/files/{encoded_path}"
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    return {"status": "success", "data": data}
+                else:
+                    error_text = await response.text()
+                    return {"status": "error", "message": f"HTTP {response.status}: {error_text}"}
+
 
 # Synchronous wrapper functions for convenience
 def submit_agent_sync(

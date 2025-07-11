@@ -54,7 +54,8 @@ class AgentRuntimeService:
         os.makedirs(self.base_dir, exist_ok=True)
     
     def execute_agent(self, agent_id: int, input_data: Dict[str, Any], 
-                     agent_code: Optional[str] = None, agent_file_path: Optional[str] = None) -> RuntimeResult:
+                     agent_code: Optional[str] = None, agent_file_path: Optional[str] = None,
+                     agent_files: Optional[List[Dict[str, Any]]] = None) -> RuntimeResult:
         """Execute an agent with the given input data."""
         start_time = time.time()
         
@@ -63,15 +64,19 @@ class AgentRuntimeService:
             with tempfile.TemporaryDirectory(dir=self.base_dir) as temp_dir:
                 logger.info(f"Executing agent {agent_id} in {temp_dir}")
                 
-                # Prepare agent code
-                if agent_code:
+                # Prepare agent files
+                if agent_files:
+                    # Use new multi-file approach
+                    agent_file = self._prepare_agent_files(temp_dir, agent_files)
+                elif agent_code:
+                    # Legacy single-file approach
                     agent_file = self._prepare_agent_code(temp_dir, agent_code)
                 elif agent_file_path:
                     agent_file = self._copy_agent_file(temp_dir, agent_file_path)
                 else:
                     return RuntimeResult(
                         status=RuntimeStatus.FAILED,
-                        error="No agent code or file provided"
+                        error="No agent code or files provided"
                     )
                 
                 # Prepare input data
@@ -95,8 +100,42 @@ class AgentRuntimeService:
                 execution_time=time.time() - start_time
             )
     
+    def _prepare_agent_files(self, temp_dir: str, agent_files: List[Dict[str, Any]]) -> str:
+        """Prepare all agent files in temporary directory."""
+        main_file_path: Optional[str] = None
+        
+        for file_data in agent_files:
+            # Create directory structure if needed
+            file_path = os.path.join(temp_dir, file_data['file_path'])
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            
+            # Write file content
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(file_data['file_content'])
+            
+            # Track main file
+            if file_data.get('is_main_file') == 'Y':
+                main_file_path = file_path
+        
+        if not main_file_path:
+            # Fallback to first Python file
+            python_files = [f for f in agent_files if f.get('file_type') == '.py']
+            if python_files:
+                main_file_path = os.path.join(temp_dir, python_files[0]['file_path'])
+            else:
+                raise ValueError("No main file or Python files found")
+        
+        # Create the main execution wrapper
+        wrapper_file = os.path.join(temp_dir, "agent.py")
+        wrapped_code = self._wrap_agent_code()
+        
+        with open(wrapper_file, 'w') as f:
+            f.write(wrapped_code)
+        
+        return wrapper_file
+    
     def _prepare_agent_code(self, temp_dir: str, agent_code: Optional[str]) -> str:
-        """Prepare agent code in temporary directory."""
+        """Prepare agent code in temporary directory (legacy method)."""
         if agent_code is None:
             raise ValueError("Agent code cannot be None")
             

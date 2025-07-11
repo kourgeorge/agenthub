@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
 from ..models.agent import Agent, AgentStatus, AgentType
+from ..models.agent_file import AgentFile
 from ..models.user import User
 
 logger = logging.getLogger(__name__)
@@ -42,12 +43,12 @@ class AgentService:
         self.db = db
     
     def create_agent(self, agent_data: AgentCreateRequest, code_file_path: str) -> Agent:
-        """Create a new agent."""
+        """Create a new agent with multiple files."""
         # Calculate code hash
         code_hash = self._calculate_file_hash(code_file_path)
         
-        # Extract and store agent code
-        agent_code = self._extract_agent_code(code_file_path, agent_data.entry_point)
+        # Extract all agent files
+        agent_files = self._extract_all_agent_files(code_file_path, agent_data.entry_point)
         
         # Create agent record
         agent = Agent(
@@ -67,7 +68,8 @@ class AgentService:
             agent_type=agent_data.agent_type or AgentType.FUNCTION.value,
             acp_manifest=agent_data.acp_manifest,
             code_hash=code_hash,
-            code=agent_code,  # Store the extracted code
+            # Keep legacy code field for backward compatibility (main file only)
+            code=agent_files.get('main_file_content', ''),
             status=AgentStatus.SUBMITTED.value,
             is_public=False,
         )
@@ -76,7 +78,10 @@ class AgentService:
         self.db.commit()
         self.db.refresh(agent)
         
-        logger.info(f"Created agent: {agent.name} (ID: {agent.id}) with type: {agent.agent_type}")
+        # Create agent file records
+        self._create_agent_file_records(agent.id, agent_files)
+        
+        logger.info(f"Created agent: {agent.name} (ID: {agent.id}) with {len(agent_files.get('files', []))} files")
         return agent
     
     def get_agent(self, agent_id: int) -> Optional[Agent]:
@@ -168,29 +173,100 @@ class AgentService:
                 hash_sha256.update(chunk)
         return hash_sha256.hexdigest()
     
-    def _extract_agent_code(self, code_file_path: str, entry_point: str) -> str:
-        """Extract agent code from ZIP file."""
+    def _extract_all_agent_files(self, code_file_path: str, entry_point: str) -> Dict[str, Any]:
+        """Extract all files from ZIP file."""
+        files_data = {
+            'files': [],
+            'main_file_content': '',
+            'main_file_path': ''
+        }
+        
         try:
             with zipfile.ZipFile(code_file_path, 'r') as zip_file:
                 # Get the main agent file from entry_point
                 # entry_point might be like "my_agent.py" or "my_agent.py:main"
-                agent_file = entry_point.split(':')[0]
+                main_file = entry_point.split(':')[0]
                 
-                # Try to find the agent file in the ZIP
-                if agent_file in zip_file.namelist():
-                    with zip_file.open(agent_file) as f:
-                        return f.read().decode('utf-8')
-                else:
-                    # Fallback: find any Python file
-                    python_files = [f for f in zip_file.namelist() if f.endswith('.py')]
+                # Extract all files
+                for file_name in zip_file.namelist():
+                    # Skip directories
+                    if file_name.endswith('/'):
+                        continue
+                    
+                    try:
+                        with zip_file.open(file_name) as f:
+                            content = f.read().decode('utf-8')
+                            
+                            # Determine file type
+                            file_ext = Path(file_name).suffix.lower()
+                            is_executable = file_ext in ['.py', '.js', '.sh', '.bat']
+                            is_main_file = file_name == main_file
+                            
+                            file_data = {
+                                'file_path': file_name,
+                                'file_name': Path(file_name).name,
+                                'file_content': content,
+                                'file_type': file_ext,
+                                'file_size': len(content.encode('utf-8')),
+                                'is_main_file': 'Y' if is_main_file else 'N',
+                                'is_executable': 'Y' if is_executable else 'N'
+                            }
+                            
+                            files_data['files'].append(file_data)
+                            
+                            # Store main file content for backward compatibility
+                            if is_main_file:
+                                files_data['main_file_content'] = content
+                                files_data['main_file_path'] = file_name
+                                
+                    except UnicodeDecodeError:
+                        # Skip binary files
+                        logger.warning(f"Skipping binary file: {file_name}")
+                        continue
+                
+                # If no main file found, use first Python file as fallback
+                if not files_data['main_file_content']:
+                    python_files = [f for f in files_data['files'] if f['file_type'] == '.py']
                     if python_files:
-                        with zip_file.open(python_files[0]) as f:
-                            return f.read().decode('utf-8')
-                    else:
-                        raise Exception("No Python files found in ZIP")
+                        files_data['main_file_content'] = python_files[0]['file_content']
+                        files_data['main_file_path'] = python_files[0]['file_path']
+                        python_files[0]['is_main_file'] = 'Y'
+                
         except Exception as e:
-            logger.error(f"Error extracting agent code: {str(e)}")
-            return ""
+            logger.error(f"Error extracting agent files: {str(e)}")
+            raise Exception(f"Failed to extract agent files: {str(e)}")
+        
+        return files_data
+    
+    def _create_agent_file_records(self, agent_id: int, files_data: Dict[str, Any]) -> None:
+        """Create database records for all agent files."""
+        for file_data in files_data.get('files', []):
+            agent_file = AgentFile(
+                agent_id=agent_id,
+                file_path=file_data['file_path'],
+                file_name=file_data['file_name'],
+                file_content=file_data['file_content'],
+                file_type=file_data['file_type'],
+                file_size=file_data['file_size'],
+                is_main_file=file_data['is_main_file'],
+                is_executable=file_data['is_executable']
+            )
+            self.db.add(agent_file)
+        
+        self.db.commit()
+    
+    def get_agent_files(self, agent_id: int) -> List[Dict[str, Any]]:
+        """Get all files for an agent."""
+        agent_files = self.db.query(AgentFile).filter(AgentFile.agent_id == agent_id).all()
+        return [file.to_dict() for file in agent_files]
+    
+    def get_agent_file_content(self, agent_id: int, file_path: str) -> Optional[str]:
+        """Get content of a specific file for an agent."""
+        agent_file = self.db.query(AgentFile).filter(
+            AgentFile.agent_id == agent_id,
+            AgentFile.file_path == file_path
+        ).first()
+        return agent_file.file_content if agent_file else None
     
     def validate_agent_code(self, code_file_path: str) -> List[str]:
         """Validate agent code for security and compliance."""
@@ -215,6 +291,12 @@ class AgentService:
                 total_size = sum(zip_file.getinfo(f).file_size for f in file_list)
                 if total_size > 10 * 1024 * 1024:  # 10MB limit
                     errors.append("Agent code exceeds size limit (10MB)")
+                
+                # Check individual file size limits
+                for file_name in file_list:
+                    file_size = zip_file.getinfo(file_name).file_size
+                    if file_size > 1 * 1024 * 1024:  # 1MB per file limit
+                        errors.append(f"File {file_name} exceeds size limit (1MB)")
         
         except zipfile.BadZipFile:
             errors.append("Invalid ZIP file")

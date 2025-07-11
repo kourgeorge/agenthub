@@ -47,7 +47,7 @@ class Agent(Base):
     code_zip_url = Column(String(500), nullable=True)  # URL to agent code ZIP
     code_hash = Column(String(64), nullable=True)  # SHA256 hash of code
     docker_image = Column(String(255), nullable=True)  # Docker image name
-    code = Column(Text, nullable=True)  # Direct code storage
+    code = Column(Text, nullable=True)  # Direct code storage (legacy - main file only)
     file_path = Column(String(500), nullable=True)  # Path to agent file
     
     # ACP Server Deployment (for ACP_SERVER type agents)
@@ -76,6 +76,25 @@ class Agent(Base):
     # Relationships
     hirings = relationship("Hiring", back_populates="agent")
     executions = relationship("Execution", back_populates="agent")
+    files = relationship("AgentFile", back_populates="agent", cascade="all, delete-orphan")
     
     def __repr__(self) -> str:
-        return f"<Agent(id={self.id}, name='{self.name}', status='{self.status}')>" 
+        return f"<Agent(id={self.id}, name='{self.name}', status='{self.status}')>"
+    
+    def get_main_file(self):
+        """Get the main entry point file."""
+        for file in self.files:
+            if file.is_main_file == 'Y':
+                return file
+        return None
+    
+    def get_file_by_path(self, file_path: str):
+        """Get a specific file by its path."""
+        for file in self.files:
+            if file.file_path == file_path:
+                return file
+        return None
+    
+    def get_all_files(self):
+        """Get all files associated with this agent."""
+        return [file.to_dict() for file in self.files] 
