@@ -50,6 +50,25 @@ def create_hiring(
         response["message"] += ". ACP agent deployment is starting in the background."
         response["deployment_status"] = "starting"
     
+    # Add deployment status for function agents
+    elif agent and agent.agent_type == "function":
+        response["message"] += ". Function agent Docker container is being prepared."
+        response["deployment_status"] = "starting"
+        
+        # Check if deployment already exists
+        deployment = db.query(AgentDeployment).filter(
+            AgentDeployment.hiring_id == hiring.id
+        ).first()
+        
+        if deployment:
+            response["deployment"] = {
+                "deployment_id": deployment.deployment_id,
+                "status": deployment.status,
+                "container_id": deployment.container_id,
+                "container_name": deployment.container_name,
+                "started_at": deployment.started_at.isoformat() if deployment.started_at else None
+            }
+    
     return response
 
 
@@ -130,6 +149,21 @@ def get_user_hirings(
                     "proxy_endpoint": deployment.proxy_endpoint,
                     "external_port": deployment.external_port,
                     "container_id": deployment.container_id,
+                    "started_at": deployment.started_at.isoformat() if deployment.started_at else None
+                }
+        
+        # Add deployment information for function agents
+        elif hiring.agent and hiring.agent.agent_type == "function":
+            deployment = db.query(AgentDeployment).filter(
+                AgentDeployment.hiring_id == hiring.id
+            ).first()
+            
+            if deployment:
+                hiring_data["deployment"] = {
+                    "deployment_id": deployment.deployment_id,
+                    "status": deployment.status,
+                    "container_id": deployment.container_id,
+                    "container_name": deployment.container_name,
                     "started_at": deployment.started_at.isoformat() if deployment.started_at else None
                 }
         

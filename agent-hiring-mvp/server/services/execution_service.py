@@ -13,7 +13,7 @@ from ..models.agent import Agent
 from ..models.hiring import Hiring
 from ..models.agent_file import AgentFile
 from ..database.config import get_session
-from .agent_runtime import AgentRuntimeService, RuntimeStatus
+from .agent_runtime import AgentRuntimeService, RuntimeStatus, RuntimeResult
 
 logger = logging.getLogger(__name__)
 
@@ -139,27 +139,8 @@ class ExecutionService:
                 # Handle ACP server agents
                 runtime_result = self._execute_acp_server_agent(agent, execution.input_data or {}, execution_id)
             else:
-                # Handle traditional function-based agents
-                runtime_service = AgentRuntimeService()
-                
-                # Try to get agent files (new multi-file approach)
-                agent_files = self._get_agent_files(agent.id)
-                
-                if agent_files:
-                    # Use new multi-file approach
-                    runtime_result = runtime_service.execute_agent(
-                        agent_id=execution.agent_id,
-                        input_data=execution.input_data or {},
-                        agent_files=agent_files
-                    )
-                else:
-                    # Fallback to legacy single-file approach
-                    runtime_result = runtime_service.execute_agent(
-                        agent_id=execution.agent_id,
-                        input_data=execution.input_data or {},
-                        agent_code=agent.code if hasattr(agent, 'code') else None,
-                        agent_file_path=agent.file_path if hasattr(agent, 'file_path') else None
-                    )
+                # Handle function-based agents with Docker deployment
+                runtime_result = self._execute_function_agent(agent, execution.input_data or {}, execution_id)
             
             # Process runtime result
             if runtime_result.status == RuntimeStatus.COMPLETED:
@@ -219,6 +200,63 @@ class ExecutionService:
         if agent_files:
             return [file.to_dict() for file in agent_files]
         return None
+    
+    def _execute_function_agent(self, agent: Agent, input_data: Dict[str, Any], execution_id: str):
+        """Execute a function agent using Docker deployment."""
+        try:
+            # Get the deployment for this agent
+            from ..models.deployment import AgentDeployment, DeploymentStatus
+            deployment = self.db.query(AgentDeployment).filter(
+                AgentDeployment.agent_id == agent.id,
+                AgentDeployment.status == DeploymentStatus.RUNNING.value
+            ).first()
+            
+            if deployment:
+                # Use Docker deployment if available
+                from .function_deployment_service import FunctionDeploymentService
+                deployment_service = FunctionDeploymentService(self.db)
+                
+                result = deployment_service.execute_in_container(deployment.deployment_id, input_data)
+                
+                if result.get("status") == "success":
+                    return RuntimeResult(
+                        status=RuntimeStatus.COMPLETED,
+                        output=result.get("output"),
+                        execution_time=result.get("execution_time")
+                    )
+                else:
+                    return RuntimeResult(
+                        status=RuntimeStatus.FAILED,
+                        error=result.get("error", "Unknown error")
+                    )
+            else:
+                # Fallback to traditional runtime service
+                runtime_service = AgentRuntimeService()
+                
+                # Try to get agent files (new multi-file approach)
+                agent_files = self._get_agent_files(agent.id)
+                
+                if agent_files:
+                    # Use new multi-file approach
+                    return runtime_service.execute_agent(
+                        agent_id=agent.id,
+                        input_data=input_data,
+                        agent_files=agent_files
+                    )
+                else:
+                    # Fallback to legacy single-file approach
+                    return runtime_service.execute_agent(
+                        agent_id=agent.id,
+                        input_data=input_data,
+                        agent_code=agent.code if hasattr(agent, 'code') else None,
+                        agent_file_path=agent.file_path if hasattr(agent, 'file_path') else None
+                    )
+                
+        except Exception as e:
+            return RuntimeResult(
+                status=RuntimeStatus.FAILED,
+                error=f"Function agent execution error: {str(e)}"
+            )
     
     def _execute_acp_server_agent(self, agent: Agent, input_data: Dict[str, Any], execution_id: str):
         """Execute an ACP server agent by making HTTP requests to the running server."""

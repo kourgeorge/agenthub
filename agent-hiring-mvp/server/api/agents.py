@@ -134,6 +134,7 @@ async def list_agents(
                 "price_per_use": agent.price_per_use,
                 "monthly_price": agent.monthly_price,
                 "agent_type": agent.agent_type,
+                "status": agent.status,
                 "total_hires": agent.total_hires,
                 "total_executions": agent.total_executions,
                 "average_rating": agent.average_rating,

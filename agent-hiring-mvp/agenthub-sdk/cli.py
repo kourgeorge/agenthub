@@ -958,7 +958,17 @@ def hire_agent_cmd(ctx, agent_id, config, billing_cycle, user_id, wait, timeout,
                     echo(f"  Port: {deployment.get('external_port')}")
                     echo(style("  💡 Your ACP agent is now accessible at the endpoint above", fg='green'))
         elif agent_type == 'function':
-            echo(style("  ⚡ Function Agent - Ready for immediate execution", fg='cyan'))
+            echo(style("  ⚡ Function Agent - Docker container being prepared", fg='cyan'))
+            echo(style("  🐳 Container will be ready for persistent execution", fg='blue'))
+            echo(style("  💡 Requirements installed once, reused for all executions", fg='green'))
+            
+            # Check if there's deployment info for function agents
+            if result.get('deployment'):
+                deployment = result['deployment']
+                echo(f"  Container Status: {deployment.get('status', 'unknown')}")
+                if deployment.get('container_id'):
+                    echo(f"  Container ID: {deployment.get('container_id')[:12]}...")
+                echo(style("  💡 Container is ready for function execution", fg='green'))
         
         show_next_steps("hire agent", hiring_id=result.get('hiring_id'))
         
@@ -1196,9 +1206,15 @@ def list_hired(ctx, user_id, hiring_status, show_all, base_url):
             # Show deployment info for ACP agents
             deployment = hiring.get('deployment')
             if deployment:
-                echo(f"  🐳 Deployment: {deployment.get('deployment_id')}")
-                echo(f"    Status: {deployment.get('status')}")
-                echo(f"    Endpoint: {deployment.get('proxy_endpoint')}")
+                if hiring.get('agent_type') == 'acp_server':
+                    echo(f"  🐳 ACP Deployment: {deployment.get('deployment_id')}")
+                    echo(f"    Status: {deployment.get('status')}")
+                    echo(f"    Endpoint: {deployment.get('proxy_endpoint')}")
+                else:
+                    echo(f"  ⚡ Function Deployment: {deployment.get('deployment_id')}")
+                    echo(f"    Status: {deployment.get('status')}")
+                    if deployment.get('container_id'):
+                        echo(f"    Container: {deployment.get('container_id')[:12]}...")
             else:
                 echo(f"  ⚡ Function Agent - Ready for execution")
             

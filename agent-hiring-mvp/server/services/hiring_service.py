@@ -63,8 +63,8 @@ class HiringService:
             # For ACP agents, start deployment in background thread
             self._setup_acp_agent_deployment_async(hiring, agent)
         elif agent.agent_type == AgentType.FUNCTION.value:
-            # Function agents don't need deployment setup
-            logger.info(f"Function agent {agent.id} hired - no deployment needed")
+            # For function agents, start Docker deployment in background thread
+            self._setup_function_agent_deployment_async(hiring, agent)
         else:
             logger.warning(f"Unknown agent type {agent.agent_type} for agent {agent.id}")
         
@@ -115,6 +115,52 @@ class HiringService:
         deployment_thread = threading.Thread(target=deploy_in_background, daemon=True)
         deployment_thread.start()
         logger.info(f"Started ACP agent deployment in background for hiring {hiring.id}")
+    
+    def _setup_function_agent_deployment_async(self, hiring: Hiring, agent: Agent):
+        """Setup deployment for function agent in background thread."""
+        def deploy_in_background():
+            try:
+                # Create a new database session for the background thread
+                from ..database.config import get_engine
+                from sqlalchemy.orm import sessionmaker
+                
+                engine = get_engine()
+                SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+                db = SessionLocal()
+                
+                try:
+                    # Import here to avoid circular imports
+                    from .function_deployment_service import FunctionDeploymentService
+                    
+                    deployment_service = FunctionDeploymentService(db)
+                    
+                    # Create deployment
+                    deployment_result = deployment_service.create_function_deployment(hiring.id)
+                    if "error" in deployment_result:
+                        logger.error(f"Failed to create function deployment for hiring {hiring.id}: {deployment_result['error']}")
+                        return
+                    
+                    deployment_id = deployment_result["deployment_id"]
+                    logger.info(f"Created function deployment {deployment_id} for hiring {hiring.id}")
+                    
+                    # Build and deploy the container
+                    deploy_result = deployment_service.build_and_deploy_function(deployment_id)
+                    if "error" in deploy_result:
+                        logger.error(f"Failed to deploy function {deployment_id}: {deploy_result['error']}")
+                        return
+                    
+                    logger.info(f"Successfully deployed function agent {agent.id} for hiring {hiring.id}")
+                    
+                finally:
+                    db.close()
+                    
+            except Exception as e:
+                logger.error(f"Exception in function agent deployment setup: {e}")
+        
+        # Start deployment in background thread
+        deployment_thread = threading.Thread(target=deploy_in_background, daemon=True)
+        deployment_thread.start()
+        logger.info(f"Started function agent deployment in background for hiring {hiring.id}")
     
     def _setup_acp_agent_deployment(self, hiring: Hiring, agent: Agent):
         """Setup deployment for ACP server agent (synchronous version - kept for compatibility)."""
