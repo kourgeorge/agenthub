@@ -44,7 +44,7 @@ class AgentRuntimeService:
     
     def __init__(self, base_dir: Optional[str] = None):
         self.base_dir = base_dir or os.path.join(os.getcwd(), "agent_runtime")
-        self.max_execution_time = 30  # seconds
+        self.max_execution_time = 120  # seconds (increased for virtual environment setup)
         self.max_output_size = 1024 * 1024  # 1MB
         self.allowed_extensions = {'.py', '.js', '.sh', '.txt', '.json', '.yaml', '.yml'}
         self.forbidden_commands = {
@@ -133,17 +133,21 @@ class AgentRuntimeService:
             logger.info("Installing requirements in virtual environment")
             
             # Upgrade pip first
+            logger.info("Upgrading pip...")
             subprocess.run([
                 pip_executable, "install", "--upgrade", "pip"
             ], cwd=temp_dir, check=True, capture_output=True, timeout=60)
+            logger.info("Pip upgrade completed")
             
             # Install requirements
+            logger.info("Installing requirements from requirements.txt...")
             result = subprocess.run([
                 pip_executable, "install", "-r", "requirements.txt"
             ], cwd=temp_dir, capture_output=True, text=True, timeout=120)
             
             if result.returncode != 0:
                 logger.warning(f"Failed to install some requirements: {result.stderr}")
+                logger.warning(f"Pip output: {result.stdout}")
                 # Continue anyway - some packages might be optional
             
             logger.info("Virtual environment setup completed")
@@ -315,7 +319,7 @@ if __name__ == "__main__":
     try:
         if hasattr(signal, 'SIGALRM'):
             signal.signal(signal.SIGALRM, timeout_handler)
-            signal.alarm(30)  # 30 second timeout
+            signal.alarm(120)  # 120 second timeout (increased for virtual environment setup)
             timeout_set = True
     except (AttributeError, OSError):
         # Windows doesn't support SIGALRM
