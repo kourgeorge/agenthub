@@ -8,6 +8,8 @@ import subprocess
 import signal
 import logging
 import time
+import venv
+import shutil
 from pathlib import Path
 from typing import Dict, Any, Optional, List, Tuple
 from dataclasses import dataclass
@@ -40,7 +42,7 @@ class RuntimeResult:
 class AgentRuntimeService:
     """Service for securely executing agent code."""
     
-    def __init__(self, base_dir: str = None):
+    def __init__(self, base_dir: Optional[str] = None):
         self.base_dir = base_dir or os.path.join(os.getcwd(), "agent_runtime")
         self.max_execution_time = 30  # seconds
         self.max_output_size = 1024 * 1024  # 1MB
@@ -79,11 +81,14 @@ class AgentRuntimeService:
                         error="No agent code or files provided"
                     )
                 
+                # Check for requirements.txt and create virtual environment if needed
+                python_executable = self._setup_virtual_environment(temp_dir)
+                
                 # Prepare input data
                 input_file = self._prepare_input_data(temp_dir, input_data)
                 
                 # Execute the agent
-                result = self._run_agent_safely(temp_dir, agent_file, input_file)
+                result = self._run_agent_safely(temp_dir, agent_file, input_file, python_executable)
                 
                 # Calculate execution time
                 execution_time = time.time() - start_time
@@ -99,6 +104,57 @@ class AgentRuntimeService:
                 error=f"Runtime error: {str(e)}",
                 execution_time=time.time() - start_time
             )
+    
+    def _setup_virtual_environment(self, temp_dir: str) -> str:
+        """Set up a virtual environment and install requirements if needed."""
+        requirements_file = os.path.join(temp_dir, "requirements.txt")
+        
+        # Check if requirements.txt exists
+        if not os.path.exists(requirements_file):
+            logger.info("No requirements.txt found, using system Python")
+            return sys.executable
+        
+        logger.info("Requirements.txt found, creating virtual environment")
+        
+        # Create virtual environment
+        venv_dir = os.path.join(temp_dir, "venv")
+        venv.create(venv_dir, with_pip=True)
+        
+        # Determine pip executable
+        if os.name == 'nt':  # Windows
+            pip_executable = os.path.join(venv_dir, "Scripts", "pip")
+            python_executable = os.path.join(venv_dir, "Scripts", "python")
+        else:  # Unix/Linux/macOS
+            pip_executable = os.path.join(venv_dir, "bin", "pip")
+            python_executable = os.path.join(venv_dir, "bin", "python")
+        
+        # Install requirements
+        try:
+            logger.info("Installing requirements in virtual environment")
+            
+            # Upgrade pip first
+            subprocess.run([
+                pip_executable, "install", "--upgrade", "pip"
+            ], cwd=temp_dir, check=True, capture_output=True, timeout=60)
+            
+            # Install requirements
+            result = subprocess.run([
+                pip_executable, "install", "-r", "requirements.txt"
+            ], cwd=temp_dir, capture_output=True, text=True, timeout=120)
+            
+            if result.returncode != 0:
+                logger.warning(f"Failed to install some requirements: {result.stderr}")
+                # Continue anyway - some packages might be optional
+            
+            logger.info("Virtual environment setup completed")
+            return python_executable
+            
+        except subprocess.TimeoutExpired:
+            logger.error("Timeout installing requirements")
+            raise RuntimeError("Timeout installing requirements")
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Failed to install requirements: {e}")
+            raise RuntimeError(f"Failed to install requirements: {e}")
     
     def _prepare_agent_files(self, temp_dir: str, agent_files: List[Dict[str, Any]]) -> str:
         """Prepare all agent files in temporary directory."""
@@ -291,14 +347,18 @@ if __name__ == "__main__":
             json.dump(input_data, f)
         return input_file
     
-    def _run_agent_safely(self, temp_dir: str, agent_file: str, input_file: str) -> RuntimeResult:
+    def _run_agent_safely(self, temp_dir: str, agent_file: str, input_file: str, python_executable: Optional[str] = None) -> RuntimeResult:
         """Run agent code safely with subprocess."""
         try:
+            # Use provided Python executable or default to system Python
+            if python_executable is None:
+                python_executable = sys.executable
+            
             # Determine how to run the agent based on file extension
             file_ext = Path(agent_file).suffix.lower()
             
             if file_ext == '.py':
-                cmd = [sys.executable, agent_file]
+                cmd = [python_executable, agent_file]
             elif file_ext == '.js':
                 cmd = ['node', agent_file]
             elif file_ext == '.sh':
