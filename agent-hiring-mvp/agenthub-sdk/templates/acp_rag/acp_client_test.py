@@ -11,10 +11,11 @@ init()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+server_base = "http://localhost:8006"
 async def test_rag_agent() -> None:
     """Test the RAG agent with sample questions."""
     try:
-        async with Client(base_url="http://localhost:8003") as client:
+        async with Client(base_url=server_base) as client:
             print(Fore.CYAN + "🔗 Connecting to ACP RAG server..." + Fore.RESET)
 
             # Test questions about the document

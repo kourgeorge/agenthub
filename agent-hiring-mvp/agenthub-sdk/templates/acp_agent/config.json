@@ -1,0 +1,57 @@
+{
+  "name": "acp_health_agent",
+  "description": "A health agent using ACP SDK for hospital patient support and health information.",
+  "version": "1.0.0",
+  "author": "AgentHub Team",
+  "email": "team@agenthub.com",
+  "entry_point": "example_usage.py",
+  "requirements": [
+    "acp-sdk",
+    "smolagents",
+    "python-dotenv"
+  ],
+  "config_schema": {
+    "type": "object",
+    "properties": {
+      "debug": {
+        "type": "boolean",
+        "default": false,
+        "description": "Enable debug mode"
+      },
+      "model_id": {
+        "type": "string",
+        "default": "openai/gpt-4",
+        "description": "LLM model to use"
+      }
+    }
+  },
+  "tags": [
+    "health",
+    "acp",
+    "hospital",
+    "patient-support",
+    "medical"
+  ],
+  "category": "health",
+  "pricing_model": "free",
+  "max_execution_time": 0,
+  "memory_limit": "512MB",
+  "agent_type": "acp_server",
+  "acp_manifest": {
+    "acp_version": "1.0.0",
+    "endpoints": {
+      "runs": "/runs"
+    },
+    "capabilities": [
+      "health_information",
+      "patient_support",
+      "medical_advice",
+      "hospital_guidance"
+    ],
+    "deployment": {
+      "port": 8001,
+      "startup_timeout": 30,
+      "shutdown_timeout": 10
+    }
+  }
+} 

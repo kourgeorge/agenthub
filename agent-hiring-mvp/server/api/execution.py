@@ -74,7 +74,7 @@ def run_execution(execution_id: str, db: Session = Depends(get_session_dependenc
     if result.get("status") == "error":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=result.get("message", "Execution failed")
+            detail=result.get("error", "Execution failed")
         )
     
     return result

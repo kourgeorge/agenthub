@@ -1,0 +1,25 @@
+{
+  "name": "Deep Research Agent",
+  "description": "A functional agent that performs deep research on topics using web search and AI analysis",
+  "version": "1.0.0",
+  "entry_point": "deep_research.py",
+  "author": "AgentHub Team",
+  "email": "team@agenthub.com",
+  "requirements": ["openai>=1.0.0", "requests>=2.28.0", "python-dotenv>=1.0.0"],
+  "config_schema": {
+    "depth": {
+      "type": "integer",
+      "description": "How deep to go in the research (1-3)",
+      "default": 2,
+      "minimum": 1,
+      "maximum": 3
+    },
+    "breadth": {
+      "type": "integer", 
+      "description": "How many initial search queries to generate (1-5)",
+      "default": 3,
+      "minimum": 1,
+      "maximum": 5
+    }
+  }
+}

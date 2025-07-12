@@ -1,0 +1,16 @@
+{
+  "name": "Echo Agent",
+  "description": "A simple agent that echoes back input messages with processing",
+  "version": "1.0.0",
+  "entry_point": "echo_agent.py",
+  "author": "AgentHub Team",
+  "email": "team@agenthub.com",
+  "requirements": [],
+  "config_schema": {
+    "prefix": {
+      "type": "string",
+      "description": "Prefix to add before the echoed message",
+      "default": "Echo: "
+    }
+  }
+} 
