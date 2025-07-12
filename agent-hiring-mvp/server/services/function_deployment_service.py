@@ -173,17 +173,34 @@ class FunctionDeploymentService:
             # Get container
             container = self.docker_client.containers.get(deployment.container_id)
             
+            # Get agent details
+            from ..models.agent import Agent
+            agent = self.db.query(Agent).filter(Agent.id == deployment.agent_id).first()
+            if not agent:
+                return {"error": "Agent not found"}
+            
             # Prepare input data
             input_json = json.dumps(input_data)
             
             # Execute the function in the container
+            # Parse entry point to get file and function name
+            entry_point = agent.entry_point
+            if ':' in entry_point:
+                file_name, function_name = entry_point.split(':', 1)
+            else:
+                file_name = entry_point
+                function_name = 'main'
+            
+            # Remove .py extension if present for import
+            module_name = file_name.replace('.py', '')
+            
             exec_result = container.exec_run(
                 cmd=["python", "-c", f"""
 import json
 import sys
 sys.path.append('/app')
-from agent_code import main
-result = main({input_json}, {{}})
+from {module_name} import {function_name}
+result = {function_name}({input_json}, {{}})
 print(json.dumps(result))
 """],
                 environment={
@@ -275,15 +292,19 @@ print(json.dumps(result))
             else:
                 # Legacy single-file approach
                 if agent.code:
-                    agent_file = deploy_dir / "agent_code.py"
+                    # Use entry point to determine file name
+                    entry_file = agent.entry_point.split(':')[0] if agent.entry_point else "agent_code.py"
+                    agent_file = deploy_dir / entry_file
                     with open(agent_file, 'w') as f:
                         f.write(agent.code)
-                    logger.info("Extracted legacy agent code")
+                    logger.info(f"Extracted legacy agent code to {entry_file}")
                 elif agent.file_path and os.path.exists(agent.file_path):
-                    agent_file = deploy_dir / "agent_code.py"
+                    # Use entry point to determine file name
+                    entry_file = agent.entry_point.split(':')[0] if agent.entry_point else "agent_code.py"
+                    agent_file = deploy_dir / entry_file
                     with open(agent.file_path, 'r') as src, open(agent_file, 'w') as dst:
                         dst.write(src.read())
-                    logger.info(f"Copied agent file: {agent.file_path}")
+                    logger.info(f"Copied agent file: {agent.file_path} to {entry_file}")
                 else:
                     raise ValueError("No agent code found")
             

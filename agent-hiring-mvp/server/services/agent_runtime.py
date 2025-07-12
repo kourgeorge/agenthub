@@ -57,7 +57,8 @@ class AgentRuntimeService:
     
     def execute_agent(self, agent_id: int, input_data: Dict[str, Any], 
                      agent_code: Optional[str] = None, agent_file_path: Optional[str] = None,
-                     agent_files: Optional[List[Dict[str, Any]]] = None) -> RuntimeResult:
+                     agent_files: Optional[List[Dict[str, Any]]] = None, 
+                     entry_point: Optional[str] = None) -> RuntimeResult:
         """Execute an agent with the given input data."""
         start_time = time.time()
         
@@ -69,10 +70,10 @@ class AgentRuntimeService:
                 # Prepare agent files
                 if agent_files:
                     # Use new multi-file approach
-                    agent_file = self._prepare_agent_files(temp_dir, agent_files)
+                    agent_file = self._prepare_agent_files(temp_dir, agent_files, entry_point)
                 elif agent_code:
                     # Legacy single-file approach
-                    agent_file = self._prepare_agent_code(temp_dir, agent_code)
+                    agent_file = self._prepare_agent_code(temp_dir, agent_code, entry_point)
                 elif agent_file_path:
                     agent_file = self._copy_agent_file(temp_dir, agent_file_path)
                 else:
@@ -160,7 +161,7 @@ class AgentRuntimeService:
             logger.error(f"Failed to install requirements: {e}")
             raise RuntimeError(f"Failed to install requirements: {e}")
     
-    def _prepare_agent_files(self, temp_dir: str, agent_files: List[Dict[str, Any]]) -> str:
+    def _prepare_agent_files(self, temp_dir: str, agent_files: List[Dict[str, Any]], entry_point: Optional[str] = None) -> str:
         """Prepare all agent files in temporary directory."""
         main_file_path: Optional[str] = None
         
@@ -173,8 +174,13 @@ class AgentRuntimeService:
             with open(file_path, 'w', encoding='utf-8') as f:
                 f.write(file_data['file_content'])
             
-            # Track main file
-            if file_data.get('is_main_file') == 'Y':
+            # Track main file based on entry point or is_main_file flag
+            if entry_point:
+                # Use entry point to determine main file
+                entry_file = entry_point.split(':')[0]
+                if file_data['file_path'] == entry_file:
+                    main_file_path = file_path
+            elif file_data.get('is_main_file') == 'Y':
                 main_file_path = file_path
         
         if not main_file_path:
@@ -187,26 +193,32 @@ class AgentRuntimeService:
         
         # Create the main execution wrapper
         wrapper_file = os.path.join(temp_dir, "agent.py")
-        wrapped_code = self._wrap_agent_code()
+        wrapped_code = self._wrap_agent_code(entry_point)
         
         with open(wrapper_file, 'w') as f:
             f.write(wrapped_code)
         
         return wrapper_file
     
-    def _prepare_agent_code(self, temp_dir: str, agent_code: Optional[str]) -> str:
+    def _prepare_agent_code(self, temp_dir: str, agent_code: Optional[str], entry_point: Optional[str] = None) -> str:
         """Prepare agent code in temporary directory (legacy method)."""
         if agent_code is None:
             raise ValueError("Agent code cannot be None")
             
+        # Use entry point to determine file name
+        if entry_point:
+            entry_file = entry_point.split(':')[0]
+        else:
+            entry_file = "agent_code.py"
+            
         # Write the agent code to a separate file
-        agent_code_file = os.path.join(temp_dir, "agent_code.py")
+        agent_code_file = os.path.join(temp_dir, entry_file)
         with open(agent_code_file, 'w') as f:
             f.write(agent_code)
         
         # Create the main execution file
         agent_file = os.path.join(temp_dir, "agent.py")
-        wrapped_code = self._wrap_agent_code()
+        wrapped_code = self._wrap_agent_code(entry_point)
         
         with open(agent_file, 'w') as f:
             f.write(wrapped_code)
@@ -230,10 +242,24 @@ class AgentRuntimeService:
         
         return dest_file
     
-    def _wrap_agent_code(self) -> str:
+    def _wrap_agent_code(self, entry_point: Optional[str] = None) -> str:
         """Wrap agent code in a safe execution environment."""
+        # Parse entry point to get file and function name
+        if entry_point:
+            if ':' in entry_point:
+                file_name, function_name = entry_point.split(':', 1)
+            else:
+                file_name = entry_point
+                function_name = 'main'
+            # Ensure module name matches the actual file name (without .py extension)
+            module_name = file_name.replace('.py', '')
+        else:
+            # Fallback to legacy agent_code.py
+            module_name = 'agent_code'
+            function_name = 'main'
+        
         # Create a simpler wrapper that imports the agent code
-        wrapper = '''#!/usr/bin/env python3
+        wrapper = f'''#!/usr/bin/env python3
 """
 Safe agent execution wrapper.
 This wrapper provides a controlled environment for agent execution.
@@ -256,7 +282,7 @@ def safe_execute():
             with open(input_file, 'r') as f:
                 input_data = json.load(f)
         else:
-            input_data = {}
+            input_data = {{}}
         
         # Capture stdout and stderr for debugging
         stdout_capture = StringIO()
@@ -266,12 +292,12 @@ def safe_execute():
         
         with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
             # Import and execute agent code
-            import agent_code
-            if hasattr(agent_code, 'main'):
-                # Call main function with proper parameters
-                agent_result = agent_code.main(input_data, {})
+            import {module_name}
+            if hasattr({module_name}, '{function_name}'):
+                # Call the specified function with proper parameters
+                agent_result = {module_name}.{function_name}(input_data, {{}})
             else:
-                raise Exception("Agent code does not have a main() function")
+                raise Exception(f"Agent code does not have a {{function_name}}() function")
         
         # Get captured output for debugging
         stdout_output = stdout_capture.getvalue()
@@ -280,21 +306,21 @@ def safe_execute():
         # Use the actual agent result, not the captured output
         if agent_result:
             # Write the actual agent result to output.json
-            output_data = {
+            output_data = {{
                 'status': 'success',
-                'output': json.dumps(agent_result),  # The actual result from agent
-            }
+                'output': agent_result,  # Store the actual result as dict, not JSON string
+            }}
             if stderr_output and stderr_output.strip():
                 output_data['error'] = stderr_output
         else:
             # Fallback if no result returned
             fallback_output = stdout_output.strip() if stdout_output else ''
             if not fallback_output:
-                fallback_output = '{"status": "success", "response": "No result returned"}'
-            output_data = {
+                fallback_output = '{{"status": "success", "response": "No result returned"}}'
+            output_data = {{
                 'status': 'success',
                 'output': fallback_output,
-            }
+            }}
             if stderr_output and stderr_output.strip():
                 output_data['error'] = stderr_output
         
@@ -302,10 +328,10 @@ def safe_execute():
             json.dump(output_data, f)
             
     except Exception as e:
-        result = {
+        result = {{
             'status': 'error',
             'error': str(e)
-        }
+        }}
         with open('output.json', 'w') as f:
             json.dump(result, f)
 
@@ -328,10 +354,10 @@ if __name__ == "__main__":
     try:
         safe_execute()
     except Exception as e:
-        result = {
+        result = {{
             'status': 'error',
             'error': str(e)
-        }
+        }}
         with open('output.json', 'w') as f:
             json.dump(result, f)
     finally:

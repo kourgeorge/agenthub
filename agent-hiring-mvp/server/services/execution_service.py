@@ -241,7 +241,8 @@ class ExecutionService:
                     return runtime_service.execute_agent(
                         agent_id=agent.id,
                         input_data=input_data,
-                        agent_files=agent_files
+                        agent_files=agent_files,
+                        entry_point=agent.entry_point
                     )
                 else:
                     # Fallback to legacy single-file approach
@@ -249,7 +250,8 @@ class ExecutionService:
                         agent_id=agent.id,
                         input_data=input_data,
                         agent_code=agent.code if hasattr(agent, 'code') else None,
-                        agent_file_path=agent.file_path if hasattr(agent, 'file_path') else None
+                        agent_file_path=agent.file_path if hasattr(agent, 'file_path') else None,
+                        entry_point=agent.entry_point
                     )
                 
         except Exception as e:
