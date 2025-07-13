@@ -11,7 +11,7 @@ init()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-server_base = "http://localhost:8006"
+server_base = "http://localhost:8001"
 async def test_rag_agent() -> None:
     """Test the RAG agent with sample questions."""
     try:

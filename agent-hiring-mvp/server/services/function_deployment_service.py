@@ -5,6 +5,7 @@ import json
 import shutil
 import logging
 import docker
+from docker import errors as docker_errors
 import uuid
 import asyncio
 import tempfile
@@ -198,10 +199,16 @@ class FunctionDeploymentService:
                 cmd=["python", "-c", f"""
 import json
 import sys
+import os
 sys.path.append('/app')
-from {module_name} import {function_name}
-result = {function_name}({input_json}, {{}})
-print(json.dumps(result))
+
+# Ensure we're importing the Python file, not any JSON files
+if os.path.exists('/app/{module_name}.py'):
+    from {module_name} import {function_name}
+    result = {function_name}({input_json}, {{}})
+    print(json.dumps(result))
+else:
+    raise ImportError(f"Module {module_name}.py not found in /app")
 """],
                 environment={
                     "PYTHONPATH": "/app",
@@ -235,6 +242,38 @@ print(json.dumps(result))
         except Exception as e:
             logger.error(f"Failed to execute in container: {e}")
             return {"error": str(e)}
+    
+    def get_function_deployment_status(self, deployment_id: str) -> Dict[str, Any]:
+        """Get deployment status for a function agent."""
+        deployment = self.db.query(AgentDeployment).filter(
+            AgentDeployment.deployment_id == deployment_id
+        ).first()
+        
+        if not deployment:
+            return {"error": "Deployment not found"}
+        
+        # Check container status
+        container_status = None
+        if deployment.container_id:
+            try:
+                container = self.docker_client.containers.get(deployment.container_id)
+                container_status = container.status
+            except docker_errors.NotFound:
+                container_status = "not_found"
+        
+        return {
+            "deployment_id": deployment_id,
+            "agent_id": deployment.agent_id,
+            "hiring_id": deployment.hiring_id,
+            "status": deployment.status,
+            "container_status": container_status,
+            "container_id": deployment.container_id,
+            "container_name": deployment.container_name,
+            "created_at": deployment.created_at.isoformat(),
+            "started_at": deployment.started_at.isoformat() if deployment.started_at else None,
+            "stopped_at": deployment.stopped_at.isoformat() if deployment.stopped_at else None,
+            "status_message": deployment.status_message
+        }
     
     def stop_function_deployment(self, deployment_id: str) -> Dict[str, Any]:
         """Stop and remove a function deployment."""

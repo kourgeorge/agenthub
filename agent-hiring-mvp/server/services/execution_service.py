@@ -204,10 +204,18 @@ class ExecutionService:
     def _execute_function_agent(self, agent: Agent, input_data: Dict[str, Any], execution_id: str):
         """Execute a function agent using Docker deployment."""
         try:
-            # Get the deployment for this agent
+            # Get the execution to find the hiring_id
+            execution = self.get_execution(execution_id)
+            if not execution:
+                return RuntimeResult(
+                    status=RuntimeStatus.FAILED,
+                    error="Execution not found"
+                )
+            
+            # Get the deployment for this specific hiring
             from ..models.deployment import AgentDeployment, DeploymentStatus
             deployment = self.db.query(AgentDeployment).filter(
-                AgentDeployment.agent_id == agent.id,
+                AgentDeployment.hiring_id == execution.hiring_id,
                 AgentDeployment.status == DeploymentStatus.RUNNING.value
             ).first()
             

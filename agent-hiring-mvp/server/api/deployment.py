@@ -175,8 +175,19 @@ def get_deployment_by_hiring(
             detail="No deployment found for this hiring"
         )
     
-    deployment_service = DeploymentService(db)
-    return deployment_service.get_deployment_status(deployment.deployment_id)
+    # Get agent type to determine which service to use
+    from ..models.agent import Agent
+    agent = db.query(Agent).filter(Agent.id == deployment.agent_id).first()
+    
+    if agent and agent.agent_type == "function":
+        # Use function deployment service for function agents
+        from ..services.function_deployment_service import FunctionDeploymentService
+        deployment_service = FunctionDeploymentService(db)
+        return deployment_service.get_function_deployment_status(deployment.deployment_id)
+    else:
+        # Use regular deployment service for ACP agents
+        deployment_service = DeploymentService(db)
+        return deployment_service.get_deployment_status(deployment.deployment_id)
 
 
 # REMOVED: /rebuild endpoint - duplicate of /restart
