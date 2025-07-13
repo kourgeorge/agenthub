@@ -7,7 +7,7 @@
   "email": "team@agenthub.com",
   "requirements": ["openai>=1.0.0", "requests>=2.28.0", "python-dotenv>=1.0.0"],
   "config_schema": {
-    "message": {
+    "topic": {
       "type": "string",
       "description": "Research query or topic to investigate",
       "required": true,

@@ -226,7 +226,7 @@ def main(input_data: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
 
     try:
         # Extract parameters from input
-        topic = input_data.get("message", "Palestine-Israeli conflict")
+        topic = input_data.get("topic", "Advances in Quantum Computing")
         depth = input_data.get("depth", 2)
         breadth = input_data.get("breadth", 3)
 
@@ -259,7 +259,7 @@ def main(input_data: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
 # For local testing
 if __name__ == "__main__":
     test_input = {
-        "message": "George Kour",
+        "topic": "George Kour",
         "breadth": 3,
         "depth": 2
     }
