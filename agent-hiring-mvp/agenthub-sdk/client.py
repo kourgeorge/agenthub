@@ -204,10 +204,9 @@ class AgentHubClient:
         if not self.session:
             raise RuntimeError("Client not initialized. Use async context manager.")
         
-        data = {"reason": reason}
         async with self.session.put(
             f"{self.api_base}/agents/{agent_id}/reject",
-            json=data,
+            params={"reason": reason},
         ) as response:
             if response.status == 200:
                 return await response.json()
