@@ -149,6 +149,17 @@ class ExecutionService:
                     "execution_time": runtime_result.execution_time,
                     "status": "success"
                 }
+                # Check if the output is already a JSON object (dict)
+                if isinstance(runtime_result.output, dict):
+                    # Agent returned a proper JSON object, use it directly
+                    output_data = runtime_result.output
+                else:
+                    # Agent returned a string, wrap it in the standard format
+                        "output": runtime_result.output,
+                        "execution_time": runtime_result.execution_time,
+                        "status": "success"
+                    }
+                
                 self.update_execution_status(execution_id, ExecutionStatus.COMPLETED, output_data)
                 
                 return {

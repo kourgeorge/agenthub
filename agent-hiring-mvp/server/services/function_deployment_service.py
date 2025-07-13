@@ -200,12 +200,21 @@ class FunctionDeploymentService:
 import json
 import sys
 import os
+from io import StringIO
+from contextlib import redirect_stdout
+
 sys.path.append('/app')
 
 # Ensure we're importing the Python file, not any JSON files
 if os.path.exists('/app/{module_name}.py'):
     from {module_name} import {function_name}
-    result = {function_name}({input_json}, {{}})
+    
+    # Capture stdout to prevent print statements from interfering
+    stdout_capture = StringIO()
+    with redirect_stdout(stdout_capture):
+        result = {function_name}({input_json}, {{}})
+    
+    # Only output the JSON result, not any print statements
     print(json.dumps(result))
 else:
     raise ImportError(f"Module {module_name}.py not found in /app")
@@ -347,8 +356,8 @@ else:
                 else:
                     raise ValueError("No agent code found")
             
-            # Create requirements.txt if agent has requirements
-            if agent.requirements:
+            # Create requirements.txt if agent has requirements (including empty list)
+            if agent.requirements is not None:
                 requirements_file = deploy_dir / "requirements.txt"
                 with open(requirements_file, 'w') as f:
                     for req in agent.requirements:

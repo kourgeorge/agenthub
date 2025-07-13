@@ -3,18 +3,17 @@
 Simple Echo Agent
 This agent simply echoes back the input message with some processing.
 """
+from typing import Dict, Any
 
-def main(input_data=None, config=None):
+
+def main(input_data: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
     """Main agent function."""
     # Use provided input_data or load from file as fallback
-    if input_data is None:
-        try:
-            import json
-            with open('input.json', 'r') as f:
-                input_data = json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
-            input_data = {}
-    
+    if not input_data:
+        input_data = {
+            "message": "Hello World!",
+            "prefix": "Echo: "
+        }
     # Get input data from the environment
     message = input_data.get('message', 'Hello World!')
     prefix = input_data.get('prefix', 'Echo: ')

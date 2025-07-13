@@ -125,6 +125,33 @@ def get_user_executions(
     ]
 
 
+@router.get("/hiring/{hiring_id}", response_model=List[dict])
+def get_hiring_executions(
+    hiring_id: int,
+    limit: int = 100,
+    db: Session = Depends(get_session_dependency)
+):
+    """Get executions for a hiring."""
+    execution_service = ExecutionService(db)
+    executions = execution_service.get_hiring_executions(hiring_id, limit)
+    
+    return [
+        {
+            "execution_id": execution.execution_id,
+            "agent_id": execution.agent_id,
+            "status": execution.status,
+            "input_data": execution.input_data,
+            "output_data": execution.output_data,
+            "error_message": execution.error_message,
+            "created_at": execution.created_at.isoformat(),
+            "started_at": execution.started_at.isoformat() if execution.started_at else None,
+            "completed_at": execution.completed_at.isoformat() if execution.completed_at else None,
+            "duration_ms": execution.duration_ms,
+        }
+        for execution in executions
+    ]
+
+
 @router.get("/stats/agent/{agent_id}")
 def get_agent_execution_stats(agent_id: int, db: Session = Depends(get_session_dependency)):
     """Get execution statistics for an agent."""
