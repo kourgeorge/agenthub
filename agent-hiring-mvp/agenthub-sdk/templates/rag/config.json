@@ -1,0 +1,71 @@
+{
+  "name": "rag_agent",
+  "description": "A RAG (Retrieval-Augmented Generation) agent that takes a document source and question to provide accurate answers based on document content.",
+  "version": "1.0.0",
+  "author": "AgentHub Team",
+  "email": "team@agenthub.com",
+  "entry_point": "agent.py",
+  "agent_type": "function",
+  "requirements": [
+    "llama-index",
+    "llama-index-readers-web",
+    "llama-index-llms-openai",
+    "llama-index-embeddings-openai",
+    "python-dotenv",
+    "requests",
+    "beautifulsoup4"
+  ],
+  "config_schema": {
+    "document_source": {
+      "type": "string",
+      "description": "URL or path to the document to analyze",
+      "required": true
+    },
+    "question": {
+      "type": "string",
+      "description": "Question to ask about the document content",
+      "required": true
+    },
+    "model_name": {
+      "type": "string",
+      "default": "gpt-3.5-turbo",
+      "description": "OpenAI model to use for LLM"
+    },
+    "embedding_model": {
+      "type": "string",
+      "default": "text-embedding-ada-002",
+      "description": "OpenAI model to use for embeddings"
+    },
+    "temperature": {
+      "type": "number",
+      "default": 0,
+      "description": "Temperature for LLM responses"
+    },
+    "chunk_size": {
+      "type": "integer",
+      "default": 1024,
+      "description": "Size of text chunks for processing"
+    },
+    "chunk_overlap": {
+      "type": "integer",
+      "default": 200,
+      "description": "Overlap between text chunks"
+    },
+    "max_tokens": {
+      "type": "integer",
+      "default": 1000,
+      "description": "Maximum tokens for response"
+    }
+  },
+  "tags": [
+    "rag",
+    "document-qa",
+    "knowledge-base",
+    "openai",
+    "llamaindex"
+  ],
+  "category": "research",
+  "pricing_model": "free",
+  "max_execution_time": 300,
+  "memory_limit": "1GB"
+} 
