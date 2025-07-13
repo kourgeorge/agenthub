@@ -59,7 +59,7 @@ class DeepResearchAgent:
         """Generate search queries for the research topic"""
         prompt = f"""Given the research topic: "{research_topic}", generate {num_queries} specific search queries to investigate this topic thoroughly. 
         Each query should be unique and target different aspects of the topic.
-        Return only the queries, one per line."""
+        Return only the queries, one per line. Do not include any quotes or numbering, just the search query."""
 
         try:
             response = self.client.chat.completions.create(
@@ -259,7 +259,7 @@ def main(input_data: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
 # For local testing
 if __name__ == "__main__":
     test_input = {
-        "message": "Deep research on AI advancements",
+        "message": "George Kour",
         "breadth": 3,
         "depth": 2
     }
