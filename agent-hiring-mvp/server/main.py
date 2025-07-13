@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 # SessionMiddleware removed - not needed for server-side only API
 
 from .database.init_db import init_database
-from .api import agents_router, hiring_router, execution_router, acp_router, users_router
+from .api import agents_router, hiring_router, execution_router, acp_router, users_router, billing_router
 from .api.deployment import router as deployment_router
 from .api.agent_proxy import router as agent_proxy_router
 
@@ -66,6 +66,7 @@ app.include_router(hiring_router, prefix="/api/v1")
 app.include_router(execution_router, prefix="/api/v1")
 app.include_router(acp_router, prefix="/api/v1")
 app.include_router(users_router, prefix="/api/v1")
+app.include_router(billing_router, prefix="/api/v1")
 app.include_router(deployment_router, prefix="/api/v1")
 app.include_router(agent_proxy_router, prefix="/api/v1")
 
@@ -84,6 +85,7 @@ async def root():
             "hiring": "/api/v1/hiring",
             "execution": "/api/v1/execution",
             "acp": "/api/v1/acp",
+            "billing": "/api/v1/billing",
             "deployment": "/api/v1/deployment",
             "agent_proxy": "/api/v1/agent-proxy"
         }

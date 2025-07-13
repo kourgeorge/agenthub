@@ -117,6 +117,16 @@ class ExecutionService:
             .all()
         )
     
+    def get_hiring_executions(self, hiring_id: int, limit: int = 100) -> list[Execution]:
+        """Get executions for a hiring."""
+        return (
+            self.db.query(Execution)
+            .filter(Execution.hiring_id == hiring_id)
+            .order_by(Execution.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+    
     def execute_agent(self, execution_id: str) -> Dict[str, Any]:
         """Execute an agent using the real runtime service."""
         execution = self.get_execution(execution_id)
@@ -144,17 +154,13 @@ class ExecutionService:
             
             # Process runtime result
             if runtime_result.status == RuntimeStatus.COMPLETED:
-                output_data = {
-                    "output": runtime_result.output,
-                    "execution_time": runtime_result.execution_time,
-                    "status": "success"
-                }
                 # Check if the output is already a JSON object (dict)
                 if isinstance(runtime_result.output, dict):
                     # Agent returned a proper JSON object, use it directly
                     output_data = runtime_result.output
                 else:
                     # Agent returned a string, wrap it in the standard format
+                    output_data = {
                         "output": runtime_result.output,
                         "execution_time": runtime_result.execution_time,
                         "status": "success"
