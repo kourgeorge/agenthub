@@ -1,5 +1,5 @@
 {
-  "name": "rag_agent",
+  "name": "RAG Agent",
   "description": "A RAG (Retrieval-Augmented Generation) agent that takes a document source and question to provide accurate answers based on document content.",
   "version": "1.0.0",
   "author": "AgentHub Team",
