@@ -200,8 +200,9 @@ class FunctionDeploymentService:
 import json
 import sys
 import os
+import tempfile
 from io import StringIO
-from contextlib import redirect_stdout
+from contextlib import redirect_stdout, redirect_stderr
 
 sys.path.append('/app')
 
@@ -209,44 +210,36 @@ sys.path.append('/app')
 if os.path.exists('/app/{module_name}.py'):
     from {module_name} import {function_name}
     
-    # Capture stdout to prevent print statements from interfering
-    stdout_capture = StringIO()
-    with redirect_stdout(stdout_capture):
+    # Capture stderr to prevent logging interference
+    stderr_capture = StringIO()
+    with redirect_stderr(stderr_capture):
         result = {function_name}({input_json}, {{}})
     
-    # Only output the JSON result, not any print statements
-    print(json.dumps(result))
-else:
-    raise ImportError(f"Module {module_name}.py not found in /app")
-"""],
-                environment={
-                    "PYTHONPATH": "/app",
-                    "INPUT_DATA": input_json
-                }
+    # Write result to temp file
+    with open('/tmp/agent_result.json', 'w') as f:
+        json.dump(result, f)
+"""]
             )
             
-            if exec_result.exit_code == 0:
-                try:
-                    # Parse the output as JSON
-                    output_data = json.loads(exec_result.output.decode().strip())
-                    return {
-                        "status": "success",
-                        "output": output_data,
-                        "execution_time": None  # Could be added if needed
-                    }
-                except json.JSONDecodeError:
-                    # Fallback to raw output
-                    return {
-                        "status": "success",
-                        "output": exec_result.output.decode().strip()
-                    }
-            else:
-                error_output = exec_result.output.decode().strip()
-                return {
-                    "status": "error",
-                    "error": f"Container execution failed: {error_output}",
-                    "exit_code": exec_result.exit_code
-                }
+            if exec_result.exit_code != 0:
+                raise Exception(f"Container execution failed: {exec_result.output.decode()}")
+            
+            # Read result from temp file
+            read_result = container.exec_run(cmd=["cat", "/tmp/agent_result.json"])
+            if read_result.exit_code != 0:
+                raise Exception(f"Failed to read result file: {read_result.output.decode()}")
+            
+            result_json = read_result.output.decode().strip()
+            result_data = json.loads(result_json)
+            
+            # Clean up temp file
+            container.exec_run(cmd=["rm", "-f", "/tmp/agent_result.json"])
+            
+            return {
+                "status": "success",
+                "output": result_data,
+                "execution_time": None  # Could be added if needed
+            }
                 
         except Exception as e:
             logger.error(f"Failed to execute in container: {e}")

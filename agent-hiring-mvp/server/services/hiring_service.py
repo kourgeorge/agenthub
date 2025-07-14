@@ -220,11 +220,16 @@ class HiringService:
             hiring.last_executed_at = datetime.utcnow()
             # For ACP agents, suspend the deployment (keep container but stop processing)
             self._handle_acp_agent_suspension(hiring)
+            # For function agents, also suspend the deployment
+            self._handle_function_agent_suspension(hiring)
         elif status == HiringStatus.CANCELLED:
             hiring.last_executed_at = datetime.utcnow()
             # For ACP agents, stop and remove the deployment
-            cancellation_success = self._handle_acp_agent_cancellation(hiring, timeout=60)
-            if not cancellation_success:
+            acp_cancellation_success = self._handle_acp_agent_cancellation(hiring, timeout=60)
+            # For function agents, stop and remove the deployment
+            function_cancellation_success = self._handle_function_agent_cancellation(hiring, timeout=60)
+            
+            if not acp_cancellation_success or not function_cancellation_success:
                 logger.warning(f"Some resources may not have been fully terminated for hiring {hiring_id}")
         
         self.db.commit()
@@ -324,6 +329,63 @@ class HiringService:
             return True  # No deployment to cancel
         except Exception as e:
             logger.error(f"Exception handling ACP agent cancellation: {e}")
+            return False
+    
+    def _handle_function_agent_suspension(self, hiring: Hiring):
+        """Handle function agent suspension (suspend deployment)."""
+        try:
+            agent = hiring.agent
+            if agent and agent.agent_type == AgentType.FUNCTION.value:
+                from .function_deployment_service import FunctionDeploymentService
+                deployment_service = FunctionDeploymentService(self.db)
+                
+                # Find existing deployment
+                deployment = self.db.query(AgentDeployment).filter(
+                    AgentDeployment.hiring_id == hiring.id
+                ).first()
+                
+                if deployment:
+                    # Suspend the deployment (stop container but keep it)
+                    stop_result = deployment_service.stop_function_deployment(deployment.deployment_id)
+                    if "error" in stop_result:
+                        logger.error(f"Failed to suspend function deployment {deployment.deployment_id}: {stop_result['error']}")
+                    else:
+                        logger.info(f"Successfully suspended function deployment {deployment.deployment_id}")
+        except Exception as e:
+            logger.error(f"Exception handling function agent suspension: {e}")
+    
+    def _handle_function_agent_cancellation(self, hiring: Hiring, timeout: int = 60):
+        """Handle function agent cancellation (stop and remove deployment)."""
+        try:
+            agent = hiring.agent
+            if agent and agent.agent_type == AgentType.FUNCTION.value:
+                from .function_deployment_service import FunctionDeploymentService
+                deployment_service = FunctionDeploymentService(self.db)
+                
+                # Find existing deployment
+                deployment = self.db.query(AgentDeployment).filter(
+                    AgentDeployment.hiring_id == hiring.id
+                ).first()
+                
+                if deployment:
+                    logger.info(f"Starting function cancellation process for deployment {deployment.deployment_id}")
+                    
+                    # Stop and remove the deployment with timeout
+                    stop_result = deployment_service.stop_function_deployment(deployment.deployment_id)
+                    if "error" in stop_result:
+                        logger.error(f"Failed to stop function deployment {deployment.deployment_id}: {stop_result['error']}")
+                        return False
+                    else:
+                        logger.info(f"Successfully stopped function deployment {deployment.deployment_id}")
+                        
+                    # Remove the deployment record
+                    self.db.delete(deployment)
+                    self.db.commit()
+                    logger.info(f"Removed function deployment record for hiring {hiring.id}")
+                    return True
+            return True  # No deployment to cancel
+        except Exception as e:
+            logger.error(f"Exception handling function agent cancellation: {e}")
             return False
     
     def get_user_hirings(self, user_id: int, status: Optional[HiringStatus] = None) -> List[Hiring]:

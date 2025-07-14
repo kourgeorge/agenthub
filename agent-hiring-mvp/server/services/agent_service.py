@@ -155,9 +155,11 @@ class AgentService:
             hiring.status = "suspended"
             hiring.updated_at = datetime.utcnow()
             
-            # Stop associated deployments for ACP agents
+            # Stop associated deployments for both ACP and function agents
             if agent.agent_type == "acp_server":
                 self._stop_hiring_deployment(hiring)
+            elif agent.agent_type == "function":
+                self._stop_function_deployment(hiring)
         
         # Block new executions for this agent
         # (This is handled by the hiring service which checks agent status)
@@ -197,6 +199,34 @@ class AgentService:
                     logger.info(f"Removed deployment record for hiring {hiring.id}")
         except Exception as e:
             logger.error(f"Exception stopping hiring deployment: {e}")
+    
+    def _stop_function_deployment(self, hiring: Hiring):
+        """Stop deployment for a hiring (for function agents)."""
+        try:
+            from .function_deployment_service import FunctionDeploymentService
+            from ..models.deployment import AgentDeployment
+            
+            deployment_service = FunctionDeploymentService(self.db)
+            
+            # Find existing deployment
+            deployment = self.db.query(AgentDeployment).filter(
+                AgentDeployment.hiring_id == hiring.id
+            ).first()
+            
+            if deployment:
+                logger.info(f"Stopping function deployment {deployment.deployment_id} for rejected agent")
+                stop_result = deployment_service.stop_function_deployment(deployment.deployment_id)
+                if "error" in stop_result:
+                    logger.error(f"Failed to stop function deployment {deployment.deployment_id}: {stop_result['error']}")
+                else:
+                    logger.info(f"Successfully stopped function deployment {deployment.deployment_id}")
+                    
+                    # Remove the deployment record
+                    self.db.delete(deployment)
+                    self.db.commit()
+                    logger.info(f"Removed function deployment record for hiring {hiring.id}")
+        except Exception as e:
+            logger.error(f"Exception stopping function deployment: {e}")
     
     def update_agent_stats(self, agent_id: int, execution_count: int = 0, rating: Optional[float] = None) -> None:
         """Update agent statistics."""
