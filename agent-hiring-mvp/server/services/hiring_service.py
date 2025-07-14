@@ -205,9 +205,23 @@ class HiringService:
         
         # Check if hiring is already in the target status
         if old_status == status.value:
-            # Return the hiring without making changes, but log the attempt
-            logger.info(f"Hiring {hiring_id} is already {status.value}")
-            return hiring
+            # For cancellation, always attempt to clean up containers even if already cancelled
+            if status == HiringStatus.CANCELLED:
+                logger.info(f"Hiring {hiring_id} is already {status.value}, but attempting to clean up any remaining containers")
+                # Attempt to clean up any remaining containers
+                acp_cancellation_success = self._handle_acp_agent_cancellation(hiring, timeout=60)
+                function_cancellation_success = self._handle_function_agent_cancellation(hiring, timeout=60)
+                
+                if not acp_cancellation_success or not function_cancellation_success:
+                    logger.warning(f"Some resources may not have been fully terminated for hiring {hiring_id}")
+                
+                self.db.commit()
+                self.db.refresh(hiring)
+                return hiring
+            else:
+                # Return the hiring without making changes, but log the attempt
+                logger.info(f"Hiring {hiring_id} is already {status.value}")
+                return hiring
         
         hiring.status = status.value
         

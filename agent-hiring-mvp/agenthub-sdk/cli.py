@@ -672,6 +672,7 @@ def reject(ctx, agent_id, reason, base_url):
         echo(f"  Agent ID: {result.get('agent_id')}")
         echo(f"  Status: {result.get('status')}")
         echo(f"  Reason: {result.get('reason')}")
+        echo(style("  🧹 All deployments and containers have been cleaned up", fg='green'))
         
         if verbose:
             echo("Full response:")
@@ -1340,10 +1341,11 @@ def cancel_hired(ctx, hiring_id, notes, timeout, base_url):
         
         # Check if hiring was already cancelled
         if result.get('already_cancelled', False):
-            echo(style("ℹ️  Hiring is already cancelled", fg='blue'))
+            echo(style("ℹ️  Hiring was already cancelled", fg='blue'))
             echo(f"  Hiring ID: {result.get('id')}")
             echo(f"  Status: {result.get('status')}")
             echo(f"  Message: {result.get('message')}")
+            echo(style("  🧹 Any remaining containers have been cleaned up", fg='green'))
         else:
             echo(style("✅ Hiring cancelled successfully!", fg='green'))
             echo(f"  Hiring ID: {result.get('id')}")

@@ -144,22 +144,21 @@ class AgentService:
         agent.validation_errors = [reason]
         agent.updated_at = datetime.utcnow()
         
-        # Handle existing active hirings
-        active_hirings = self.db.query(Hiring).filter(
-            Hiring.agent_id == agent_id,
-            Hiring.status == "active"
+        # Handle ALL existing hirings for this agent (not just active ones)
+        all_hirings = self.db.query(Hiring).filter(
+            Hiring.agent_id == agent_id
         ).all()
         
-        for hiring in active_hirings:
-            # Suspend the hiring
-            hiring.status = "suspended"
-            hiring.updated_at = datetime.utcnow()
-            
-            # Stop associated deployments for both ACP and function agents
-            if agent.agent_type == "acp_server":
-                self._stop_hiring_deployment(hiring)
-            elif agent.agent_type == "function":
-                self._stop_function_deployment(hiring)
+        active_hirings_count = 0
+        for hiring in all_hirings:
+            # For active hirings, suspend them
+            if hiring.status == "active":
+                hiring.status = "suspended"
+                hiring.updated_at = datetime.utcnow()
+                active_hirings_count += 1
+        
+        # Clean up ALL deployments for this agent (comprehensive approach)
+        self._cleanup_all_agent_deployments(agent_id)
         
         # Block new executions for this agent
         # (This is handled by the hiring service which checks agent status)
@@ -168,7 +167,7 @@ class AgentService:
         self.db.refresh(agent)
         
         logger.info(f"Rejected agent: {agent.name} (ID: {agent.id}) - Reason: {reason}")
-        logger.info(f"Suspended {len(active_hirings)} active hirings for rejected agent")
+        logger.info(f"Processed {len(all_hirings)} total hirings, suspended {active_hirings_count} active hirings for rejected agent")
         
         return agent
     
@@ -227,6 +226,55 @@ class AgentService:
                     logger.info(f"Removed function deployment record for hiring {hiring.id}")
         except Exception as e:
             logger.error(f"Exception stopping function deployment: {e}")
+    
+    def _cleanup_all_agent_deployments(self, agent_id: int):
+        """Clean up all deployments for an agent (direct approach)."""
+        try:
+            from ..models.deployment import AgentDeployment
+            from .deployment_service import DeploymentService
+            from .function_deployment_service import FunctionDeploymentService
+            
+            # Find all deployments for this agent
+            deployments = self.db.query(AgentDeployment).filter(
+                AgentDeployment.agent_id == agent_id
+            ).all()
+            
+            if not deployments:
+                logger.info(f"No deployments found for agent {agent_id}")
+                return
+            
+            logger.info(f"Found {len(deployments)} deployments to clean up for agent {agent_id}")
+            
+            deployment_service = DeploymentService(self.db)
+            function_deployment_service = FunctionDeploymentService(self.db)
+            
+            for deployment in deployments:
+                try:
+                    logger.info(f"Cleaning up deployment {deployment.deployment_id} for agent {agent_id}")
+                    
+                    # Stop the deployment based on agent type
+                    if deployment.agent.agent_type == "acp_server":
+                        stop_result = deployment_service.stop_deployment(deployment.deployment_id, timeout=60)
+                    else:
+                        stop_result = function_deployment_service.stop_function_deployment(deployment.deployment_id)
+                    
+                    if "error" in stop_result:
+                        logger.error(f"Failed to stop deployment {deployment.deployment_id}: {stop_result['error']}")
+                    else:
+                        logger.info(f"Successfully stopped deployment {deployment.deployment_id}")
+                    
+                    # Remove the deployment record
+                    self.db.delete(deployment)
+                    logger.info(f"Removed deployment record {deployment.deployment_id}")
+                    
+                except Exception as e:
+                    logger.error(f"Exception cleaning up deployment {deployment.deployment_id}: {e}")
+            
+            self.db.commit()
+            logger.info(f"Completed cleanup of {len(deployments)} deployments for agent {agent_id}")
+            
+        except Exception as e:
+            logger.error(f"Exception in _cleanup_all_agent_deployments: {e}")
     
     def update_agent_stats(self, agent_id: int, execution_count: int = 0, rating: Optional[float] = None) -> None:
         """Update agent statistics."""

@@ -279,24 +279,32 @@ def cancel_hiring(
             detail="Hiring not found"
         )
     
-    # If already cancelled, return appropriate message
-    if current_hiring.status == HiringStatus.CANCELLED.value:
-        return {
-            "id": current_hiring.id,
-            "status": current_hiring.status,
-            "message": "Hiring is already cancelled.",
-            "already_cancelled": True
-        }
-    
-    # Perform the cancellation (this will wait for resource termination for ACP agents)
+    # Always perform the cancellation (this will clean up containers even if already cancelled)
     hiring = hiring_service.cancel_hiring(hiring_id, notes)
     
-    return {
-        "id": hiring.id,
-        "status": hiring.status,
-        "message": "Hiring cancelled successfully. All resources have been terminated.",
-        "already_cancelled": False
-    }
+    if not hiring:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Hiring not found"
+        )
+    
+    # Check if it was already cancelled
+    was_already_cancelled = current_hiring.status == HiringStatus.CANCELLED.value
+    
+    if was_already_cancelled:
+        return {
+            "id": hiring.id,
+            "status": hiring.status,
+            "message": "Hiring was already cancelled. Any remaining containers have been cleaned up.",
+            "already_cancelled": True
+        }
+    else:
+        return {
+            "id": hiring.id,
+            "status": hiring.status,
+            "message": "Hiring cancelled successfully. All resources have been terminated.",
+            "already_cancelled": False
+        }
 
 
 @router.get("/stats/user/{user_id}")
