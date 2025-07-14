@@ -660,6 +660,7 @@ def reject(ctx, agent_id, reason, base_url):
     
     try:
         echo(style(f"❌ Rejecting agent {agent_id}...", fg='blue'))
+        echo(style("  🧹 Removing all deployments and containers...", fg='yellow'))
         
         async def reject_agent():
             async with AgentHubClient(base_url) as client:
@@ -672,7 +673,7 @@ def reject(ctx, agent_id, reason, base_url):
         echo(f"  Agent ID: {result.get('agent_id')}")
         echo(f"  Status: {result.get('status')}")
         echo(f"  Reason: {result.get('reason')}")
-        echo(style("  🧹 All deployments and containers have been cleaned up", fg='green'))
+        echo(style("  ✅ All deployments and containers have been cleaned up", fg='green'))
         
         if verbose:
             echo("Full response:")
