@@ -5,6 +5,7 @@ import json
 import shutil
 import logging
 import docker
+from docker import errors as docker_errors
 import uuid
 import asyncio
 import aiohttp
@@ -334,6 +335,83 @@ CMD ["python", "main.py"]
         
         return container
     
+    def suspend_deployment(self, deployment_id: str) -> Dict[str, Any]:
+        """Suspend a deployment by stopping the container but keeping it."""
+        try:
+            deployment = self.db.query(AgentDeployment).filter(
+                AgentDeployment.deployment_id == deployment_id
+            ).first()
+            
+            if not deployment:
+                return {"error": "Deployment not found"}
+            
+            # Stop container but don't remove it
+            if deployment.container_id:
+                try:
+                    container = self.docker_client.containers.get(deployment.container_id)
+                    logger.info(f"Suspending container {deployment.container_id}...")
+                    
+                    # Stop the container but don't remove it
+                    container.stop(timeout=30)
+                    logger.info(f"Container {deployment.container_id} suspended (stopped but not removed)")
+                        
+                except docker_errors.NotFound:
+                    logger.warning(f"Container {deployment.container_id} not found")
+                except Exception as e:
+                    logger.error(f"Error suspending container {deployment.container_id}: {e}")
+                    return {"error": f"Failed to suspend container: {str(e)}"}
+            
+            # Update deployment status
+            deployment.status = DeploymentStatus.STOPPED.value
+            deployment.stopped_at = datetime.utcnow()
+            self.db.commit()
+            
+            return {"deployment_id": deployment_id, "status": "suspended"}
+            
+        except Exception as e:
+            logger.error(f"Failed to suspend deployment {deployment_id}: {e}")
+            return {"error": str(e)}
+
+    def resume_deployment(self, deployment_id: str) -> Dict[str, Any]:
+        """Resume a suspended deployment by starting the stopped container."""
+        try:
+            deployment = self.db.query(AgentDeployment).filter(
+                AgentDeployment.deployment_id == deployment_id
+            ).first()
+            
+            if not deployment:
+                return {"error": "Deployment not found"}
+            
+            # Start the stopped container
+            if deployment.container_id:
+                try:
+                    container = self.docker_client.containers.get(deployment.container_id)
+                    logger.info(f"Resuming container {deployment.container_id}...")
+                    
+                    # Start the container
+                    container.start()
+                    logger.info(f"Container {deployment.container_id} resumed")
+                        
+                except docker_errors.NotFound:
+                    logger.warning(f"Container {deployment.container_id} not found - may need to redeploy")
+                    # If container not found, we need to redeploy
+                    return self.build_and_deploy(deployment_id)
+                except Exception as e:
+                    logger.error(f"Error resuming container {deployment.container_id}: {e}")
+                    return {"error": f"Failed to resume container: {str(e)}"}
+            
+            # Update deployment status
+            deployment.status = DeploymentStatus.RUNNING.value
+            deployment.started_at = datetime.utcnow()
+            deployment.stopped_at = None
+            self.db.commit()
+            
+            return {"deployment_id": deployment_id, "status": "resumed"}
+            
+        except Exception as e:
+            logger.error(f"Failed to resume deployment {deployment_id}: {e}")
+            return {"error": str(e)}
+
     def stop_deployment(self, deployment_id: str, timeout: int = 30) -> Dict[str, Any]:
         """Stop a deployment and wait for resources to be terminated."""
         try:
@@ -366,13 +444,13 @@ CMD ["python", "main.py"]
                             # Try to get the container - if it doesn't exist, it's been removed
                             self.docker_client.containers.get(deployment.container_id)
                             time.sleep(0.5)  # Wait 500ms before checking again
-                        except docker.errors.NotFound:
+                        except docker_errors.NotFound:
                             logger.info(f"Container {deployment.container_id} fully terminated")
                             break
                     else:
                         logger.warning(f"Container {deployment.container_id} removal timeout after {timeout}s")
                         
-                except docker.errors.NotFound:
+                except docker_errors.NotFound:
                     logger.warning(f"Container {deployment.container_id} not found")
                 except Exception as e:
                     logger.error(f"Error stopping container {deployment.container_id}: {e}")
@@ -431,7 +509,7 @@ CMD ["python", "main.py"]
             try:
                 container = self.docker_client.containers.get(deployment.container_id)
                 container_status = container.status
-            except docker.errors.NotFound:
+            except docker_errors.NotFound:
                 container_status = "not_found"
         
         # Perform real-time health check if deployment is running

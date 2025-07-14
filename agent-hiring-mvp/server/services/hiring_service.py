@@ -230,6 +230,8 @@ class HiringService:
             # If reactivating a suspended ACP agent, restart deployment
             if old_status == HiringStatus.SUSPENDED.value:
                 self._handle_acp_agent_activation(hiring)
+                # Also handle function agent activation
+                self._handle_function_agent_activation(hiring)
         elif status == HiringStatus.SUSPENDED:
             hiring.last_executed_at = datetime.utcnow()
             # For ACP agents, suspend the deployment (keep container but stop processing)
@@ -253,7 +255,7 @@ class HiringService:
         return hiring
     
     def _handle_acp_agent_activation(self, hiring: Hiring) -> Optional[Dict[str, Any]]:
-        """Handle ACP agent activation (restart deployment)."""
+        """Handle ACP agent activation (resume deployment)."""
         try:
             agent = hiring.agent
             if agent and agent.agent_type == AgentType.ACP_SERVER.value:
@@ -266,13 +268,13 @@ class HiringService:
                 ).first()
                 
                 if deployment:
-                    # Restart the deployment
-                    restart_result = deployment_service.restart_deployment(deployment.deployment_id)
-                    if "error" in restart_result:
-                        logger.error(f"Failed to restart deployment {deployment.deployment_id}: {restart_result['error']}")
+                    # Resume the deployment
+                    resume_result = deployment_service.resume_deployment(deployment.deployment_id)
+                    if "error" in resume_result:
+                        logger.error(f"Failed to resume deployment {deployment.deployment_id}: {resume_result['error']}")
                         return None
                     else:
-                        logger.info(f"Successfully restarted deployment {deployment.deployment_id}")
+                        logger.info(f"Successfully resumed deployment {deployment.deployment_id}")
                         
                         # Return deployment information for CLI display
                         return {
@@ -303,9 +305,9 @@ class HiringService:
                 
                 if deployment:
                     # Suspend the deployment (stop container but keep it)
-                    stop_result = deployment_service.stop_deployment(deployment.deployment_id)
-                    if "error" in stop_result:
-                        logger.error(f"Failed to suspend deployment {deployment.deployment_id}: {stop_result['error']}")
+                    suspend_result = deployment_service.suspend_deployment(deployment.deployment_id)
+                    if "error" in suspend_result:
+                        logger.error(f"Failed to suspend deployment {deployment.deployment_id}: {suspend_result['error']}")
                     else:
                         logger.info(f"Successfully suspended deployment {deployment.deployment_id}")
         except Exception as e:
@@ -345,6 +347,29 @@ class HiringService:
             logger.error(f"Exception handling ACP agent cancellation: {e}")
             return False
     
+    def _handle_function_agent_activation(self, hiring: Hiring):
+        """Handle function agent activation (resume deployment)."""
+        try:
+            agent = hiring.agent
+            if agent and agent.agent_type == AgentType.FUNCTION.value:
+                from .function_deployment_service import FunctionDeploymentService
+                deployment_service = FunctionDeploymentService(self.db)
+                
+                # Find existing deployment
+                deployment = self.db.query(AgentDeployment).filter(
+                    AgentDeployment.hiring_id == hiring.id
+                ).first()
+                
+                if deployment:
+                    # Resume the deployment
+                    resume_result = deployment_service.resume_function_deployment(deployment.deployment_id)
+                    if "error" in resume_result:
+                        logger.error(f"Failed to resume function deployment {deployment.deployment_id}: {resume_result['error']}")
+                    else:
+                        logger.info(f"Successfully resumed function deployment {deployment.deployment_id}")
+        except Exception as e:
+            logger.error(f"Exception handling function agent activation: {e}")
+
     def _handle_function_agent_suspension(self, hiring: Hiring):
         """Handle function agent suspension (suspend deployment)."""
         try:
@@ -360,9 +385,9 @@ class HiringService:
                 
                 if deployment:
                     # Suspend the deployment (stop container but keep it)
-                    stop_result = deployment_service.stop_function_deployment(deployment.deployment_id)
-                    if "error" in stop_result:
-                        logger.error(f"Failed to suspend function deployment {deployment.deployment_id}: {stop_result['error']}")
+                    suspend_result = deployment_service.suspend_function_deployment(deployment.deployment_id)
+                    if "error" in suspend_result:
+                        logger.error(f"Failed to suspend function deployment {deployment.deployment_id}: {suspend_result['error']}")
                     else:
                         logger.info(f"Successfully suspended function deployment {deployment.deployment_id}")
         except Exception as e:

@@ -277,6 +277,76 @@ if os.path.exists('/app/{module_name}.py'):
             "status_message": deployment.status_message
         }
     
+    def suspend_function_deployment(self, deployment_id: str) -> Dict[str, Any]:
+        """Suspend a function deployment by stopping the container but keeping it."""
+        try:
+            deployment = self.db.query(AgentDeployment).filter(
+                AgentDeployment.deployment_id == deployment_id
+            ).first()
+            
+            if not deployment:
+                return {"error": "Deployment not found"}
+            
+            # Stop container but don't remove it
+            if deployment.container_id:
+                try:
+                    container = self.docker_client.containers.get(deployment.container_id)
+                    container.stop(timeout=10)
+                    logger.info(f"Suspended function container {deployment.container_id}")
+                except Exception as e:
+                    if "not found" in str(e).lower():
+                        logger.warning(f"Container {deployment.container_id} not found")
+                    else:
+                        logger.error(f"Error suspending container: {e}")
+            
+            # Update deployment status
+            deployment.status = DeploymentStatus.STOPPED.value
+            deployment.stopped_at = datetime.utcnow()
+            self.db.commit()
+            
+            return {"status": "success", "message": "Deployment suspended"}
+            
+        except Exception as e:
+            logger.error(f"Failed to suspend deployment: {e}")
+            return {"error": str(e)}
+
+    def resume_function_deployment(self, deployment_id: str) -> Dict[str, Any]:
+        """Resume a suspended function deployment by starting the stopped container."""
+        try:
+            deployment = self.db.query(AgentDeployment).filter(
+                AgentDeployment.deployment_id == deployment_id
+            ).first()
+            
+            if not deployment:
+                return {"error": "Deployment not found"}
+            
+            # Start the stopped container
+            if deployment.container_id:
+                try:
+                    container = self.docker_client.containers.get(deployment.container_id)
+                    container.start()
+                    logger.info(f"Resumed function container {deployment.container_id}")
+                except Exception as e:
+                    if "not found" in str(e).lower():
+                        logger.warning(f"Container {deployment.container_id} not found - may need to redeploy")
+                        # If container not found, we need to redeploy
+                        return self.build_and_deploy_function(deployment_id)
+                    else:
+                        logger.error(f"Error resuming container: {e}")
+                        return {"error": str(e)}
+            
+            # Update deployment status
+            deployment.status = DeploymentStatus.RUNNING.value
+            deployment.started_at = datetime.utcnow()
+            deployment.stopped_at = None
+            self.db.commit()
+            
+            return {"status": "success", "message": "Deployment resumed"}
+            
+        except Exception as e:
+            logger.error(f"Failed to resume deployment: {e}")
+            return {"error": str(e)}
+
     def stop_function_deployment(self, deployment_id: str) -> Dict[str, Any]:
         """Stop and remove a function deployment."""
         try:
