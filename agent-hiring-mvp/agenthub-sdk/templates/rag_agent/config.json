@@ -9,11 +9,13 @@
   "requirements": [
     "llama-index",
     "llama-index-readers-web",
+    "llama-index-readers-file",
     "llama-index-llms-openai",
     "llama-index-embeddings-openai",
     "python-dotenv",
     "requests",
-    "beautifulsoup4"
+    "beautifulsoup4",
+    "pypdf"
   ],
   "config_schema": {
     "document_source": {

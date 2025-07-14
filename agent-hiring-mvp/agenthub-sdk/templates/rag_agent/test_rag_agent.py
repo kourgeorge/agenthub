@@ -29,56 +29,23 @@ def test_rag_agent():
     
     # Test cases
     test_cases = [
+        # {
+        #     "name": "Wikipedia Article Test",
+        #     "input_data": {
+        #         "document_source": "https://en.wikipedia.org/wiki/Artificial_intelligence",
+        #         "question": "What is artificial intelligence and what are its main applications?"
+        #     }
+        # },
         {
-            "name": "Wikipedia Article Test",
+            "name": "PDF URL",
             "input_data": {
-                "document_source": "https://en.wikipedia.org/wiki/Artificial_intelligence",
-                "question": "What is artificial intelligence and what are its main applications?"
-            }
-        },
-        {
-            "name": "Local File Test",
-            "input_data": {
-                "document_source": "sample_document.txt",
-                "question": "What are the key points mentioned in this document?"
+                "document_source": "https://arxiv.org/pdf/2505.19621",
+                "question": "What are the key ethical considerations mentioned in this document?"
             }
         }
     ]
-    
-    # Create a sample local document for testing
-    sample_content = """
-    # Sample Document for RAG Testing
-    
-    This is a sample document that demonstrates the capabilities of the RAG agent.
-    
-    ## Key Features
-    - Document processing from URLs and local files
-    - Question answering using retrieval-augmented generation
-    - Configurable chunk sizes and overlap
-    - Support for various document formats
-    
-    ## How it Works
-    The RAG agent uses LlamaIndex to:
-    1. Load documents from URLs or local files
-    2. Split documents into manageable chunks
-    3. Create embeddings for semantic search
-    4. Retrieve relevant chunks for a given question
-    5. Generate answers using an LLM
-    
-    ## Benefits
-    - Accurate answers based on document content
-    - Handles large documents efficiently
-    - Supports multiple document sources
-    - Configurable for different use cases
-    """
-    
-    # Write sample document
-    with open("sample_document.txt", "w") as f:
-        f.write(sample_content)
-    
-    print("🧪 Testing RAG Agent")
-    print("=" * 50)
-    
+
+
     for i, test_case in enumerate(test_cases, 1):
         print(f"\n📋 Test {i}: {test_case['name']}")
         print("-" * 30)
