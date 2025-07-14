@@ -46,6 +46,14 @@ class ExecutionService:
         if hiring.status != "active":
             raise ValueError(f"Hiring is not active (status: {hiring.status})")
         
+        # Validate that the agent is approved
+        agent = self.db.query(Agent).filter(Agent.id == hiring.agent_id).first()
+        if not agent:
+            raise ValueError("Agent not found")
+        
+        if agent.status != "approved":
+            raise ValueError(f"Agent is not approved (status: {agent.status})")
+        
         execution = Execution(
             agent_id=hiring.agent_id,  # Get agent_id from hiring
             hiring_id=execution_data.hiring_id,

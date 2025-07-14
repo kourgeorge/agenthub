@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from ..models.agent import Agent, AgentStatus, AgentType
 from ..models.agent_file import AgentFile
 from ..models.user import User
+from ..models.hiring import Hiring
 
 logger = logging.getLogger(__name__)
 
@@ -133,20 +134,69 @@ class AgentService:
         return agent
     
     def reject_agent(self, agent_id: int, reason: str) -> Optional[Agent]:
-        """Reject an agent."""
+        """Reject an agent and handle existing hirings and deployments."""
         agent = self.get_agent(agent_id)
         if not agent:
             return None
         
+        # Update agent status
         agent.status = AgentStatus.REJECTED.value
         agent.validation_errors = [reason]
         agent.updated_at = datetime.utcnow()
+        
+        # Handle existing active hirings
+        active_hirings = self.db.query(Hiring).filter(
+            Hiring.agent_id == agent_id,
+            Hiring.status == "active"
+        ).all()
+        
+        for hiring in active_hirings:
+            # Suspend the hiring
+            hiring.status = "suspended"
+            hiring.updated_at = datetime.utcnow()
+            
+            # Stop associated deployments for ACP agents
+            if agent.agent_type == "acp_server":
+                self._stop_hiring_deployment(hiring)
+        
+        # Block new executions for this agent
+        # (This is handled by the hiring service which checks agent status)
         
         self.db.commit()
         self.db.refresh(agent)
         
         logger.info(f"Rejected agent: {agent.name} (ID: {agent.id}) - Reason: {reason}")
+        logger.info(f"Suspended {len(active_hirings)} active hirings for rejected agent")
+        
         return agent
+    
+    def _stop_hiring_deployment(self, hiring: Hiring):
+        """Stop deployment for a hiring (for ACP agents)."""
+        try:
+            from .deployment_service import DeploymentService
+            from ..models.deployment import AgentDeployment
+            
+            deployment_service = DeploymentService(self.db)
+            
+            # Find existing deployment
+            deployment = self.db.query(AgentDeployment).filter(
+                AgentDeployment.hiring_id == hiring.id
+            ).first()
+            
+            if deployment:
+                logger.info(f"Stopping deployment {deployment.deployment_id} for rejected agent")
+                stop_result = deployment_service.stop_deployment(deployment.deployment_id, timeout=60)
+                if "error" in stop_result:
+                    logger.error(f"Failed to stop deployment {deployment.deployment_id}: {stop_result['error']}")
+                else:
+                    logger.info(f"Successfully stopped deployment {deployment.deployment_id}")
+                    
+                    # Remove the deployment record
+                    self.db.delete(deployment)
+                    self.db.commit()
+                    logger.info(f"Removed deployment record for hiring {hiring.id}")
+        except Exception as e:
+            logger.error(f"Exception stopping hiring deployment: {e}")
     
     def update_agent_stats(self, agent_id: int, execution_count: int = 0, rating: Optional[float] = None) -> None:
         """Update agent statistics."""
