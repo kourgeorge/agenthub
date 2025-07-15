@@ -40,6 +40,7 @@ class Execution(Base):
     input_data = Column(JSON, nullable=True)  # Input parameters
     output_data = Column(JSON, nullable=True)  # Output results
     error_message = Column(Text, nullable=True)  # Error message if failed
+    container_logs = Column(Text, nullable=True)  # Container stdout/stderr logs
     
     # Resource Usage
     cpu_usage = Column(Float, nullable=True)  # CPU usage percentage

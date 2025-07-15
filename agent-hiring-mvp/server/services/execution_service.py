@@ -76,33 +76,32 @@ class ExecutionService:
     
     def update_execution_status(self, execution_id: str, status: ExecutionStatus, 
                                output_data: Optional[Dict[str, Any]] = None,
-                               error_message: Optional[str] = None) -> Optional[Execution]:
-        """Update execution status."""
+                               error_message: Optional[str] = None,
+                               container_logs: Optional[str] = None) -> Optional[Execution]:
+        """Update execution status and optionally set output data or error message."""
         execution = self.get_execution(execution_id)
         if not execution:
             return None
         
         execution.status = status.value
-        execution.updated_at = datetime.utcnow()
         
-        if status == ExecutionStatus.RUNNING:
+        if status == ExecutionStatus.RUNNING and not execution.started_at:
             execution.started_at = datetime.utcnow()
-        elif status in [ExecutionStatus.COMPLETED, ExecutionStatus.FAILED, ExecutionStatus.TIMEOUT]:
+        elif status in [ExecutionStatus.COMPLETED, ExecutionStatus.FAILED, ExecutionStatus.TIMEOUT, ExecutionStatus.CANCELLED]:
             execution.completed_at = datetime.utcnow()
             if execution.started_at:
-                duration = (execution.completed_at - execution.started_at).total_seconds() * 1000
-                execution.duration_ms = int(duration)
+                execution.duration_ms = int((execution.completed_at - execution.started_at).total_seconds() * 1000)
         
         if output_data is not None:
             execution.output_data = output_data
         
         if error_message is not None:
             execution.error_message = error_message
+            
+        if container_logs is not None:
+            execution.container_logs = container_logs
         
         self.db.commit()
-        self.db.refresh(execution)
-        
-        logger.info(f"Updated execution {execution_id} status to {status.value}")
         return execution
     
     def get_agent_executions(self, agent_id: int, limit: int = 100) -> list[Execution]:
@@ -174,7 +173,7 @@ class ExecutionService:
                         "status": "success"
                     }
                 
-                self.update_execution_status(execution_id, ExecutionStatus.COMPLETED, output_data)
+                self.update_execution_status(execution_id, ExecutionStatus.COMPLETED, output_data, container_logs=runtime_result.container_logs)
                 
                 return {
                     "status": "success",
@@ -183,18 +182,9 @@ class ExecutionService:
                     "execution_time": runtime_result.execution_time
                 }
             
-            elif runtime_result.status == RuntimeStatus.TIMEOUT:
-                error_msg = "Execution timeout"
-                self.update_execution_status(execution_id, ExecutionStatus.TIMEOUT, error_message=error_msg)
-                return {
-                    "status": "error",
-                    "execution_id": execution_id,
-                    "error": error_msg
-                }
-            
-            elif runtime_result.status == RuntimeStatus.SECURITY_VIOLATION:
-                error_msg = f"Security violation: {runtime_result.error}"
-                self.update_execution_status(execution_id, ExecutionStatus.FAILED, error_message=error_msg)
+            elif runtime_result.status == RuntimeStatus.FAILED:
+                error_msg = runtime_result.error or "Execution failed"
+                self.update_execution_status(execution_id, ExecutionStatus.FAILED, error_message=error_msg, container_logs=runtime_result.container_logs)
                 return {
                     "status": "error",
                     "execution_id": execution_id,
@@ -203,7 +193,7 @@ class ExecutionService:
             
             else:  # FAILED or other status
                 error_msg = runtime_result.error or "Execution failed"
-                self.update_execution_status(execution_id, ExecutionStatus.FAILED, error_message=error_msg)
+                self.update_execution_status(execution_id, ExecutionStatus.FAILED, error_message=error_msg, container_logs=runtime_result.container_logs)
                 return {
                     "status": "error",
                     "execution_id": execution_id,
@@ -251,16 +241,21 @@ class ExecutionService:
                 
                 result = deployment_service.execute_in_container(deployment.deployment_id, input_data)
                 
+                # Extract container logs
+                container_logs = result.get("container_logs", "")
+                
                 if result.get("status") == "success":
                     return RuntimeResult(
                         status=RuntimeStatus.COMPLETED,
                         output=result.get("output"),
-                        execution_time=result.get("execution_time")
+                        execution_time=result.get("execution_time"),
+                        container_logs=container_logs
                     )
                 else:
                     return RuntimeResult(
                         status=RuntimeStatus.FAILED,
-                        error=result.get("error", "Unknown error")
+                        error=result.get("error", "Unknown error"),
+                        container_logs=container_logs
                     )
             else:
                 # Fallback to traditional runtime service

@@ -226,8 +226,8 @@ class FunctionDeploymentService:
             # Remove .py extension if present for import
             module_name = file_name.replace('.py', '')
             
-            exec_result = container.exec_run(
-                cmd=["python", "-c", f"""
+            # Create a Python script that captures both stdout and stderr
+            python_script = f"""
 import json
 import sys
 import os
@@ -237,39 +237,89 @@ from contextlib import redirect_stdout, redirect_stderr
 
 sys.path.append('/app')
 
-# Ensure we're importing the Python file, not any JSON files
-if os.path.exists('/app/{module_name}.py'):
-    from {module_name} import {function_name}
-    
-    # Capture stderr to prevent logging interference
-    stderr_capture = StringIO()
-    with redirect_stderr(stderr_capture):
-        result = {function_name}({input_json}, {{}})
-    
-    # Write result to temp file
+# Capture both stdout and stderr
+stdout_capture = StringIO()
+stderr_capture = StringIO()
+
+try:
+    # Ensure we're importing the Python file, not any JSON files
+    if os.path.exists('/app/{module_name}.py'):
+        from {module_name} import {function_name}
+        
+        with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
+            result = {function_name}({input_json}, {{}})
+        
+        # Write result to temp file
+        with open('/tmp/agent_result.json', 'w') as f:
+            json.dump(result, f)
+    else:
+        raise ImportError(f"Module {{module_name}} not found")
+        
+except Exception as e:
+    # Capture any exceptions in stderr
+    stderr_capture.write(f"Error: {{str(e)}}\\n")
+    # Write error result to temp file
     with open('/tmp/agent_result.json', 'w') as f:
-        json.dump(result, f)
-"""]
+        json.dump({{"error": str(e)}}, f)
+
+# Write captured output to temp files
+with open('/tmp/agent_stdout.txt', 'w') as f:
+    f.write(stdout_capture.getvalue())
+
+with open('/tmp/agent_stderr.txt', 'w') as f:
+    f.write(stderr_capture.getvalue())
+"""
+            
+            exec_result = container.exec_run(
+                cmd=["python", "-c", python_script]
             )
             
+            # Read captured stdout and stderr
+            stdout_result = container.exec_run(cmd=["cat", "/tmp/agent_stdout.txt"])
+            stderr_result = container.exec_run(cmd=["cat", "/tmp/agent_stderr.txt"])
+            
+            # Combine logs
+            stdout_logs = stdout_result.output.decode() if stdout_result.exit_code == 0 else ""
+            stderr_logs = stderr_result.output.decode() if stderr_result.exit_code == 0 else ""
+            
+            # Create combined logs
+            container_logs = ""
+            if stdout_logs:
+                container_logs += f"=== STDOUT ===\n{stdout_logs}\n"
+            if stderr_logs:
+                container_logs += f"=== STDERR ===\n{stderr_logs}\n"
+            if exec_result.output:
+                container_logs += f"=== CONTAINER OUTPUT ===\n{exec_result.output.decode()}\n"
+            
             if exec_result.exit_code != 0:
-                raise Exception(f"Container execution failed: {exec_result.output.decode()}")
+                error_msg = f"Container execution failed: {exec_result.output.decode()}"
+                return {
+                    "status": "error",
+                    "error": error_msg,
+                    "container_logs": container_logs
+                }
             
             # Read result from temp file
             read_result = container.exec_run(cmd=["cat", "/tmp/agent_result.json"])
             if read_result.exit_code != 0:
-                raise Exception(f"Failed to read result file: {read_result.output.decode()}")
+                error_msg = f"Failed to read result file: {read_result.output.decode()}"
+                return {
+                    "status": "error", 
+                    "error": error_msg,
+                    "container_logs": container_logs
+                }
             
             result_json = read_result.output.decode().strip()
             result_data = json.loads(result_json)
             
-            # Clean up temp file
-            container.exec_run(cmd=["rm", "-f", "/tmp/agent_result.json"])
+            # Clean up temp files
+            container.exec_run(cmd=["rm", "-f", "/tmp/agent_result.json", "/tmp/agent_stdout.txt", "/tmp/agent_stderr.txt"])
             
             return {
                 "status": "success",
                 "output": result_data,
-                "execution_time": None  # Could be added if needed
+                "execution_time": None,  # Could be added if needed
+                "container_logs": container_logs
             }
                 
         except Exception as e:

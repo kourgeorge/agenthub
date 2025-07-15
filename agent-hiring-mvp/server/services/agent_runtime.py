@@ -37,6 +37,7 @@ class RuntimeResult:
     execution_time: Optional[float] = None
     exit_code: Optional[int] = None
     security_violations: Optional[List[str]] = None
+    container_logs: Optional[str] = None
 
 
 class AgentRuntimeService:

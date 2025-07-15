@@ -15,6 +15,13 @@ def init_database() -> None:
     logger.info("Creating database tables...")
     Base.metadata.create_all(bind=engine)
     logger.info("Database schema initialization completed!")
+    
+    # Run migrations
+    try:
+        from .migrate_add_container_logs import migrate_add_container_logs
+        migrate_add_container_logs()
+    except Exception as e:
+        logger.warning(f"Migration failed (this is normal for new databases): {e}")
 
 
 def reset_database() -> None:

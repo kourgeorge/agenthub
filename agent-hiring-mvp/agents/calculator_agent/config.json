@@ -1,0 +1,39 @@
+{
+  "name": "Calculator Agent",
+  "description": "A mathematical computation agent that performs various calculations and analysis",
+  "version": "1.0.0",
+  "author": "AgentHub Team",
+  "email": "team@agenthub.com",
+  "entry_point": "calculator.py:main",
+  "agent_type": "function",
+  "category": "mathematics",
+  "tags": ["calculator", "math", "statistics", "analysis", "computation"],
+  "pricing_model": "free",
+  "price_per_use": 0.0,
+  "config_schema": {
+    "operation": {
+      "type": "string",
+      "description": "Mathematical operation to perform",
+      "required": true,
+      "default": "add",
+      "options": ["add", "subtract", "multiply", "divide", "power", "sqrt", "statistics", "analysis"]
+    },
+    "numbers": {
+      "type": "array",
+      "description": "List of numbers to operate on",
+      "required": true,
+      "default": [1, 2, 3],
+      "items": {
+        "type": "number"
+      }
+    },
+    "precision": {
+      "type": "integer",
+      "description": "Number of decimal places for results",
+      "required": false,
+      "default": 2,
+      "minimum": 0,
+      "maximum": 10
+    }
+  }
+} 
