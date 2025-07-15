@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from ..models.agent import Agent, AgentType
 from ..models.hiring import Hiring
 from ..models.deployment import AgentDeployment, DeploymentStatus
+from .env_service import EnvironmentService
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,36 @@ class DeploymentService:
         
         # Configure server hostname for proxy endpoints
         self.server_hostname = self._get_server_hostname()
+        
+        # Initialize environment service for external API keys
+        self.env_service = EnvironmentService()
+    
+    def _get_agent_env_path(self, agent: Agent) -> Optional[str]:
+        """
+        Get the path to the agent's .env file if it exists.
+        
+        Args:
+            agent: The agent object
+            
+        Returns:
+            Path to agent's .env file or None if not found
+        """
+        # Check if agent has a .env file in its files
+        if agent.files:
+            for agent_file in agent.files:
+                if agent_file.file_path == '.env':
+                    # Create a temporary .env file for the agent
+                    import tempfile
+                    temp_dir = Path(tempfile.gettempdir())
+                    agent_env_path = temp_dir / f"agent_{agent.id}_env_{uuid.uuid4().hex[:8]}.env"
+                    
+                    with open(agent_env_path, 'w') as f:
+                        f.write(agent_file.file_content)
+                    
+                    logger.info(f"Created temporary agent .env file: {agent_env_path}")
+                    return str(agent_env_path)
+        
+        return None
         
     def _get_server_hostname(self) -> str:
         """Get the server hostname for proxy endpoints."""
@@ -232,6 +263,14 @@ class DeploymentService:
         if not requirements_file.exists():
             requirements = agent.requirements or []
             requirements_file.write_text("\n".join(requirements), encoding='utf-8')
+        
+        # Create merged .env file with external API keys
+        agent_env_path = self._get_agent_env_path(agent)
+        merged_env_path = self.env_service.create_merged_env_file(
+            agent_env_path=agent_env_path,
+            output_path=str(deploy_dir / ".env")
+        )
+        logger.info(f"Created merged .env file for deployment: {merged_env_path}")
         
         # Create basic Dockerfile if not exists
         dockerfile = deploy_dir / "Dockerfile"

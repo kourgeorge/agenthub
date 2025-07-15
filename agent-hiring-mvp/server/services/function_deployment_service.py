@@ -15,6 +15,7 @@ from datetime import datetime
 from pathlib import Path
 import socket
 
+from .env_service import EnvironmentService
 from ..models.agent import Agent, AgentType
 from ..models.hiring import Hiring
 from ..models.deployment import AgentDeployment, DeploymentStatus
@@ -33,6 +34,36 @@ class FunctionDeploymentService:
         temp_base = os.getenv("AGENTHUB_TEMP_DIR") or tempfile.gettempdir()
         self.deployment_dir = Path(temp_base) / "function_deployments"
         self.deployment_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Initialize environment service for external API keys
+        self.env_service = EnvironmentService()
+    
+    def _get_agent_env_path(self, agent: Agent) -> Optional[str]:
+        """
+        Get the path to the agent's .env file if it exists.
+        
+        Args:
+            agent: The agent object
+            
+        Returns:
+            Path to agent's .env file or None if not found
+        """
+        # Check if agent has a .env file in its files
+        if agent.files:
+            for agent_file in agent.files:
+                if agent_file.file_path == '.env':
+                    # Create a temporary .env file for the agent
+                    import tempfile
+                    temp_dir = Path(tempfile.gettempdir())
+                    agent_env_path = temp_dir / f"agent_{agent.id}_env_{uuid.uuid4().hex[:8]}.env"
+                    
+                    with open(agent_env_path, 'w') as f:
+                        f.write(agent_file.file_content)
+                    
+                    logger.info(f"Created temporary agent .env file: {agent_env_path}")
+                    return str(agent_env_path)
+        
+        return None
     
     def create_function_deployment(self, hiring_id: int) -> Dict[str, Any]:
         """Create a new deployment for a hired function agent."""
@@ -426,6 +457,14 @@ if os.path.exists('/app/{module_name}.py'):
                     for req in agent.requirements:
                         f.write(f"{req}\n")
                 logger.info("Created requirements.txt")
+            
+            # Create merged .env file with external API keys
+            agent_env_path = self._get_agent_env_path(agent)
+            merged_env_path = self.env_service.create_merged_env_file(
+                agent_env_path=agent_env_path,
+                output_path=str(deploy_dir / ".env")
+            )
+            logger.info(f"Created merged .env file for function deployment: {merged_env_path}")
             
         except Exception as e:
             logger.error(f"Failed to extract agent code: {e}")
