@@ -8,6 +8,7 @@ import logging
 import zipfile
 import tempfile
 import os
+import ssl
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 import asyncio
@@ -32,10 +33,21 @@ class AgentHubClient:
         self.base_url = base_url.rstrip("/")
         self.api_base = f"{self.base_url}/api/v1"
         self.session: Optional[aiohttp.ClientSession] = None
+        
+        # Determine if we need to disable SSL verification
+        self.disable_ssl_verify = self.base_url.startswith("https://localhost") or self.base_url.startswith("https://127.0.0.1")
     
     async def __aenter__(self):
         """Async context manager entry."""
-        self.session = aiohttp.ClientSession()
+        # Configure SSL context for self-signed certificates
+        if self.disable_ssl_verify:
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+            connector = aiohttp.TCPConnector(ssl=ssl_context)
+            self.session = aiohttp.ClientSession(connector=connector)
+        else:
+            self.session = aiohttp.ClientSession()
         return self
     
     async def __aexit__(self, exc_type, exc_val, exc_tb):
@@ -234,8 +246,8 @@ class AgentHubClient:
             user_id = 1
         
         data = {
-            "agent_id": int(agent_id),
-            "user_id": int(user_id),
+            "agent_id": agent_id,
+            "user_id": user_id,
             "requirements": config or {},
             "budget": 100.0,  # Default budget
             "duration_hours": 24,  # Default duration
