@@ -1,0 +1,12 @@
+yfinance
+pandas
+numpy
+requests
+beautifulsoup4
+textblob
+plotly
+ta
+openai
+python-dotenv
+schedule
+lxml 
