@@ -485,69 +485,115 @@ class ACLReviewAgent:
         """Perform comprehensive literature review"""
         logger.info("Performing literature review...")
         
-        # Generate search queries based on paper content
-        search_queries = self.generate_literature_queries(paper, depth)
-        
+        # Initialize default values
         related_papers = []
         all_abstracts = []
-        
-        # Web search for related papers
-        for query in search_queries:
-            logger.info(f"Web searching: {query}")
-            results = self.search_web(query, 5)
-            
-            for result in results:
-                if any(domain in result['url'] for domain in ['arxiv.org', 'aclweb.org', 'aclanthology.org', 'scholar.google.com']):
-                    paper_info = {
-                        'title': result['title'],
-                        'snippet': result['snippet'],
-                        'url': result['url'],
-                        'relevance_score': self.calculate_relevance(paper, result),
-                        'source': 'Web Search'
-                    }
-                    related_papers.append(paper_info)
-                    all_abstracts.append(result['snippet'])
-        
-        # Find most similar papers using multiple sources
-        logger.info("Finding most similar papers...")
-        similar_papers = self.find_most_similar_papers(paper, MAX_SIMILAR_PAPERS)
-        all_abstracts.extend([p.get('abstract', '') for p in similar_papers])
-        
-        # Get OpenReview reviews for similar papers
-        logger.info("Searching OpenReview for similar reviews...")
-        openreview_reviews = self.get_openreview_reviews(paper.title, MAX_OPENREVIEW_REVIEWS)
-        
-        # Get Semantic Scholar papers
-        logger.info("Searching Semantic Scholar...")
+        similar_papers = []
+        openreview_reviews = []
         semantic_scholar_papers = []
-        for query in search_queries[:2]:  # Use first 2 queries
-            semantic_papers = self.search_semantic_scholar(query, 5)
-            semantic_scholar_papers.extend(semantic_papers)
+        cited_papers = []
         
-        # Analyze novelty
-        novelty_score = self.analyze_novelty(paper, all_abstracts)
+        try:
+            # Generate search queries based on paper content
+            search_queries = self.generate_literature_queries(paper, depth)
+            
+            # Web search for related papers
+            for query in search_queries:
+                logger.info(f"Web searching: {query}")
+                try:
+                    results = self.search_web(query, 5)
+                    
+                    for result in results:
+                        if any(domain in result['url'] for domain in ['arxiv.org', 'aclweb.org', 'aclanthology.org', 'scholar.google.com']):
+                            paper_info = {
+                                'title': result['title'],
+                                'snippet': result['snippet'],
+                                'url': result['url'],
+                                'relevance_score': self.calculate_relevance(paper, result),
+                                'source': 'Web Search'
+                            }
+                            related_papers.append(paper_info)
+                            all_abstracts.append(result['snippet'])
+                except Exception as e:
+                    logger.error(f"Error in web search for query '{query}': {e}")
+                    continue
+            
+            # Find most similar papers using multiple sources
+            logger.info("Finding most similar papers...")
+            try:
+                similar_papers = self.find_most_similar_papers(paper, MAX_SIMILAR_PAPERS)
+                all_abstracts.extend([p.get('abstract', '') for p in similar_papers])
+            except Exception as e:
+                logger.error(f"Error finding similar papers: {e}")
+            
+            # Get OpenReview reviews for similar papers
+            logger.info("Searching OpenReview for similar reviews...")
+            try:
+                openreview_reviews = self.get_openreview_reviews(paper.title, MAX_OPENREVIEW_REVIEWS)
+            except Exception as e:
+                logger.error(f"Error getting OpenReview reviews: {e}")
+            
+            # Get Semantic Scholar papers
+            logger.info("Searching Semantic Scholar...")
+            try:
+                for query in search_queries[:2]:  # Use first 2 queries
+                    semantic_papers = self.search_semantic_scholar(query, 5)
+                    semantic_scholar_papers.extend(semantic_papers)
+            except Exception as e:
+                logger.error(f"Error searching Semantic Scholar: {e}")
+            
+            # Extract cited papers from the paper content
+            try:
+                cited_papers = self.extract_cited_papers(paper.content)
+            except Exception as e:
+                logger.error(f"Error extracting cited papers: {e}")
+            
+        except Exception as e:
+            logger.error(f"Error in literature review: {e}")
         
-        # Analyze contributions
-        contribution_analysis = self.analyze_contributions(paper)
+        # Analyze novelty (with fallback)
+        try:
+            novelty_score = self.analyze_novelty(paper, all_abstracts)
+        except Exception as e:
+            logger.error(f"Error analyzing novelty: {e}")
+            novelty_score = 0.5  # Default fallback
         
-        # Identify gaps
-        gaps_identified = self.identify_gaps(paper, related_papers + similar_papers)
+        # Analyze contributions (with fallback)
+        try:
+            contribution_analysis = self.analyze_contributions(paper)
+        except Exception as e:
+            logger.error(f"Error analyzing contributions: {e}")
+            contribution_analysis = {"contributions": ["Analysis failed due to API limits"], "significance": "medium"}
         
-        # Compare methodologies
-        methodology_comparison = self.compare_methodologies(paper, related_papers + similar_papers)
-
-        # Extract cited papers from the paper content
-        cited_papers = self.extract_cited_papers(paper.content)
+        # Identify gaps (with fallback)
+        try:
+            gaps_identified = self.identify_gaps(paper, related_papers + similar_papers)
+        except Exception as e:
+            logger.error(f"Error identifying gaps: {e}")
+            gaps_identified = ["Gap analysis failed due to API limits"]
+        
+        # Compare methodologies (with fallback)
+        try:
+            methodology_comparison = self.compare_methodologies(paper, related_papers + similar_papers)
+        except Exception as e:
+            logger.error(f"Error comparing methodologies: {e}")
+            methodology_comparison = {"comparison": "Methodology comparison failed due to API limits"}
+        
+        # Ensure we don't exceed list limits
+        max_papers = 10
+        related_papers = related_papers[:max_papers] if related_papers else []
+        similar_papers = similar_papers[:max_papers] if similar_papers else []
+        semantic_scholar_papers = semantic_scholar_papers[:max_papers] if semantic_scholar_papers else []
         
         return LiteratureReview(
-            related_papers=related_papers[:10],  # Top 10 most relevant
+            related_papers=related_papers,
             novelty_score=novelty_score,
             contribution_analysis=contribution_analysis,
             gaps_identified=gaps_identified,
             methodology_comparison=methodology_comparison,
-            similar_papers=similar_papers[:10],  # Top 10 most similar
+            similar_papers=similar_papers,
             openreview_reviews=openreview_reviews,
-            semantic_scholar_papers=semantic_scholar_papers[:10],  # Top 10 from Semantic Scholar
+            semantic_scholar_papers=semantic_scholar_papers,
             cited_papers=cited_papers
         )
 
@@ -1104,25 +1150,68 @@ class ACLReviewAgent:
             
             logger.info(f"Successfully downloaded paper: {paper.title}")
             
-            # Perform literature review
+            # Perform literature review with error handling
             literature_review = None
             if include_related_work:
-                literature_review = self.perform_literature_review(paper, review_depth)
+                try:
+                    literature_review = self.perform_literature_review(paper, review_depth)
+                except Exception as e:
+                    logger.error(f"Literature review failed: {e}")
+                    # Create a minimal literature review as fallback
+                    literature_review = LiteratureReview(
+                        related_papers=[],
+                        novelty_score=0.5,
+                        contribution_analysis={"contributions": ["Analysis failed"], "significance": "medium"},
+                        gaps_identified=["Analysis failed due to API limits"],
+                        methodology_comparison={"comparison": "Analysis failed"},
+                        similar_papers=[],
+                        openreview_reviews=[],
+                        semantic_scholar_papers=[],
+                        cited_papers=[]
+                    )
             
             # Handle OpenReview credentials and reviewer style analysis
             reviewer_style_summary = ""
             if openreview_username and openreview_password:
                 logger.info("Using provided OpenReview credentials for reviewer style analysis")
-                own_reviews = self.fetch_reviewer_own_reviews(openreview_username, openreview_password)
-                reviewer_style_summary = self.analyze_reviewer_style(own_reviews)
+                try:
+                    own_reviews = self.fetch_reviewer_own_reviews(openreview_username, openreview_password)
+                    reviewer_style_summary = self.analyze_reviewer_style(own_reviews)
+                except Exception as e:
+                    logger.error(f"OpenReview analysis failed: {e}")
             else:
                 logger.info("No OpenReview credentials provided, skipping reviewer style analysis")
             
             # Generate ACL review, passing reviewer_style_summary if available
-            acl_review = self.generate_acl_review(paper, literature_review, reviewer_style_summary=reviewer_style_summary)
+            try:
+                acl_review = self.generate_acl_review(paper, literature_review, reviewer_style_summary=reviewer_style_summary)
+            except Exception as e:
+                logger.error(f"ACL review generation failed: {e}")
+                # Create a minimal review as fallback
+                acl_review = ACLReview(
+                    paper_summary=f"Paper: {paper.title} by {', '.join(paper.authors) if paper.authors else 'Unknown authors'}",
+                    strengths="Analysis failed due to API limits",
+                    weaknesses="Analysis failed due to API limits", 
+                    comments_suggestions="Unable to generate detailed review due to API limits",
+                    confidence=1,
+                    soundness=0.5,
+                    overall_assessment=0.5,
+                    best_paper="No",
+                    best_paper_justification="Unable to assess due to API limits",
+                    literature_review=literature_review or LiteratureReview(
+                        related_papers=[], novelty_score=0.5, contribution_analysis={},
+                        gaps_identified=[], methodology_comparison={}, similar_papers=[],
+                        openreview_reviews=[], semantic_scholar_papers=[], cited_papers=[]
+                    ),
+                    additional_insights={"error": "Review generation failed due to API limits"}
+                )
             
             # Format review
-            formatted_review = self.format_review(acl_review)
+            try:
+                formatted_review = self.format_review(acl_review)
+            except Exception as e:
+                logger.error(f"Review formatting failed: {e}")
+                formatted_review = f"Review generation failed: {str(e)}"
             
             return {
                 "status": "success",
@@ -1419,18 +1508,42 @@ def main(input_data: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
         # Load environment variables
         dotenv.load_dotenv()
 
-        # Extract parameters
+        # Extract parameters with proper boolean conversion
         paper_url = input_data.get("paper_url", config.get("paper_url", ""))
         paper_title = input_data.get("paper_title", config.get("paper_title", ""))
         review_depth = input_data.get("review_depth", config.get("review_depth", DEFAULT_REVIEW_DEPTH))
-        include_related_work = input_data.get("include_related_work", config.get("include_related_work", True))
-        novelty_analysis = input_data.get("novelty_analysis", config.get("novelty_analysis", True))
-        technical_analysis = input_data.get("technical_analysis", config.get("technical_analysis", True))
-        experimental_validation = input_data.get("experimental_validation", config.get("experimental_validation", True))
+        
+        # Ensure boolean parameters are properly converted
+        def ensure_boolean(value, default=True):
+            if isinstance(value, bool):
+                return value
+            elif isinstance(value, str):
+                return value.lower() in ('true', '1', 'yes', 'on')
+            else:
+                return bool(value) if value is not None else default
+        
+        include_related_work = ensure_boolean(
+            input_data.get("include_related_work", config.get("include_related_work", True))
+        )
+        novelty_analysis = ensure_boolean(
+            input_data.get("novelty_analysis", config.get("novelty_analysis", True))
+        )
+        technical_analysis = ensure_boolean(
+            input_data.get("technical_analysis", config.get("technical_analysis", True))
+        )
+        experimental_validation = ensure_boolean(
+            input_data.get("experimental_validation", config.get("experimental_validation", True))
+        )
         
         # Extract OpenReview credentials (optional)
         openreview_username = input_data.get("openreview_username", config.get("openreview_username", ""))
         openreview_password = input_data.get("openreview_password", config.get("openreview_password", ""))
+
+        # Debug logging
+        logger.info(f"Parameters: include_related_work={include_related_work} (type: {type(include_related_work)})")
+        logger.info(f"Parameters: novelty_analysis={novelty_analysis} (type: {type(novelty_analysis)})")
+        logger.info(f"Parameters: technical_analysis={technical_analysis} (type: {type(technical_analysis)})")
+        logger.info(f"Parameters: experimental_validation={experimental_validation} (type: {type(experimental_validation)})")
 
         if not paper_url and not paper_title:
             return {
@@ -1455,6 +1568,7 @@ def main(input_data: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
         return result
 
     except Exception as e:
+        logger.error(f"Error in main function: {e}")
         return {
             "status": "error",
             "error": str(e),
@@ -1472,8 +1586,8 @@ if __name__ == "__main__":
         "technical_analysis": True,
         "experimental_validation": True,
         # Optional: Provide OpenReview credentials for reviewer style analysis
-        "openreview_username": "gkour@ibm.com",
-        "openreview_password": "Gras2xan"
+        "openreview_username": "",
+        "openreview_password": ""
     }
     
     test_config = {
