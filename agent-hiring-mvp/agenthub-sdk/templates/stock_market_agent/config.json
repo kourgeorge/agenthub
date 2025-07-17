@@ -27,26 +27,6 @@
       "default": "3months",
       "choices": ["1week", "1month", "3months", "6months", "1year"]
     },
-    "include_news": {
-      "type": "boolean",
-      "description": "Include recent news analysis",
-      "default": true
-    },
-    "include_technical_analysis": {
-      "type": "boolean",
-      "description": "Include technical analysis indicators",
-      "default": true
-    },
-    "include_fundamental_analysis": {
-      "type": "boolean",
-      "description": "Include fundamental analysis (financial ratios, etc.)",
-      "default": true
-    },
-    "include_sentiment_analysis": {
-      "type": "boolean",
-      "description": "Include market sentiment analysis",
-      "default": true
-    },
     "risk_tolerance": {
       "type": "choice",
       "description": "Risk tolerance level for recommendations",
@@ -58,16 +38,6 @@
       "type": "float",
       "description": "Investment amount to consider for recommendations (in USD)",
       "default": 10000
-    },
-    "include_competitor_analysis": {
-      "type": "boolean",
-      "description": "Include analysis of competitors",
-      "default": true
-    },
-    "include_market_trends": {
-      "type": "boolean",
-      "description": "Include broader market trend analysis",
-      "default": true
     },
     "api_key_alpha_vantage": {
       "type": "string",

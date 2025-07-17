@@ -478,7 +478,8 @@ class StockMarketAgent:
                     seen_titles.add(news['title'])
             
             logger.info(f"Found {len(unique_news)} unique news articles for {symbol}")
-            return sorted(unique_news, key=lambda x: x.get('date', ''), reverse=True)[:20]
+            # Return all unique news articles, sorted by date (most recent first)
+            return sorted(unique_news, key=lambda x: x.get('date', ''), reverse=True)
             
         except Exception as e:
             logger.error(f"Error fetching news for {symbol}: {e}")
@@ -1264,7 +1265,13 @@ class StockMarketAgent:
             'sentiment_analysis': sentiment_analysis,
             'news_summary': {
                 'total_articles': len(news_data),
-                'recent_headlines': [news.get('title', '') for news in news_data[:5]]
+                'articles_analyzed': len(news_data),
+                'recent_headlines': [news.get('title', '') for news in news_data[:5]],
+                'news_sources': list(set([news.get('source', 'Unknown') for news in news_data])),
+                'date_range': {
+                    'earliest': min([news.get('date', '') for news in news_data]) if news_data else '',
+                    'latest': max([news.get('date', '') for news in news_data]) if news_data else ''
+                }
             },
             'recommendations': recommendations,
             'predictions': predictions,
