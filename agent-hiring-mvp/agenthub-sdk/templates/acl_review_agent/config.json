@@ -1,0 +1,72 @@
+{
+  "name": "ACL Review Agent",
+  "description": "An agent that downloads academic papers, analyzes them, and generates comprehensive ACL ARR (Action Editor Recommendation Report) reviews with literature analysis and novelty assessment",
+  "version": "1.0.0",
+  "entry_point": "acl_review_agent.py",
+  "author": "AgentHub Team",
+  "email": "team@agenthub.com",
+  "requirements": [
+    "openai", 
+    "requests>=2.31.0", 
+    "urllib3>=2.0.0",
+    "python-dotenv",
+    "beautifulsoup4",
+    "PyPDF2",
+    "arxiv",
+    "scholarly",
+    "pymupdf",
+    "nltk",
+    "scikit-learn",
+    "openreview-py",
+    "semanticscholar"
+  ],
+  "config_schema": {
+    "paper_url": {
+      "type": "string",
+      "description": "URL to the academic paper (arXiv, ACL Anthology, etc.)",
+      "required": true,
+      "default": ""
+    },
+    "paper_title": {
+      "type": "string",
+      "description": "Title of the paper (if URL is not provided)",
+      "required": false,
+      "default": ""
+    },
+    "review_depth": {
+      "type": "integer",
+      "description": "Depth of literature review and analysis (1-5)",
+      "default": 4,
+      "minimum": 1,
+      "maximum": 5
+    },
+    "include_related_work": {
+      "type": "boolean",
+      "description": "Whether to perform deep literature review"
+    },
+    "novelty_analysis": {
+      "type": "boolean",
+      "description": "Whether to analyze novelty and contributions"
+    },
+    "technical_analysis": {
+      "type": "boolean",
+      "description": "Whether to perform detailed technical analysis"
+    },
+    "experimental_validation": {
+      "type": "boolean",
+      "description": "Whether to validate experimental results"
+    },
+    "openreview_username": {
+      "type": "string",
+      "description": "OpenReview username/email for reviewer style analysis (optional)",
+      "required": false,
+      "default": ""
+    },
+    "openreview_password": {
+      "type": "string",
+      "description": "OpenReview password for reviewer style analysis (optional)",
+      "required": false,
+      "default": ""
+    }
+  }
+} 

@@ -1,0 +1,52 @@
+Here is a **concise summary of the most important items from the ARR Reviewer Guidelines (ACL Rolling Review):**
+
+---
+
+## **Key Policies and Guidelines**
+
+### 1. **Recognition & Accountability**
+
+* **Great reviewers/chairs** can now be nominated for recognition and even free virtual registration for ACL events.
+* **Irresponsible reviewers/chairs** (e.g., who disappear, submit low-quality or LLM-generated reviews) may face consequences, including being barred from submitting or reviewing in the next cycle.
+
+### 2. **Confidentiality & Anonymity**
+
+* All submission/review information is confidential and should not be shared or uploaded to non-privacy-preserving AI tools.
+* Reviewers should avoid attempting to discover author identities; if identity is known, disclose to Area Chair (AC).
+* Follow double-blind procedures strictly.
+
+### 3. **Main Tasks for Reviewers**
+
+#### **Task 1:** Allocate sufficient time for reviewing **and** post-review discussion.
+
+#### **Task 2:** Immediately check assignments for expertise and conflicts of interest (COI); flag if mismatched or COI is present.
+
+#### **Task 3:** Write strong, specific, and fair reviews:
+
+* Adjust expectations for paper types.
+* Be specific in feedback.
+* Avoid common review issues and bias (e.g., penalizing for lack of SOTA, "not novel" without references, criticizing for negative results or "simplicity").
+* Check for common problems in NLP papers (e.g., unvalidated LLM evaluation, reproducibility, unmotivated choices, undisclosed data issues).
+* Provide justified scores for **soundness**, **excitement**, and **overall assessment**.
+* Use professional and neutral tone.
+
+#### **Task 4:** After author response/discussion, **update your review** as appropriate, acknowledging if your concerns were addressed.
+
+### 4. **Desk Rejection Checklist**
+
+* Papers may be desk-rejected for: scope/appropriateness issues, anonymity or style/length violations, missing Limitations section, or severe issues with Responsible NLP checklist responses.
+
+### 5. **Resubmissions**
+
+* **Repeat reviewers:** Focus on whether prior weaknesses were addressed—do not raise new issues unless critical.
+* **Substitute/fresh reviewers:** After initial review, consult previous reviews/revision notes to see if concerns have been addressed.
+
+### 6. **Ethics & Generative AI Use**
+
+* **Flag for ethics review** if there are concerns about data collection, potential harm, etc.
+* **Generative AI can be used** for paraphrasing or language help, but not for writing review content. Never upload confidential information to public AI tools.
+* Authors must disclose use of generative AI in submissions.
+
+### 7. **Professional Conduct**
+
+* Maintain a **professional and respectful tone**. Avoid sarcasm, rudeness, and unconstructive comments—peer review should be supportive and collegial.
