@@ -3,27 +3,29 @@
   "description": "A comprehensive stock market research agent that analyzes stocks, fetches news, identifies trends, and provides specific recommendations and predictions.",
   "version": "1.0.0",
   "author": "AgentHub",
-  "entry_point": "stock_market_agent:main",
-  "parameters": {
+  "entry_point": "stock_market_agent.py:main",
+  "agent_type": "function",
+  "email": "team@agenthub.com",
+  "config_schema": {
     "stock_symbols": {
-      "type": "text",
+      "type": "string",
       "description": "Comma-separated list of stock symbols to analyze (e.g., AAPL,MSFT,GOOGL)",
       "required": true,
       "placeholder": "AAPL,MSFT,GOOGL"
     },
     "analysis_depth": {
-      "type": "select",
+      "type": "choice",
       "description": "Depth of analysis to perform",
       "required": true,
       "default": "comprehensive",
-      "options": ["basic", "standard", "comprehensive", "expert"]
+      "choices": ["basic", "standard", "comprehensive", "expert"]
     },
     "prediction_timeframe": {
-      "type": "select",
+      "type": "choice",
       "description": "Timeframe for predictions",
       "required": true,
       "default": "3months",
-      "options": ["1week", "1month", "3months", "6months", "1year"]
+      "choices": ["1week", "1month", "3months", "6months", "1year"]
     },
     "include_news": {
       "type": "boolean",
@@ -46,14 +48,14 @@
       "default": true
     },
     "risk_tolerance": {
-      "type": "select",
+      "type": "choice",
       "description": "Risk tolerance level for recommendations",
       "required": true,
       "default": "moderate",
-      "options": ["conservative", "moderate", "aggressive"]
+      "choices": ["conservative", "moderate", "aggressive"]
     },
     "investment_amount": {
-      "type": "number",
+      "type": "float",
       "description": "Investment amount to consider for recommendations (in USD)",
       "default": 10000
     },
@@ -68,13 +70,13 @@
       "default": true
     },
     "api_key_alpha_vantage": {
-      "type": "text",
+      "type": "string",
       "description": "Alpha Vantage API key for stock data (optional)",
       "required": false,
       "placeholder": "Your Alpha Vantage API key"
     },
     "api_key_news": {
-      "type": "text",
+      "type": "string",
       "description": "News API key for financial news (optional)",
       "required": false,
       "placeholder": "Your News API key"
@@ -92,7 +94,8 @@
     "openai",
     "python-dotenv",
     "schedule",
-    "lxml"
+    "lxml",
+    "feedparser"
   ],
   "tags": ["finance", "stock-market", "research", "analysis", "predictions", "trading"],
   "category": "Financial Analysis"

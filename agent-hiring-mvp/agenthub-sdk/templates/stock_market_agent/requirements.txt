@@ -9,4 +9,5 @@ ta
 openai
 python-dotenv
 schedule
-lxml 
+lxml
+feedparser 

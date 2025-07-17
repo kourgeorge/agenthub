@@ -11,6 +11,8 @@ import os
 import sys
 import time
 import logging
+import re
+import feedparser
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional, Tuple
 import pandas as pd
@@ -20,6 +22,7 @@ from textblob import TextBlob
 import yfinance as yf
 from openai import OpenAI
 from dotenv import load_dotenv
+from bs4 import BeautifulSoup
 
 load_dotenv()
 
@@ -52,8 +55,20 @@ class StockMarketAgent:
         """Initialize the stock market agent."""
         self.openai_client = OpenAI(api_key=openai_api_key or os.getenv('OPENAI_API_KEY'))
         self.session = requests.Session()
+        # Set comprehensive headers to mimic a real browser
         self.session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'DNT': '1',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none',
+            'Sec-Fetch-User': '?1',
+            'Cache-Control': 'max-age=0'
         })
         
     def ensure_boolean(self, value: Any) -> bool:
@@ -66,6 +81,281 @@ class StockMarketAgent:
             return bool(value)
         else:
             return False
+    
+    def _extract_date_from_element(self, element) -> str:
+        """Extract date from a BeautifulSoup element."""
+        try:
+            # Try to find date in various formats
+            date_selectors = [
+                'time',
+                'span[class*="date"]',
+                'span[class*="time"]',
+                'div[class*="date"]',
+                'div[class*="time"]',
+                'span[data-test="date"]',
+                'div[data-test="date"]'
+            ]
+            
+            for selector in date_selectors:
+                date_elem = element.select_one(selector)
+                if date_elem:
+                    date_text = date_elem.get_text(strip=True)
+                    if date_text:
+                        # Try to parse common date formats
+                        date_patterns = [
+                            r'(\d{1,2}/\d{1,2}/\d{4})',
+                            r'(\d{4}-\d{2}-\d{2})',
+                            r'(\w+ \d{1,2}, \d{4})',
+                            r'(\d{1,2} \w+ \d{4})'
+                        ]
+                        
+                        for pattern in date_patterns:
+                            match = re.search(pattern, date_text)
+                            if match:
+                                return match.group(1)
+            
+            # If no date found, return current date
+            return datetime.now().strftime('%Y-%m-%d')
+        except:
+            return datetime.now().strftime('%Y-%m-%d')
+    
+    def _clean_news_data(self, news_items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Clean and validate news data."""
+        cleaned_items = []
+        
+        for item in news_items:
+            try:
+                # Ensure required fields exist
+                if not item.get('title') or not item.get('summary'):
+                    continue
+                
+                # Clean title and summary
+                title = item['title'].strip()
+                summary = item['summary'].strip()
+                
+                # Skip if title is too short or too long
+                if len(title) < 5 or len(title) > 200:
+                    continue
+                
+                # Skip if summary is too short
+                if len(summary) < 10:
+                    continue
+                
+                # Ensure URL is valid
+                url = item.get('url', '')
+                if not url or not isinstance(url, str):
+                    continue
+                
+                # Ensure source is valid
+                source = item.get('source', 'Unknown')
+                if not source:
+                    source = 'Unknown'
+                
+                # Ensure date is valid
+                date = item.get('date', datetime.now().strftime('%Y-%m-%d'))
+                if not date:
+                    date = datetime.now().strftime('%Y-%m-%d')
+                
+                cleaned_items.append({
+                    'title': title,
+                    'summary': summary,
+                    'url': url,
+                    'source': source,
+                    'date': date
+                })
+                
+            except Exception as e:
+                logger.warning(f"Failed to clean news item: {e}")
+                continue
+        
+        return cleaned_items
+    
+    def _fetch_google_news(self, symbol: str, days: int) -> List[Dict[str, Any]]:
+        """Fetch news from Google News RSS feed."""
+        try:
+            # Google News RSS feed URL
+            url = f"https://news.google.com/rss/search?q={symbol}+stock&hl=en-US&gl=US&ceid=US:en"
+            
+            logger.info(f"Fetching Google News RSS for {symbol}")
+            feed = feedparser.parse(url)
+            
+            news_items = []
+            
+            if feed.entries:
+                for entry in feed.entries[:15]:  # Get top 15 articles
+                    try:
+                        title = entry.get('title', '').strip()
+                        summary = entry.get('summary', '').strip()
+                        link = entry.get('link', '')
+                        published = entry.get('published', '')
+                        
+                        # Parse the published date
+                        try:
+                            if published:
+                                # Try to parse various date formats
+                                date_obj = feedparser._parse_date(published)
+                                if date_obj:
+                                    date_str = date_obj.strftime('%Y-%m-%d')
+                                else:
+                                    date_str = datetime.now().strftime('%Y-%m-%d')
+                            else:
+                                date_str = datetime.now().strftime('%Y-%m-%d')
+                        except:
+                            date_str = datetime.now().strftime('%Y-%m-%d')
+                        
+                        if title and len(title) > 10:
+                            news_items.append({
+                                'title': title,
+                                'summary': summary if summary else f'Google News article about {symbol}: {title[:100]}...',
+                                'date': date_str,
+                                'source': 'Google News',
+                                'url': link
+                            })
+                    except Exception as e:
+                        logger.warning(f"Failed to parse Google News entry: {e}")
+                        continue
+            
+            logger.info(f"Found {len(news_items)} Google News articles for {symbol}")
+            return news_items
+            
+        except Exception as e:
+            logger.warning(f"Failed to fetch Google News for {symbol}: {e}")
+            return []
+    
+    def _fetch_rss_feeds(self, symbol: str, days: int) -> List[Dict[str, Any]]:
+        """Fetch news from various financial RSS feeds."""
+        try:
+            # List of financial RSS feeds to check
+            rss_feeds = [
+                f"https://feeds.finance.yahoo.com/rss/2.0/headline?s={symbol}&region=US&lang=en-US",
+                f"https://www.marketwatch.com/rss/topstories",
+                "https://feeds.reuters.com/reuters/businessNews",
+                "https://feeds.bloomberg.com/markets/news.rss",
+                "https://feeds.finance.yahoo.com/rss/2.0/headline?region=US&lang=en-US",
+                "https://www.cnbc.com/id/100003114/device/rss/rss.html",
+                "https://feeds.fool.com/usmf"
+            ]
+            
+            all_news = []
+            
+            for feed_url in rss_feeds:
+                try:
+                    logger.info(f"Fetching RSS feed: {feed_url}")
+                    feed = feedparser.parse(feed_url)
+                    
+                    if feed.entries:
+                        for entry in feed.entries[:10]:  # Get top 10 articles per feed
+                            try:
+                                title = entry.get('title', '').strip()
+                                summary = entry.get('summary', '').strip()
+                                link = entry.get('link', '')
+                                published = entry.get('published', '')
+                                
+                                # Check if the article is relevant to the symbol
+                                if self._is_relevant_to_symbol(title, summary, symbol):
+                                    # Parse the published date
+                                    try:
+                                        if published:
+                                            date_obj = feedparser._parse_date(published)
+                                            if date_obj:
+                                                date_str = date_obj.strftime('%Y-%m-%d')
+                                            else:
+                                                date_str = datetime.now().strftime('%Y-%m-%d')
+                                        else:
+                                            date_str = datetime.now().strftime('%Y-%m-%d')
+                                    except:
+                                        date_str = datetime.now().strftime('%Y-%m-%d')
+                                    
+                                    # Determine source from feed URL
+                                    source = self._extract_source_from_url(feed_url)
+                                    
+                                    if title and len(title) > 10:
+                                        all_news.append({
+                                            'title': title,
+                                            'summary': summary if summary else f'{source} article about {symbol}: {title[:100]}...',
+                                            'date': date_str,
+                                            'source': source,
+                                            'url': link
+                                        })
+                            except Exception as e:
+                                logger.warning(f"Failed to parse RSS entry: {e}")
+                                continue
+                                
+                except Exception as e:
+                    logger.warning(f"Failed to fetch RSS feed {feed_url}: {e}")
+                    continue
+            
+            logger.info(f"Found {len(all_news)} RSS articles for {symbol}")
+            return all_news
+            
+        except Exception as e:
+            logger.warning(f"Failed to fetch RSS feeds for {symbol}: {e}")
+            return []
+    
+    def _is_relevant_to_symbol(self, title: str, summary: str, symbol: str) -> bool:
+        """Check if an article is relevant to the given stock symbol."""
+        try:
+            # Convert to lowercase for case-insensitive matching
+            title_lower = title.lower()
+            summary_lower = summary.lower()
+            symbol_lower = symbol.lower()
+            
+            # Check if symbol appears in title or summary
+            if symbol_lower in title_lower or symbol_lower in summary_lower:
+                return True
+            
+            # Check for company name variations (common for well-known companies)
+            company_variations = {
+                'AAPL': ['apple', 'apple inc', 'apple computer'],
+                'MSFT': ['microsoft', 'microsoft corporation'],
+                'GOOGL': ['google', 'alphabet', 'alphabet inc'],
+                'AMZN': ['amazon', 'amazon.com', 'amazon inc'],
+                'TSLA': ['tesla', 'tesla inc', 'tesla motors'],
+                'META': ['facebook', 'meta', 'meta platforms'],
+                'NVDA': ['nvidia', 'nvidia corporation'],
+                'NFLX': ['netflix', 'netflix inc'],
+                'JPM': ['jpmorgan', 'jp morgan', 'jpmorgan chase'],
+                'JNJ': ['johnson & johnson', 'johnson and johnson']
+            }
+            
+            if symbol_lower in company_variations:
+                for variation in company_variations[symbol_lower]:
+                    if variation in title_lower or variation in summary_lower:
+                        return True
+            
+            # Check for financial keywords that might indicate relevance
+            financial_keywords = ['stock', 'shares', 'earnings', 'revenue', 'profit', 'market', 'trading', 'investor']
+            keyword_count = sum(1 for keyword in financial_keywords if keyword in title_lower or keyword in summary_lower)
+            
+            # If multiple financial keywords are present, it might be relevant
+            if keyword_count >= 2:
+                return True
+            
+            return False
+            
+        except Exception as e:
+            logger.warning(f"Error checking relevance for {symbol}: {e}")
+            return False
+    
+    def _extract_source_from_url(self, url: str) -> str:
+        """Extract source name from RSS feed URL."""
+        try:
+            if 'yahoo' in url:
+                return 'Yahoo Finance'
+            elif 'marketwatch' in url:
+                return 'MarketWatch'
+            elif 'reuters' in url:
+                return 'Reuters'
+            elif 'bloomberg' in url:
+                return 'Bloomberg'
+            elif 'cnbc' in url:
+                return 'CNBC'
+            elif 'fool' in url:
+                return 'Motley Fool'
+            else:
+                return 'RSS Feed'
+        except:
+            return 'RSS Feed'
     
     def fetch_stock_data(self, symbol: str, period: str = "1y") -> Dict[str, Any]:
         """Fetch comprehensive stock data using yfinance."""
@@ -159,8 +449,10 @@ class StockMarketAgent:
         try:
             logger.info(f"Fetching news for {symbol}")
             
-            # Try multiple news sources
+            # Try multiple news sources (RSS feeds and Google News first, then web scraping as fallback)
             news_sources = [
+                self._fetch_google_news,
+                self._fetch_rss_feeds,
                 self._fetch_yahoo_finance_news,
                 self._fetch_google_finance_news,
                 self._fetch_marketwatch_news
@@ -174,14 +466,18 @@ class StockMarketAgent:
                 except Exception as e:
                     logger.warning(f"Failed to fetch news from {source_func.__name__}: {e}")
             
+            # Clean and validate news data
+            cleaned_news = self._clean_news_data(all_news)
+            
             # Remove duplicates and sort by date
             unique_news = []
             seen_titles = set()
-            for news in all_news:
+            for news in cleaned_news:
                 if news['title'] not in seen_titles:
                     unique_news.append(news)
                     seen_titles.add(news['title'])
             
+            logger.info(f"Found {len(unique_news)} unique news articles for {symbol}")
             return sorted(unique_news, key=lambda x: x.get('date', ''), reverse=True)[:20]
             
         except Exception as e:
@@ -191,61 +487,391 @@ class StockMarketAgent:
     def _fetch_yahoo_finance_news(self, symbol: str, days: int) -> List[Dict[str, Any]]:
         """Fetch news from Yahoo Finance."""
         try:
-            url = f"https://finance.yahoo.com/quote/{symbol}/news"
-            response = self.session.get(url)
-            response.raise_for_status()
+            # Try multiple Yahoo Finance URLs for news
+            urls = [
+                f"https://finance.yahoo.com/quote/{symbol}/news",
+                f"https://finance.yahoo.com/quote/{symbol}",
+                f"https://finance.yahoo.com/quote/{symbol}/analysis"
+            ]
             
-            # This is a simplified version - in practice you'd need to parse the HTML
-            # For now, return mock data
+            all_news = []
+            
+            for url in urls:
+                try:
+                    response = self.session.get(url, timeout=10)
+                    logger.info(f"Yahoo Finance response for {symbol} at {url}: {response.status_code}")
+                    
+                    if response.status_code == 200:
+                        soup = BeautifulSoup(response.content, 'html.parser')
+                        
+                        # Try to find news articles
+                        news_items = []
+                        
+                        # Look for various news selectors that Yahoo Finance might use
+                        selectors = [
+                            'h3[class*="news"] a',
+                            'h2[class*="news"] a', 
+                            'a[class*="news"]',
+                            'div[class*="news"] h3 a',
+                            'div[class*="news"] h2 a',
+                            'li[class*="news"] a',
+                            'div[data-test="news-item"] a',
+                            'div[class*="story"] a',
+                            'h3 a[href*="/news/"]',
+                            'h2 a[href*="/news/"]'
+                        ]
+                        
+                        for selector in selectors:
+                            links = soup.select(selector)
+                            for link in links[:10]:  # Limit to 10 articles per selector
+                                title = link.get_text(strip=True)
+                                href = link.get('href', '')
+                                
+                                if title and len(title) > 10 and href:
+                                    # Make relative URLs absolute
+                                    if isinstance(href, str):
+                                        if href.startswith('/'):
+                                            href = f"https://finance.yahoo.com{href}"
+                                        elif not href.startswith('http'):
+                                            href = f"https://finance.yahoo.com/{href}"
+                                    
+                                    # Skip if we already have this title
+                                    if not any(news['title'] == title for news in news_items):
+                                        news_items.append({
+                                            'title': title,
+                                            'summary': f'News article about {symbol}: {title[:100]}...',
+                                            'date': datetime.now().strftime('%Y-%m-%d'),
+                                            'source': 'Yahoo Finance',
+                                            'url': href
+                                        })
+                        
+                        # If no news found, try to extract any relevant content
+                        if not news_items:
+                            # Look for any content related to the stock
+                            content_selectors = [
+                                'div[class*="description"]',
+                                'div[class*="summary"]',
+                                'p[class*="description"]',
+                                'div[data-test="quote-summary"]'
+                            ]
+                            
+                            for selector in content_selectors:
+                                elements = soup.select(selector)
+                                for element in elements[:3]:
+                                    text = element.get_text(strip=True)
+                                    if text and len(text) > 50:
+                                        news_items.append({
+                                            'title': f'{symbol} Stock Information',
+                                            'summary': text[:200] + '...' if len(text) > 200 else text,
+                                            'date': datetime.now().strftime('%Y-%m-%d'),
+                                            'source': 'Yahoo Finance',
+                                            'url': url
+                                        })
+                                        break
+                        
+                        all_news.extend(news_items)
+                        
+                except Exception as e:
+                    logger.warning(f"Failed to parse Yahoo Finance URL {url} for {symbol}: {e}")
+                    continue
+            
+            # If we still have no news, return a fallback
+            if not all_news:
+                logger.warning(f"No news found for {symbol} on Yahoo Finance")
+                return [
+                    {
+                        'title': f'Yahoo Finance data for {symbol}',
+                        'summary': f'Stock information and news available on Yahoo Finance',
+                        'date': datetime.now().strftime('%Y-%m-%d'),
+                        'source': 'Yahoo Finance',
+                        'url': f"https://finance.yahoo.com/quote/{symbol}"
+                    }
+                ]
+            
+            return all_news[:10]  # Return top 10 unique articles
+            
+        except Exception as e:
+            logger.warning(f"Unexpected error fetching Yahoo Finance data for {symbol}: {e}")
             return [
                 {
-                    'title': f'Latest news about {symbol}',
-                    'summary': f'Recent developments in {symbol} stock performance',
+                    'title': f'Yahoo Finance data for {symbol}',
+                    'summary': f'Stock information available on Yahoo Finance (Error: {str(e)})',
                     'date': datetime.now().strftime('%Y-%m-%d'),
                     'source': 'Yahoo Finance',
-                    'url': url
+                    'url': f"https://finance.yahoo.com/quote/{symbol}"
                 }
             ]
-        except:
-            return []
     
     def _fetch_google_finance_news(self, symbol: str, days: int) -> List[Dict[str, Any]]:
         """Fetch news from Google Finance."""
         try:
             url = f"https://www.google.com/finance/quote/{symbol}"
-            response = self.session.get(url)
-            response.raise_for_status()
+            response = self.session.get(url, timeout=10)
             
+            logger.info(f"Google Finance response for {symbol}: {response.status_code}")
+            
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.content, 'html.parser')
+                news_items = []
+                
+                # Google Finance uses different selectors
+                selectors = [
+                    'div[data-last-price]',  # Price information
+                    'div[class*="news"] a',
+                    'div[class*="story"] a',
+                    'a[href*="/news/"]',
+                    'div[class*="article"] a',
+                    'div[data-test="news"] a',
+                    'div[class*="headline"] a',
+                    'h3 a[href*="/news/"]',
+                    'h2 a[href*="/news/"]'
+                ]
+                
+                for selector in selectors:
+                    links = soup.select(selector)
+                    for link in links[:5]:  # Limit to 5 articles per selector
+                        title = link.get_text(strip=True)
+                        href = link.get('href', '')
+                        
+                        if title and len(title) > 10 and href:
+                            # Make relative URLs absolute
+                            if isinstance(href, str):
+                                if href.startswith('/'):
+                                    href = f"https://www.google.com{href}"
+                                elif not href.startswith('http'):
+                                    href = f"https://www.google.com/finance{href}"
+                            
+                            # Skip if we already have this title
+                            if not any(news['title'] == title for news in news_items):
+                                news_items.append({
+                                    'title': title,
+                                    'summary': f'Google Finance news about {symbol}: {title[:100]}...',
+                                    'date': datetime.now().strftime('%Y-%m-%d'),
+                                    'source': 'Google Finance',
+                                    'url': href
+                                })
+                
+                # If no news found, try to extract stock information
+                if not news_items:
+                    # Look for stock price and company info
+                    price_selectors = [
+                        'div[data-last-price]',
+                        'div[class*="price"]',
+                        'span[class*="price"]',
+                        'div[data-test="price"]'
+                    ]
+                    
+                    for selector in price_selectors:
+                        elements = soup.select(selector)
+                        for element in elements[:2]:
+                            text = element.get_text(strip=True)
+                            if text and len(text) > 5:
+                                news_items.append({
+                                    'title': f'{symbol} Stock Price Information',
+                                    'summary': f'Current stock price and market data for {symbol}: {text}',
+                                    'date': datetime.now().strftime('%Y-%m-%d'),
+                                    'source': 'Google Finance',
+                                    'url': url
+                                })
+                                break
+                    
+                    # Look for company description
+                    desc_selectors = [
+                        'div[class*="description"]',
+                        'div[class*="summary"]',
+                        'p[class*="description"]',
+                        'div[data-test="description"]'
+                    ]
+                    
+                    for selector in desc_selectors:
+                        elements = soup.select(selector)
+                        for element in elements[:2]:
+                            text = element.get_text(strip=True)
+                            if text and len(text) > 50:
+                                news_items.append({
+                                    'title': f'{symbol} Company Information',
+                                    'summary': text[:200] + '...' if len(text) > 200 else text,
+                                    'date': datetime.now().strftime('%Y-%m-%d'),
+                                    'source': 'Google Finance',
+                                    'url': url
+                                })
+                                break
+                
+                return news_items[:8]  # Return top 8 articles
+            else:
+                logger.warning(f"Google Finance returned status {response.status_code} for {symbol}")
+                return [
+                    {
+                        'title': f'Google Finance data for {symbol}',
+                        'summary': f'Stock information available on Google Finance (Status: {response.status_code})',
+                        'date': datetime.now().strftime('%Y-%m-%d'),
+                        'source': 'Google Finance',
+                        'url': url
+                    }
+                ]
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"Failed to fetch Google Finance data for {symbol}: {e}")
             return [
                 {
-                    'title': f'Google Finance news for {symbol}',
-                    'summary': f'Market updates for {symbol}',
+                    'title': f'Google Finance data for {symbol}',
+                    'summary': f'Stock information available on Google Finance (Connection error)',
                     'date': datetime.now().strftime('%Y-%m-%d'),
                     'source': 'Google Finance',
-                    'url': url
+                    'url': f"https://www.google.com/finance/quote/{symbol}"
                 }
             ]
-        except:
-            return []
+        except Exception as e:
+            logger.warning(f"Unexpected error fetching Google Finance data for {symbol}: {e}")
+            return [
+                {
+                    'title': f'Google Finance data for {symbol}',
+                    'summary': f'Stock information available on Google Finance (Error: {str(e)})',
+                    'date': datetime.now().strftime('%Y-%m-%d'),
+                    'source': 'Google Finance',
+                    'url': f"https://www.google.com/finance/quote/{symbol}"
+                }
+            ]
     
     def _fetch_marketwatch_news(self, symbol: str, days: int) -> List[Dict[str, Any]]:
         """Fetch news from MarketWatch."""
         try:
-            url = f"https://www.marketwatch.com/investing/stock/{symbol}"
-            response = self.session.get(url)
-            response.raise_for_status()
+            # Try multiple MarketWatch URLs
+            urls = [
+                f"https://www.marketwatch.com/investing/stock/{symbol}",
+                f"https://www.marketwatch.com/investing/stock/{symbol}/news",
+                f"https://www.marketwatch.com/investing/stock/{symbol}/overview"
+            ]
             
+            all_news = []
+            
+            for url in urls:
+                try:
+                    response = self.session.get(url, timeout=10)
+                    logger.info(f"MarketWatch response for {symbol} at {url}: {response.status_code}")
+                    
+                    if response.status_code == 200:
+                        soup = BeautifulSoup(response.content, 'html.parser')
+                        news_items = []
+                        
+                        # MarketWatch specific selectors
+                        selectors = [
+                            'h3[class*="article"] a',
+                            'h2[class*="article"] a',
+                            'div[class*="article"] h3 a',
+                            'div[class*="article"] h2 a',
+                            'a[class*="article"]',
+                            'div[class*="story"] a',
+                            'div[class*="headline"] a',
+                            'h3 a[href*="/story/"]',
+                            'h2 a[href*="/story/"]',
+                            'div[data-test="article"] a',
+                            'li[class*="article"] a',
+                            'div[class*="news"] a'
+                        ]
+                        
+                        for selector in selectors:
+                            links = soup.select(selector)
+                            for link in links[:8]:  # Limit to 8 articles per selector
+                                title = link.get_text(strip=True)
+                                href = link.get('href', '')
+                                
+                                if title and len(title) > 10 and href:
+                                    # Make relative URLs absolute
+                                    if isinstance(href, str):
+                                        if href.startswith('/'):
+                                            href = f"https://www.marketwatch.com{href}"
+                                        elif not href.startswith('http'):
+                                            href = f"https://www.marketwatch.com/{href}"
+                                    
+                                    # Skip if we already have this title
+                                    if not any(news['title'] == title for news in news_items):
+                                        news_items.append({
+                                            'title': title,
+                                            'summary': f'MarketWatch article about {symbol}: {title[:100]}...',
+                                            'date': datetime.now().strftime('%Y-%m-%d'),
+                                            'source': 'MarketWatch',
+                                            'url': href
+                                        })
+                        
+                        # If no news found, try to extract stock information
+                        if not news_items:
+                            # Look for stock price and company info
+                            price_selectors = [
+                                'span[class*="price"]',
+                                'div[class*="price"]',
+                                'span[data-test="price"]',
+                                'div[data-test="price"]'
+                            ]
+                            
+                            for selector in price_selectors:
+                                elements = soup.select(selector)
+                                for element in elements[:2]:
+                                    text = element.get_text(strip=True)
+                                    if text and len(text) > 5:
+                                        news_items.append({
+                                            'title': f'{symbol} Stock Price',
+                                            'summary': f'Current stock price for {symbol}: {text}',
+                                            'date': datetime.now().strftime('%Y-%m-%d'),
+                                            'source': 'MarketWatch',
+                                            'url': url
+                                        })
+                                        break
+                            
+                            # Look for company description
+                            desc_selectors = [
+                                'div[class*="description"]',
+                                'div[class*="summary"]',
+                                'p[class*="description"]',
+                                'div[class*="company"] p',
+                                'div[data-test="description"]'
+                            ]
+                            
+                            for selector in desc_selectors:
+                                elements = soup.select(selector)
+                                for element in elements[:2]:
+                                    text = element.get_text(strip=True)
+                                    if text and len(text) > 50:
+                                        news_items.append({
+                                            'title': f'{symbol} Company Information',
+                                            'summary': text[:200] + '...' if len(text) > 200 else text,
+                                            'date': datetime.now().strftime('%Y-%m-%d'),
+                                            'source': 'MarketWatch',
+                                            'url': url
+                                        })
+                                        break
+                        
+                        all_news.extend(news_items)
+                        
+                except Exception as e:
+                    logger.warning(f"Failed to parse MarketWatch URL {url} for {symbol}: {e}")
+                    continue
+            
+            # If we still have no news, return a fallback
+            if not all_news:
+                logger.warning(f"No news found for {symbol} on MarketWatch")
+                return [
+                    {
+                        'title': f'MarketWatch data for {symbol}',
+                        'summary': f'Stock information and market data available on MarketWatch',
+                        'date': datetime.now().strftime('%Y-%m-%d'),
+                        'source': 'MarketWatch',
+                        'url': f"https://www.marketwatch.com/investing/stock/{symbol}"
+                    }
+                ]
+            
+            return all_news[:8]  # Return top 8 unique articles
+            
+        except Exception as e:
+            logger.warning(f"Unexpected error fetching MarketWatch data for {symbol}: {e}")
             return [
                 {
-                    'title': f'MarketWatch coverage of {symbol}',
-                    'summary': f'Latest market analysis for {symbol}',
+                    'title': f'MarketWatch data for {symbol}',
+                    'summary': f'Stock information available on MarketWatch (Error: {str(e)})',
                     'date': datetime.now().strftime('%Y-%m-%d'),
                     'source': 'MarketWatch',
-                    'url': url
+                    'url': f"https://www.marketwatch.com/investing/stock/{symbol}"
                 }
             ]
-        except:
-            return []
     
     def analyze_technical_indicators(self, stock_data: Dict[str, Any]) -> Dict[str, Any]:
         """Analyze technical indicators for a stock."""
