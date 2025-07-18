@@ -281,6 +281,14 @@ def validate(ctx, directory):
             echo(style(f"✗ Entry point file not found: {config.entry_point}", fg='red'))
             sys.exit(1)
         
+        # Validate main function
+        main_errors = _validate_main_function(agent_dir, config)
+        if main_errors:
+            echo(style("✗ Main function validation failed:", fg='red'))
+            for error in main_errors:
+                echo(f"  - {error}")
+            sys.exit(1)
+        
         # Check requirements.txt
         requirements_file = agent_dir / "requirements.txt"
         if not requirements_file.exists():
@@ -381,6 +389,14 @@ def publish(ctx, directory, api_key, base_url, dry_run):
         if errors:
             echo(style("✗ Configuration validation failed:", fg='red'))
             for error in errors:
+                echo(f"  - {error}")
+            sys.exit(1)
+        
+        # Validate main function
+        main_errors = _validate_main_function(agent_dir, config)
+        if main_errors:
+            echo(style("✗ Main function validation failed:", fg='red'))
+            for error in main_errors:
                 echo(f"  - {error}")
             sys.exit(1)
         
@@ -2948,6 +2964,90 @@ config.json.bak
 *.zip
 temp/
 """
+
+
+def _validate_main_function(agent_dir: Path, config: AgentConfig) -> List[str]:
+    """Validate that the main function exists and has the correct signature."""
+    errors = []
+    
+    try:
+        # Check if entry point file exists
+        entry_point = agent_dir / config.entry_point
+        if not entry_point.exists():
+            errors.append(f"Entry point file not found: {config.entry_point}")
+            return errors
+        
+        # Import the module to check for main function
+        import importlib.util
+        import inspect
+        import sys
+        from typing import List
+        
+        # Add agent directory to path temporarily
+        sys.path.insert(0, str(agent_dir))
+        
+        try:
+            # Load the module
+            module_name = config.entry_point.replace('.py', '')
+            spec = importlib.util.spec_from_file_location(module_name, entry_point)
+            if spec is None:
+                errors.append(f"Could not create module spec for {config.entry_point}")
+                return errors
+                
+            module = importlib.util.module_from_spec(spec)
+            if spec.loader is None:
+                errors.append(f"Could not load module {config.entry_point}")
+                return errors
+                
+            spec.loader.exec_module(module)
+            
+            # Check if main function exists
+            if not hasattr(module, 'main'):
+                errors.append(f"Main function 'main' not found in {config.entry_point}")
+                return errors
+            
+            main_func = getattr(module, 'main')
+            
+            # Check if it's callable
+            if not callable(main_func):
+                errors.append(f"'main' in {config.entry_point} is not callable")
+                return errors
+            
+            # Check function signature
+            sig = inspect.signature(main_func)
+            params = list(sig.parameters.keys())
+            
+            # Main function should have exactly 2 parameters: input_data and context/config
+            if len(params) != 2:
+                errors.append(f"Main function should have exactly 2 parameters (input_data, context), found {len(params)}: {params}")
+                return errors
+            
+            # Check if it's async (should not be for AgentHub compatibility)
+            if inspect.iscoroutinefunction(main_func):
+                errors.append(f"Main function should be synchronous, not async. Use a synchronous wrapper for async operations.")
+                return errors
+            
+            # Test basic call to ensure it doesn't immediately fail
+            try:
+                test_input = {"test": "data"}
+                test_config = {"test": "config"}
+                result = main_func(test_input, test_config)
+                
+                # Check if result is a dictionary
+                if not isinstance(result, dict):
+                    errors.append(f"Main function should return a dictionary, got {type(result).__name__}")
+                
+            except Exception as e:
+                errors.append(f"Main function test call failed: {str(e)}")
+            
+        finally:
+            # Remove agent directory from path
+            sys.path.pop(0)
+            
+    except Exception as e:
+        errors.append(f"Error validating main function: {str(e)}")
+    
+    return errors
 
 
 def _run_agent_locally(agent_dir: Path, config: AgentConfig, test_input: Dict[str, Any], test_config: Dict[str, Any]) -> Dict[str, Any]:
