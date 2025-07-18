@@ -1,0 +1,126 @@
+{
+  "name": "Deep Research Agent",
+  "description": "A comprehensive research agent that conducts deep, multi-source research using web search, MCP tools, and AI-powered analysis to provide detailed, well-sourced reports on any topic.",
+  "version": "1.0.0",
+  "email": "team@agenthub.com",
+  "entry_point": "deep_research_agent.py",
+  "config_schema": {
+    "research_query": {
+      "type": "string",
+      "description": "The research question or topic to investigate",
+      "required": true
+    },
+    "research_depth": {
+      "type": "string",
+      "enum": [
+        "shallow",
+        "moderate",
+        "deep",
+        "comprehensive"
+      ],
+      "description": "Level of research depth",
+      "default": "moderate"
+    },
+    "max_iterations": {
+      "type": "integer",
+      "description": "Maximum number of research iterations",
+      "minimum": 1,
+      "maximum": 10,
+      "default": 3
+    },
+    "max_concurrent_research": {
+      "type": "integer",
+      "description": "Maximum concurrent research units",
+      "minimum": 1,
+      "maximum": 20,
+      "default": 5
+    },
+    "max_tool_calls": {
+      "type": "integer",
+      "description": "Maximum tool calls per research step",
+      "minimum": 1,
+      "maximum": 30,
+      "default": 5
+    },
+    "search_api": {
+      "type": "string",
+      "enum": [
+        "tavily",
+        "serper",
+        "openai",
+        "anthropic",
+        "none"
+      ],
+      "description": "Search API to use for research. Options: tavily (comprehensive search), serper (Google search), openai, anthropic, none",
+      "default": "serper"
+    },
+    "research_model": {
+      "type": "string",
+      "description": "Model for conducting research",
+      "default": "openai:gpt-4o"
+    },
+    "research_model_max_tokens": {
+      "type": "integer",
+      "description": "Maximum output tokens for research model",
+      "minimum": 1000,
+      "maximum": 100000,
+      "default": 10000
+    },
+    "compression_model": {
+      "type": "string",
+      "description": "Model for compressing research findings",
+      "default": "openai:gpt-4o-mini"
+    },
+    "compression_model_max_tokens": {
+      "type": "integer",
+      "description": "Maximum output tokens for compression model",
+      "minimum": 1000,
+      "maximum": 100000,
+      "default": 8192
+    },
+    "final_report_model": {
+      "type": "string",
+      "description": "Model for writing the final report",
+      "default": "openai:gpt-4o"
+    },
+    "final_report_model_max_tokens": {
+      "type": "integer",
+      "description": "Maximum output tokens for final report model",
+      "minimum": 1000,
+      "maximum": 100000,
+      "default": 10000
+    },
+    "max_retries": {
+      "type": "integer",
+      "description": "Maximum number of retries for structured output calls",
+      "minimum": 1,
+      "maximum": 10,
+      "default": 3
+    },
+    "mcp_config": {
+      "type": "object",
+      "description": "MCP server configuration (optional)",
+      "properties": {
+        "url": {
+          "type": "string",
+          "description": "The URL of the MCP server"
+        },
+        "tools": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "The tools to make available to the LLM"
+        }
+      },
+      "required": false
+    }
+  },
+  "tags": [
+    "research",
+    "analysis",
+    "web-search",
+    "comprehensive"
+  ],
+  "author": "AgentHub"
+}
