@@ -1,0 +1,13 @@
+langchain
+langchain-core
+langchain-community
+langgraph
+pydantic
+python-dotenv
+openai
+anthropic
+typing-extensions
+aiohttp
+beautifulsoup4
+requests
+langchain-openai
