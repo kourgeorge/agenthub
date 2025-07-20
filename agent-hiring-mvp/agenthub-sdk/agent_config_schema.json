@@ -212,14 +212,12 @@
     "price_per_use": {
       "type": "number",
       "description": "Price per execution (for per_use pricing)",
-      "minimum": 0,
-      "exclusiveMinimum": true
+      "minimum": 0
     },
     "monthly_price": {
       "type": "number",
       "description": "Monthly price (for monthly pricing)",
-      "minimum": 0,
-      "exclusiveMinimum": true
+      "minimum": 0
     },
     "max_execution_time": {
       "type": "integer",
