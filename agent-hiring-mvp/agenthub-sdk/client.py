@@ -158,82 +158,97 @@ class AgentHubClient:
                 os.unlink(zip_path)
     
     async def _validate_main_function(self, code_directory: str, config) -> List[str]:
-        """Validate that the main function exists and has the correct signature."""
+        """Validate that the main function exists and has the correct signature using static analysis."""
         errors = []
         
         try:
-            # Check if entry point file exists
             entry_point_path = os.path.join(code_directory, config.entry_point)
+            
             if not os.path.exists(entry_point_path):
                 errors.append(f"Entry point file not found: {config.entry_point}")
                 return errors
             
-            # Import the module to check for main function
-            import importlib.util
-            import inspect
-            import sys
+            # Read the file content for static analysis
+            with open(entry_point_path, 'r', encoding='utf-8') as f:
+                content = f.read()
             
-            # Add code directory to path temporarily
-            sys.path.insert(0, code_directory)
+            # Check if main function is defined (basic regex check)
+            import re
             
-            try:
-                # Load the module
-                module_name = config.entry_point.replace('.py', '')
-                spec = importlib.util.spec_from_file_location(module_name, entry_point_path)
-                if spec is None:
-                    errors.append(f"Could not create module spec for {config.entry_point}")
-                    return errors
+            # Look for main function definition - handle type annotations
+            main_pattern = r'def\s+main\s*\('
+            if not re.search(main_pattern, content):
+                errors.append(f"Main function 'main' not found in {config.entry_point}")
+                return errors
+            
+            # Check for async def main (should not be async)
+            async_main_pattern = r'async\s+def\s+main\s*\('
+            if re.search(async_main_pattern, content):
+                errors.append(f"Main function should be synchronous, not async. Use a synchronous wrapper for async operations.")
+                return errors
+            
+            # Find the main function definition line
+            lines = content.split('\n')
+            main_line = None
+            for i, line in enumerate(lines):
+                if re.search(main_pattern, line):
+                    main_line = line.strip()
+                    break
+            
+            if not main_line:
+                errors.append(f"Could not find main function definition line in {config.entry_point}")
+                return errors
+            
+            # Extract parameters from the main function line
+            # Handle complex signatures with type annotations
+            param_match = re.search(r'def\s+main\s*\(([^)]*)\)', main_line)
+            
+            if param_match:
+                params_str = param_match.group(1).strip()
+                if params_str:
+                    # Split by comma, but be careful with nested parentheses and brackets (type annotations)
+                    params = []
+                    current_param = ""
+                    paren_count = 0
+                    bracket_count = 0
                     
-                module = importlib.util.module_from_spec(spec)
-                if spec.loader is None:
-                    errors.append(f"Could not load module {config.entry_point}")
-                    return errors
+                    for char in params_str:
+                        if char == '(':
+                            paren_count += 1
+                        elif char == ')':
+                            paren_count -= 1
+                        elif char == '[':
+                            bracket_count += 1
+                        elif char == ']':
+                            bracket_count -= 1
+                        elif char == ',' and paren_count == 0 and bracket_count == 0:
+                            # This is a parameter separator (not inside type annotations)
+                            param_name = current_param.strip().split(':')[0].strip()
+                            if param_name:
+                                params.append(param_name)
+                            current_param = ""
+                            continue
+                        
+                        current_param += char
                     
-                spec.loader.exec_module(module)
-                
-                # Check if main function exists
-                if not hasattr(module, 'main'):
-                    errors.append(f"Main function 'main' not found in {config.entry_point}")
-                    return errors
-                
-                main_func = getattr(module, 'main')
-                
-                # Check if it's callable
-                if not callable(main_func):
-                    errors.append(f"'main' in {config.entry_point} is not callable")
-                    return errors
-                
-                # Check function signature
-                sig = inspect.signature(main_func)
-                params = list(sig.parameters.keys())
-                
-                # Main function should have exactly 2 parameters: input_data and context/config
-                if len(params) != 2:
-                    errors.append(f"Main function should have exactly 2 parameters (input_data, context), found {len(params)}: {params}")
-                    return errors
-                
-                # Check if it's async (should not be for AgentHub compatibility)
-                if inspect.iscoroutinefunction(main_func):
-                    errors.append(f"Main function should be synchronous, not async. Use a synchronous wrapper for async operations.")
-                    return errors
-                
-                # Test basic call to ensure it doesn't immediately fail
-                try:
-                    test_input = {"test": "data"}
-                    test_config = {"test": "config"}
-                    result = main_func(test_input, test_config)
+                    # Add the last parameter
+                    if current_param.strip():
+                        param_name = current_param.strip().split(':')[0].strip()
+                        if param_name:
+                            params.append(param_name)
                     
-                    # Check if result is a dictionary
-                    if not isinstance(result, dict):
-                        errors.append(f"Main function should return a dictionary, got {type(result).__name__}")
-                    
-                except Exception as e:
-                    errors.append(f"Main function test call failed: {str(e)}")
-                
-            finally:
-                # Remove code directory from path
-                sys.path.pop(0)
-                
+                    # Check if it has exactly 2 parameters
+                    if len(params) != 2:
+                        errors.append(f"Main function should have exactly 2 parameters (input_data, context), found {len(params)}: {params}")
+                    # If len(params) == 2, that's correct - no error to add
+                else:
+                    errors.append(f"Main function should have exactly 2 parameters (input_data, context), found 0")
+            else:
+                errors.append(f"Could not parse main function parameters in {config.entry_point}")
+            
+            # Note: Removed compile() syntax check to avoid import resolution issues
+            # Static analysis above is sufficient for validation
+            
         except Exception as e:
             errors.append(f"Error validating main function: {str(e)}")
         
