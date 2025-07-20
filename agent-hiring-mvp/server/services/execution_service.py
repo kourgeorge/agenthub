@@ -227,6 +227,10 @@ class ExecutionService:
                     error="Execution not found"
                 )
             
+            # Add execution_id to input_data for resource tracking
+            enhanced_input_data = input_data.copy()
+            enhanced_input_data["execution_id"] = execution_id
+            
             # Get the deployment for this specific hiring
             from ..models.deployment import AgentDeployment, DeploymentStatus
             deployment = self.db.query(AgentDeployment).filter(
@@ -239,7 +243,7 @@ class ExecutionService:
                 from .function_deployment_service import FunctionDeploymentService
                 deployment_service = FunctionDeploymentService(self.db)
                 
-                result = deployment_service.execute_in_container(deployment.deployment_id, input_data)
+                result = deployment_service.execute_in_container(deployment.deployment_id, enhanced_input_data)
                 
                 # Extract container logs
                 container_logs = result.get("container_logs", "")
@@ -268,7 +272,7 @@ class ExecutionService:
                     # Use new multi-file approach
                     return runtime_service.execute_agent(
                         agent_id=agent.id,
-                        input_data=input_data,
+                        input_data=enhanced_input_data,
                         agent_files=agent_files,
                         entry_point=agent.entry_point
                     )
@@ -276,7 +280,7 @@ class ExecutionService:
                     # Fallback to legacy single-file approach
                     return runtime_service.execute_agent(
                         agent_id=agent.id,
-                        input_data=input_data,
+                        input_data=enhanced_input_data,
                         agent_code=agent.code if hasattr(agent, 'code') else None,
                         agent_file_path=agent.file_path if hasattr(agent, 'file_path') else None,
                         entry_point=agent.entry_point

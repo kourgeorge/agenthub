@@ -214,6 +214,18 @@ class FunctionDeploymentService:
             # Prepare input data
             input_json = json.dumps(input_data)
             
+            # Get execution_id from input_data if available
+            execution_id = input_data.get("execution_id")
+            
+            # Prepare environment variables
+            env_vars = {
+                "AGENTHUB_SERVER_URL": "http://host.docker.internal:8002"
+            }
+            
+            # Add execution_id to environment if available
+            if execution_id:
+                env_vars["AGENTHUB_EXECUTION_ID"] = execution_id
+            
             # Execute the function in the container
             # Parse entry point to get file and function name
             entry_point = agent.entry_point
@@ -271,7 +283,8 @@ with open('/tmp/agent_stderr.txt', 'w') as f:
 """
             
             exec_result = container.exec_run(
-                cmd=["python", "-c", python_script]
+                cmd=["python", "-c", python_script],
+                environment=env_vars
             )
             
             # Read captured stdout and stderr

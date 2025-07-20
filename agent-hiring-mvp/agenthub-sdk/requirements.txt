@@ -3,3 +3,4 @@ aiofiles
 pydantic
 click
 jsonschema 
+bs4

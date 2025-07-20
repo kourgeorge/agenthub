@@ -39,6 +39,8 @@ class User(Base):
     # Relationships
     hirings = relationship("Hiring", back_populates="user")
     executions = relationship("Execution", back_populates="user")
+    budget = relationship("UserBudget", back_populates="user", uselist=False)
+    api_keys = relationship("ApiKey", back_populates="user")
     
     def __repr__(self) -> str:
         return f"<User(id={self.id}, username='{self.username}', email='{self.email}')>" 

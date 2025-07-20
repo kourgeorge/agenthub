@@ -14,6 +14,7 @@ from .database.init_db import init_database
 from .api import agents_router, hiring_router, execution_router, acp_router, users_router, billing_router
 from .api.deployment import router as deployment_router
 from .api.agent_proxy import router as agent_proxy_router
+from .api.resources import router as resources_router
 
 # Configure logging
 logging.basicConfig(
@@ -69,6 +70,7 @@ app.include_router(users_router, prefix="/api/v1")
 app.include_router(billing_router, prefix="/api/v1")
 app.include_router(deployment_router, prefix="/api/v1")
 app.include_router(agent_proxy_router, prefix="/api/v1")
+app.include_router(resources_router, prefix="/api/v1")
 
 
 @app.get("/")
@@ -87,7 +89,8 @@ async def root():
             "acp": "/api/v1/acp",
             "billing": "/api/v1/billing",
             "deployment": "/api/v1/deployment",
-            "agent_proxy": "/api/v1/agent-proxy"
+            "agent_proxy": "/api/v1/agent-proxy",
+            "resources": "/api/v1/resources"
         }
     }
 

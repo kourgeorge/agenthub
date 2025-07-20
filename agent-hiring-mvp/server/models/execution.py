@@ -55,6 +55,8 @@ class Execution(Base):
     agent = relationship("Agent", back_populates="executions")
     hiring = relationship("Hiring", back_populates="executions")
     user = relationship("User", back_populates="executions")
+    # Note: resource_usage relationship removed to avoid circular imports
+    # It will be handled through direct queries in the UsageTracker
     
     def __repr__(self) -> str:
         return f"<Execution(id={self.id}, execution_id='{self.execution_id}', status='{self.status}')>" 
