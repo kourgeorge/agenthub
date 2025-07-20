@@ -371,9 +371,9 @@ def validate(ctx, directory):
         if verbose:
             echo(style(f"  ✅ PASSED: Entry point file found: {config.entry_point}", fg='green'))
         
-        # Step 7: Validate main function
+        # Step 7: Validate main function (static analysis)
         if verbose:
-            echo(style("Step 7: Validating main function...", fg='cyan'))
+            echo(style("Step 7: Validating main function (static analysis)...", fg='cyan'))
         
         main_errors = _validate_main_function(agent_dir, config)
         if main_errors:
@@ -387,7 +387,11 @@ def validate(ctx, directory):
             sys.exit(1)
         
         if verbose:
-            echo(style("  ✅ PASSED: Main function validation", fg='green'))
+            echo(style("  ✅ PASSED: Main function validation (static analysis)", fg='green'))
+            echo("    ✓ Main function exists")
+            echo("    ✓ Correct function signature")
+            echo("    ✓ Synchronous function (not async)")
+            echo("    ✓ Basic syntax validation")
         
         # Step 8: Check requirements.txt
         if verbose:
@@ -454,7 +458,7 @@ def validate(ctx, directory):
             echo("  ✅ JSON Schema validation: PASSED")
             echo("  ✅ Business logic validation: PASSED")
             echo("  ✅ Entry point file: PASSED")
-            echo("  ✅ Main function: PASSED")
+            echo("  ✅ Main function (static analysis): PASSED")
             echo("  ⚠ Requirements file: WARNING (optional)")
             echo("  ⚠ Documentation files: WARNING (optional)")
             echo()
@@ -3143,7 +3147,7 @@ temp/
 
 
 def _validate_main_function(agent_dir: Path, config: AgentConfig) -> List[str]:
-    """Validate that the main function exists and has the correct signature."""
+    """Validate that the main function exists and has the correct signature using static analysis."""
     errors = []
     
     try:
@@ -3153,73 +3157,55 @@ def _validate_main_function(agent_dir: Path, config: AgentConfig) -> List[str]:
             errors.append(f"Entry point file not found: {config.entry_point}")
             return errors
         
-        # Import the module to check for main function
-        import importlib.util
-        import inspect
-        import sys
-        from typing import List
+        # Read the file content for static analysis
+        with open(entry_point, 'r', encoding='utf-8') as f:
+            content = f.read()
         
-        # Add agent directory to path temporarily
-        sys.path.insert(0, str(agent_dir))
+        # Check if main function is defined (basic regex check)
+        import re
         
+        # Look for main function definition
+        main_pattern = r'def\s+main\s*\('
+        if not re.search(main_pattern, content):
+            errors.append(f"Main function 'main' not found in {config.entry_point}")
+            return errors
+        
+        # Check if main function has the correct signature (basic check)
+        # Look for def main(param1, param2): pattern
+        main_sig_pattern = r'def\s+main\s*\([^)]*\)\s*:'
+        main_matches = re.findall(main_sig_pattern, content)
+        
+        if not main_matches:
+            errors.append(f"Could not parse main function signature in {config.entry_point}")
+            return errors
+        
+        # Extract parameters from the first match
+        main_sig = main_matches[0]
+        param_match = re.search(r'def\s+main\s*\(([^)]*)\)', main_sig)
+        
+        if param_match:
+            params_str = param_match.group(1).strip()
+            if params_str:
+                params = [p.strip().split('=')[0].strip() for p in params_str.split(',')]
+                params = [p for p in params if p]  # Remove empty strings
+                
+                # Check if it has exactly 2 parameters
+                if len(params) != 2:
+                    errors.append(f"Main function should have exactly 2 parameters (input_data, context), found {len(params)}: {params}")
+            else:
+                errors.append(f"Main function should have exactly 2 parameters (input_data, context), found 0")
+        
+        # Check for async def main (should not be async)
+        async_main_pattern = r'async\s+def\s+main\s*\('
+        if re.search(async_main_pattern, content):
+            errors.append(f"Main function should be synchronous, not async. Use a synchronous wrapper for async operations.")
+        
+        # Basic syntax check - look for obvious syntax errors
         try:
-            # Load the module
-            module_name = config.entry_point.replace('.py', '')
-            spec = importlib.util.spec_from_file_location(module_name, entry_point)
-            if spec is None:
-                errors.append(f"Could not create module spec for {config.entry_point}")
-                return errors
-                
-            module = importlib.util.module_from_spec(spec)
-            if spec.loader is None:
-                errors.append(f"Could not load module {config.entry_point}")
-                return errors
-                
-            spec.loader.exec_module(module)
-            
-            # Check if main function exists
-            if not hasattr(module, 'main'):
-                errors.append(f"Main function 'main' not found in {config.entry_point}")
-                return errors
-            
-            main_func = getattr(module, 'main')
-            
-            # Check if it's callable
-            if not callable(main_func):
-                errors.append(f"'main' in {config.entry_point} is not callable")
-                return errors
-            
-            # Check function signature
-            sig = inspect.signature(main_func)
-            params = list(sig.parameters.keys())
-            
-            # Main function should have exactly 2 parameters: input_data and context/config
-            if len(params) != 2:
-                errors.append(f"Main function should have exactly 2 parameters (input_data, context), found {len(params)}: {params}")
-                return errors
-            
-            # Check if it's async (should not be for AgentHub compatibility)
-            if inspect.iscoroutinefunction(main_func):
-                errors.append(f"Main function should be synchronous, not async. Use a synchronous wrapper for async operations.")
-                return errors
-            
-            # Test basic call to ensure it doesn't immediately fail
-            try:
-                test_input = {"test": "data"}
-                test_config = {"test": "config"}
-                result = main_func(test_input, test_config)
-                
-                # Check if result is a dictionary
-                if not isinstance(result, dict):
-                    errors.append(f"Main function should return a dictionary, got {type(result).__name__}")
-                
-            except Exception as e:
-                errors.append(f"Main function test call failed: {str(e)}")
-            
-        finally:
-            # Remove agent directory from path
-            sys.path.pop(0)
-            
+            compile(content, str(entry_point), 'exec')
+        except SyntaxError as e:
+            errors.append(f"Syntax error in {config.entry_point}: {str(e)}")
+        
     except Exception as e:
         errors.append(f"Error validating main function: {str(e)}")
     
