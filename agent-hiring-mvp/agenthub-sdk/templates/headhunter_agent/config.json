@@ -1,0 +1,52 @@
+{
+  "name": "Headhunter Agent",
+  "description": "A specialized agent that searches for top talent candidates on LinkedIn and the web based on job title, region, and requirements",
+  "version": "1.0.0",
+  "entry_point": "headhunter_agent.py",
+  "author": "AgentHub Team",
+  "email": "team@agenthub.com",
+  "requirements": [
+    "openai>=1.0.0", 
+    "requests>=2.28.0", 
+    "python-dotenv>=1.0.0",
+    "beautifulsoup4>=4.12.0",
+    "selenium>=4.15.0",
+    "webdriver-manager>=4.0.0"
+  ],
+  "config_schema": {
+    "job_title": {
+      "type": "string",
+      "description": "The job title or position to search for",
+      "required": true,
+      "default": "Software Engineer"
+    },
+    "region": {
+      "type": "string",
+      "description": "Geographic region or location for the search",
+      "required": true,
+      "default": "San Francisco, CA"
+    },
+    "description": {
+      "type": "textarea",
+      "description": "Optional detailed job description or requirements - one per line",
+      "required": false,
+      "default": "",
+      "multiline": true,
+      "placeholder": "Enter job requirements, one per line..."
+    },
+    "search_depth": {
+      "type": "integer",
+      "description": "How many search variations to try (1-5)",
+      "default": 3,
+      "minimum": 1,
+      "maximum": 5
+    },
+    "candidates_per_search": {
+      "type": "integer",
+      "description": "Number of candidates to find per search (5-20)",
+      "default": 10,
+      "minimum": 5,
+      "maximum": 20
+    }
+  }
+} 
