@@ -3164,41 +3164,75 @@ def _validate_main_function(agent_dir: Path, config: AgentConfig) -> List[str]:
         # Check if main function is defined (basic regex check)
         import re
         
-        # Look for main function definition
+        # Look for main function definition - handle type annotations
         main_pattern = r'def\s+main\s*\('
         if not re.search(main_pattern, content):
             errors.append(f"Main function 'main' not found in {config.entry_point}")
             return errors
         
-        # Check if main function has the correct signature (basic check)
-        # Look for def main(param1, param2): pattern
-        main_sig_pattern = r'def\s+main\s*\([^)]*\)\s*:'
-        main_matches = re.findall(main_sig_pattern, content)
-        
-        if not main_matches:
-            errors.append(f"Could not parse main function signature in {config.entry_point}")
+        # Check for async def main (should not be async)
+        async_main_pattern = r'async\s+def\s+main\s*\('
+        if re.search(async_main_pattern, content):
+            errors.append(f"Main function should be synchronous, not async. Use a synchronous wrapper for async operations.")
             return errors
         
-        # Extract parameters from the first match
-        main_sig = main_matches[0]
-        param_match = re.search(r'def\s+main\s*\(([^)]*)\)', main_sig)
+        # Find the main function definition line
+        lines = content.split('\n')
+        main_line = None
+        for i, line in enumerate(lines):
+            if re.search(main_pattern, line):
+                main_line = line.strip()
+                break
+        
+        if not main_line:
+            errors.append(f"Could not find main function definition line in {config.entry_point}")
+            return errors
+        
+        # Extract parameters from the main function line
+        # Handle complex signatures with type annotations
+        param_match = re.search(r'def\s+main\s*\(([^)]*)\)', main_line)
         
         if param_match:
             params_str = param_match.group(1).strip()
             if params_str:
-                params = [p.strip().split('=')[0].strip() for p in params_str.split(',')]
-                params = [p for p in params if p]  # Remove empty strings
+                # Split by comma, but be careful with nested parentheses and brackets (type annotations)
+                params = []
+                current_param = ""
+                paren_count = 0
+                bracket_count = 0
+                
+                for char in params_str:
+                    if char == '(':
+                        paren_count += 1
+                    elif char == ')':
+                        paren_count -= 1
+                    elif char == '[':
+                        bracket_count += 1
+                    elif char == ']':
+                        bracket_count -= 1
+                    elif char == ',' and paren_count == 0 and bracket_count == 0:
+                        # This is a parameter separator (not inside type annotations)
+                        param_name = current_param.strip().split(':')[0].strip()
+                        if param_name:
+                            params.append(param_name)
+                        current_param = ""
+                        continue
+                    
+                    current_param += char
+                
+                # Add the last parameter
+                if current_param.strip():
+                    param_name = current_param.strip().split(':')[0].strip()
+                    if param_name:
+                        params.append(param_name)
                 
                 # Check if it has exactly 2 parameters
                 if len(params) != 2:
                     errors.append(f"Main function should have exactly 2 parameters (input_data, context), found {len(params)}: {params}")
             else:
                 errors.append(f"Main function should have exactly 2 parameters (input_data, context), found 0")
-        
-        # Check for async def main (should not be async)
-        async_main_pattern = r'async\s+def\s+main\s*\('
-        if re.search(async_main_pattern, content):
-            errors.append(f"Main function should be synchronous, not async. Use a synchronous wrapper for async operations.")
+        else:
+            errors.append(f"Could not parse main function parameters in {config.entry_point}")
         
         # Basic syntax check - look for obvious syntax errors
         try:
