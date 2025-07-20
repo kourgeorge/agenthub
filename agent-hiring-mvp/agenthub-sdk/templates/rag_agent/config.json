@@ -1,6 +1,6 @@
 {
   "name": "RAG Agent",
-  "description": "A RAG (Retrieval-Augmented Generation) agent that takes a document source and question to provide accurate answers based on document content.",
+  "description": "A RAG (Retrieval-Augmented Generation) agent that takes a document source and multiple questions to provide accurate answers based on document content.",
   "version": "1.0.0",
   "author": "AgentHub Team",
   "email": "team@agenthub.com",
@@ -20,23 +20,54 @@
   "config_schema": {
     "document_source": {
       "type": "string",
-      "description": "URL or path to the document to analyze",
-      "required": true
+      "description": "URL or path to the document to analyze (optional if pasting content in questions field)",
+      "default": "https://kour.me",
+      "required": false
     },
-    "question": {
-      "type": "string",
-      "description": "Question to ask about the document content",
-      "required": true
+    "questions": {
+      "type": "textarea",
+      "description": "Questions to ask about the document content (one per line), OR paste document content directly here if no document_source is provided",
+      "default": "Who were the master's supervisors?\nWhat is the main research area?",
+      "required": true,
+      "placeholder": "Enter your questions here (one per line), OR paste document content directly..."
     },
     "model_name": {
-      "type": "string",
+      "type": "choice",
       "default": "gpt-3.5-turbo",
-      "description": "OpenAI model to use for LLM"
+      "description": "OpenAI model to use for LLM",
+      "options": [
+        {
+          "value": "gpt-3.5-turbo",
+          "label": "GPT-3.5 Turbo (Fast & Cost-effective)"
+        },
+        {
+          "value": "gpt-4",
+          "label": "GPT-4 (High Quality)"
+        },
+        {
+          "value": "gpt-4o",
+          "label": "GPT-4o (Latest & Most Capable)"
+        }
+      ]
     },
     "embedding_model": {
-      "type": "string",
+      "type": "choice",
       "default": "text-embedding-ada-002",
-      "description": "OpenAI model to use for embeddings"
+      "description": "OpenAI model to use for embeddings",
+      "options": [
+        {
+          "value": "text-embedding-ada-002",
+          "label": "text-embedding-ada-002 (Fast & Reliable)"
+        },
+        {
+          "value": "text-embedding-3-small",
+          "label": "text-embedding-3-small (Latest Small Model)"
+        },
+        {
+          "value": "text-embedding-3-large",
+          "label": "text-embedding-3-large (Highest Quality)"
+        }
+      ]
     },
     "temperature": {
       "type": "number",
@@ -44,9 +75,23 @@
       "description": "Temperature for LLM responses"
     },
     "chunk_size": {
-      "type": "integer",
-      "default": 1024,
-      "description": "Size of text chunks for processing"
+      "type": "choice",
+      "default": "1024",
+      "description": "Size of text chunks for processing",
+      "options": [
+        {
+          "value": "512",
+          "label": "512 tokens (Small chunks, more precise)"
+        },
+        {
+          "value": "1024",
+          "label": "1024 tokens (Medium chunks, balanced)"
+        },
+        {
+          "value": "2048",
+          "label": "2048 tokens (Large chunks, more context)"
+        }
+      ]
     },
     "chunk_overlap": {
       "type": "integer",
