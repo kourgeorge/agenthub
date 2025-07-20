@@ -112,7 +112,8 @@
     "llamaindex"
   ],
   "category": "research",
-  "pricing_model": "free",
+  "pricing_model": "per_use",
+  "price_per_use": 0.6,
   "max_execution_time": 300,
   "memory_limit": "1GB"
 } 

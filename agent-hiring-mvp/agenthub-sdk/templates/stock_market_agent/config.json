@@ -6,7 +6,8 @@
   "entry_point": "stock_market_agent.py",
   "agent_type": "function",
   "email": "team@agenthub.com",
-  "pricing_model": "free",
+  "pricing_model": "per_use",
+  "price_per_use": 1,
   "config_schema": {
     "stock_symbols": {
       "type": "string",

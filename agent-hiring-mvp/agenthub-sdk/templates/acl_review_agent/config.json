@@ -6,7 +6,8 @@
   "author": "AgentHub Team",
   "email": "team@agenthub.com",
   "agent_type": "function",
-  "pricing_model": "free",
+  "pricing_model": "per_use",
+  "price_per_use": 0.13,
   "requirements": [
     "openai", 
     "requests>=2.31.0", 
