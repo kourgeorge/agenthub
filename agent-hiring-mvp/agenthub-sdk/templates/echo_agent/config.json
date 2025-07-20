@@ -6,6 +6,7 @@
   "agent_type": "function",
   "author": "AgentHub Team",
   "email": "team@agenthub.com",
+  "pricing_model": "free",
   "requirements": [],
   "config_schema": {
     "message": {

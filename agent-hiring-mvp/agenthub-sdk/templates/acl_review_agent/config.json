@@ -5,6 +5,8 @@
   "entry_point": "acl_review_agent.py",
   "author": "AgentHub Team",
   "email": "team@agenthub.com",
+  "agent_type": "function",
+  "pricing_model": "free",
   "requirements": [
     "openai", 
     "requests>=2.31.0", 

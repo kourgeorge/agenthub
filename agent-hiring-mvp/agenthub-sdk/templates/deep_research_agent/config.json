@@ -2,8 +2,12 @@
   "name": "Deep Research Agent",
   "description": "A comprehensive research agent that conducts deep, multi-source research using web search, MCP tools, and AI-powered analysis to provide detailed, well-sourced reports on any topic.",
   "version": "1.0.0",
+  "author": "AgentHub",
   "email": "team@agenthub.com",
   "entry_point": "deep_research_agent.py",
+  "agent_type": "function",
+  "pricing_model": "free",
+  "requirements": [],
   "config_schema": {
     "research_query": {
       "type": "string",
@@ -136,6 +140,5 @@
     "analysis",
     "web-search",
     "comprehensive"
-  ],
-  "author": "AgentHub"
+  ]
 }
