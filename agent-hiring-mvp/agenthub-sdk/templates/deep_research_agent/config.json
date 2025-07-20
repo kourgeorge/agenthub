@@ -11,15 +11,15 @@
       "required": true
     },
     "research_depth": {
-      "type": "string",
-      "enum": [
-        "shallow",
-        "moderate",
-        "deep",
-        "comprehensive"
-      ],
+      "type": "choice",
       "description": "Level of research depth",
-      "default": "moderate"
+      "default": "moderate",
+      "options": [
+        {"value": "shallow", "label": "Shallow"},
+        {"value": "moderate", "label": "Moderate"},
+        {"value": "deep", "label": "Deep"},
+        {"value": "comprehensive", "label": "Comprehensive"}
+      ]
     },
     "max_iterations": {
       "type": "integer",
@@ -43,16 +43,26 @@
       "default": 5
     },
     "search_api": {
-      "type": "string",
-      "enum": [
-        "tavily",
-        "serper",
-        "openai",
-        "anthropic",
-        "none"
-      ],
+      "type": "choice",
       "description": "Search API to use for research. Options: tavily (comprehensive search), serper (Google search), openai, anthropic, none",
-      "default": "serper"
+      "default": "serper",
+      "options": [
+        {"value": "tavily", "label": "Tavily (Comprehensive Search)"},
+        {"value": "serper", "label": "Serper (Google Search)"},
+        {"value": "openai", "label": "OpenAI"},
+        {"value": "anthropic", "label": "Anthropic"},
+        {"value": "none", "label": "None"}
+      ]
+    },
+    "include_sources": {
+      "type": "boolean",
+      "description": "Whether to include source citations in the output",
+      "default": true
+    },
+    "allow_clarification": {
+      "type": "boolean",
+      "description": "Whether to ask clarifying questions before starting research",
+      "default": true
     },
     "research_model": {
       "type": "string",
@@ -111,6 +121,11 @@
             "type": "string"
           },
           "description": "The tools to make available to the LLM"
+        },
+        "auth_required": {
+          "type": "string",
+          "description": "Whether the MCP server requires authentication",
+          "default": false
         }
       },
       "required": false
