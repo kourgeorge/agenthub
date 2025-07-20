@@ -247,7 +247,7 @@ try:
         from {module_name} import {function_name}
         
         with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
-            result = {function_name}({input_json}, {{}})
+            result = {function_name}({input_data}, {{}})
         
         # Write result to temp file
         with open('/tmp/agent_result.json', 'w') as f:
