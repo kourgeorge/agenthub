@@ -257,42 +257,169 @@ def validate(ctx, directory):
     agent_dir = Path(directory)
     config_file = agent_dir / "config.json"
     
+    if verbose:
+        echo(style("🔍 Starting agent validation...", fg='blue'))
+        echo(f"  Directory: {agent_dir.absolute()}")
+        echo(f"  Config file: {config_file}")
+        echo()
+    
+    # Step 1: Check if config.json exists
+    if verbose:
+        echo(style("Step 1: Checking config.json file...", fg='cyan'))
+    
     if not config_file.exists():
+        if verbose:
+            echo(style("  ❌ FAILED: config.json not found", fg='red'))
         echo(style("✗ No config.json found. Run 'agenthub agent init' first.", fg='red'))
         sys.exit(1)
     
+    if verbose:
+        echo(style("  ✅ PASSED: config.json found", fg='green'))
+    
     try:
-        # Load and validate configuration
+        # Step 2: Load and parse config.json
+        if verbose:
+            echo(style("Step 2: Loading and parsing config.json...", fg='cyan'))
+        
         with open(config_file, 'r') as f:
             config_data = json.load(f)
         
+        if verbose:
+            echo(style("  ✅ PASSED: config.json is valid JSON", fg='green'))
+        
+        # Step 3: Create AgentConfig object
+        if verbose:
+            echo(style("Step 3: Creating AgentConfig object...", fg='cyan'))
+        
         config = AgentConfig(**config_data)
+        
+        if verbose:
+            echo(style("  ✅ PASSED: AgentConfig object created", fg='green'))
+            echo(f"    Name: {config.name}")
+            echo(f"    Version: {config.version}")
+            echo(f"    Author: {config.author}")
+            echo(f"    Entry point: {config.entry_point}")
+            echo(f"    Agent type: {config.agent_type}")
+        
+        # Step 4: Validate configuration schema
+        if verbose:
+            echo(style("Step 4: Validating configuration schema...", fg='cyan'))
+        
         errors = config.validate()
         
         if errors:
+            if verbose:
+                echo(style("  ❌ FAILED: Configuration validation errors found", fg='red'))
+                for error in errors:
+                    echo(f"    - {error}")
             echo(style("✗ Configuration validation failed:", fg='red'))
             for error in errors:
                 echo(f"  - {error}")
             sys.exit(1)
         
-        # Check if main agent file exists
+        if verbose:
+            echo(style("  ✅ PASSED: Configuration schema validation", fg='green'))
+        
+        # Step 5: Check if entry point file exists
+        if verbose:
+            echo(style("Step 5: Checking entry point file...", fg='cyan'))
+        
         entry_point = agent_dir / config.entry_point
         if not entry_point.exists():
+            if verbose:
+                echo(style(f"  ❌ FAILED: Entry point file not found: {config.entry_point}", fg='red'))
             echo(style(f"✗ Entry point file not found: {config.entry_point}", fg='red'))
             sys.exit(1)
         
-        # Validate main function
+        if verbose:
+            echo(style(f"  ✅ PASSED: Entry point file found: {config.entry_point}", fg='green'))
+        
+        # Step 6: Validate main function
+        if verbose:
+            echo(style("Step 6: Validating main function...", fg='cyan'))
+        
         main_errors = _validate_main_function(agent_dir, config)
         if main_errors:
+            if verbose:
+                echo(style("  ❌ FAILED: Main function validation errors found", fg='red'))
+                for error in main_errors:
+                    echo(f"    - {error}")
             echo(style("✗ Main function validation failed:", fg='red'))
             for error in main_errors:
                 echo(f"  - {error}")
             sys.exit(1)
         
-        # Check requirements.txt
+        if verbose:
+            echo(style("  ✅ PASSED: Main function validation", fg='green'))
+        
+        # Step 7: Check requirements.txt
+        if verbose:
+            echo(style("Step 7: Checking requirements.txt...", fg='cyan'))
+        
         requirements_file = agent_dir / "requirements.txt"
         if not requirements_file.exists():
+            if verbose:
+                echo(style("  ⚠ WARNING: requirements.txt not found", fg='yellow'))
             echo(style("⚠ requirements.txt not found", fg='yellow'))
+        else:
+            if verbose:
+                echo(style("  ✅ PASSED: requirements.txt found", fg='green'))
+                try:
+                    with open(requirements_file, 'r') as f:
+                        requirements = [line.strip() for line in f.readlines() if line.strip() and not line.strip().startswith('#')]
+                    echo(f"    Dependencies: {len(requirements)} packages")
+                    if requirements:
+                        echo(f"    Packages: {', '.join(requirements[:5])}{'...' if len(requirements) > 5 else ''}")
+                except Exception as e:
+                    echo(f"    ⚠ Warning: Could not read requirements.txt: {e}")
+        
+        # Step 8: Check for additional files
+        if verbose:
+            echo(style("Step 8: Checking additional files...", fg='cyan'))
+        
+        readme_file = agent_dir / "README.md"
+        if readme_file.exists():
+            if verbose:
+                echo(style("  ✅ PASSED: README.md found", fg='green'))
+        else:
+            if verbose:
+                echo(style("  ⚠ WARNING: README.md not found", fg='yellow'))
+        
+        gitignore_file = agent_dir / ".gitignore"
+        if gitignore_file.exists():
+            if verbose:
+                echo(style("  ✅ PASSED: .gitignore found", fg='green'))
+        else:
+            if verbose:
+                echo(style("  ⚠ WARNING: .gitignore not found", fg='yellow'))
+        
+        # Step 9: Validate config_schema parameters (if present)
+        if config.config_schema and verbose:
+            echo(style("Step 9: Validating config_schema parameters...", fg='cyan'))
+            
+            param_count = len(config.config_schema)
+            echo(f"    Parameters found: {param_count}")
+            
+            for param_name, param_config in config.config_schema.items():
+                param_type = param_config.get('type', 'unknown')
+                required = param_config.get('required', False)
+                has_default = 'default' in param_config
+                
+                status = "✅"
+                if param_type not in ['string', 'number', 'integer', 'float', 'boolean', 'choice', 'select', 'textarea', 'array', 'object']:
+                    status = "❌"
+                
+                echo(f"    {status} {param_name} ({param_type}){' [required]' if required else ''}{' [has default]' if has_default else ''}")
+        
+        if verbose:
+            echo()
+            echo(style("📊 Validation Summary:", fg='blue'))
+            echo("  ✅ Configuration schema: PASSED")
+            echo("  ✅ Entry point file: PASSED")
+            echo("  ✅ Main function: PASSED")
+            echo("  ⚠ Requirements file: WARNING (optional)")
+            echo("  ⚠ Documentation files: WARNING (optional)")
+            echo()
         
         echo(style("✓ Agent validation passed!", fg='green'))
         if verbose:
@@ -302,9 +429,20 @@ def validate(ctx, directory):
             echo(f"  Entry point: {config.entry_point}")
             echo(f"  Category: {config.category}")
             echo(f"  Pricing: {config.pricing_model}")
+            if config.config_schema:
+                echo(f"  Parameters: {len(config.config_schema)}")
+            if config.requirements:
+                echo(f"  Dependencies: {len(config.requirements)}")
         show_next_steps("agent validate")
             
+    except json.JSONDecodeError as e:
+        if verbose:
+            echo(style("  ❌ FAILED: Invalid JSON in config.json", fg='red'))
+        echo(style(f"✗ Invalid JSON in config.json: {e}", fg='red'))
+        sys.exit(1)
     except Exception as e:
+        if verbose:
+            echo(style("  ❌ FAILED: Unexpected error during validation", fg='red'))
         echo(style(f"✗ Validation error: {e}", fg='red'))
         sys.exit(1)
 
