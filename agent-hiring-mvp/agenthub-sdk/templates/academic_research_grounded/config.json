@@ -1,5 +1,5 @@
 {
-  "name": "Academic Research Agent",
+  "name": "Academic Research Agent [Grounded]",
   "description": "A functional agent that performs comprehensive academic research by searching across Semantic Scholar, arXiv, and Google Scholar to find papers, summarize research, and identify gaps",
   "version": "1.0.0",
   "entry_point": "academic_research.py",
@@ -7,6 +7,12 @@
   "email": "team@agenthub.com",
   "requirements": ["openai", "requests", "python-dotenv", "PyPDF2"],
   "config_schema": {
+    "topic": {
+      "type": "string",
+      "description": "Academic research topic, paper title, or domain to investigate",
+      "required": true,
+      "default": "Machine Learning in Healthcare"
+    },
     "max_papers_per_source": {
       "type": "integer",
       "description": "Maximum number of papers to retrieve per academic source (5-20)",
