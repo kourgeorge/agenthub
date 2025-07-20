@@ -1,9 +1,9 @@
 {
-  "name": "Stock Market Research Agent",
+  "name": "Stock Market Analyzer Agent",
   "description": "A comprehensive stock market research agent that analyzes stocks, fetches news, identifies trends, and provides specific recommendations and predictions.",
   "version": "1.0.0",
   "author": "AgentHub",
-  "entry_point": "stock_market_agent.py:main",
+  "entry_point": "stock_market_agent.py",
   "agent_type": "function",
   "email": "team@agenthub.com",
   "config_schema": {
@@ -18,21 +18,66 @@
       "description": "Depth of analysis to perform",
       "required": true,
       "default": "comprehensive",
-      "choices": ["basic", "standard", "comprehensive", "expert"]
+      "options": [
+        {"value": "basic", "label": "Basic"},
+        {"value": "standard", "label": "Standard"},
+        {"value": "comprehensive", "label": "Comprehensive"},
+        {"value": "expert", "label": "Expert"}
+      ]
     },
     "prediction_timeframe": {
       "type": "choice",
       "description": "Timeframe for predictions",
       "required": true,
       "default": "3months",
-      "choices": ["1week", "1month", "3months", "6months", "1year"]
+      "options": [
+        {"value": "1week", "label": "1 Week"},
+        {"value": "1month", "label": "1 Month"},
+        {"value": "3months", "label": "3 Months"},
+        {"value": "6months", "label": "6 Months"},
+        {"value": "1year", "label": "1 Year"}
+      ]
+    },
+    "include_news": {
+      "type": "boolean",
+      "description": "Include news analysis in the report",
+      "default": true
+    },
+    "include_technical_analysis": {
+      "type": "boolean",
+      "description": "Include technical analysis (charts, indicators, patterns)",
+      "default": true
+    },
+    "include_fundamental_analysis": {
+      "type": "boolean",
+      "description": "Include fundamental analysis (financial ratios, earnings, etc.)",
+      "default": true
+    },
+    "include_sentiment_analysis": {
+      "type": "boolean",
+      "description": "Include sentiment analysis of news and social media",
+      "default": true
+    },
+    "include_competitor_analysis": {
+      "type": "boolean",
+      "description": "Include analysis of competitors and industry peers",
+      "default": true
+    },
+    "include_market_trends": {
+      "type": "boolean",
+      "description": "Include broader market trend analysis",
+      "default": true
     },
     "risk_tolerance": {
       "type": "choice",
       "description": "Risk tolerance level for recommendations",
       "required": true,
       "default": "moderate",
-      "choices": ["conservative", "moderate", "aggressive"]
+      "options": [
+        {"value": "conservative", "label": "Conservative"},
+        {"value": "moderate", "label": "Moderate"},
+        {"value": "aggressive", "label": "Aggressive"}
+      ]
     },
     "investment_amount": {
       "type": "float",
@@ -52,6 +97,7 @@
       "placeholder": "Your News API key"
     }
   },
+ 
   "requirements": [
     "yfinance",
     "pandas",
@@ -69,4 +115,4 @@
   ],
   "tags": ["finance", "stock-market", "research", "analysis", "predictions", "trading"],
   "category": "Financial Analysis"
-} 
+}

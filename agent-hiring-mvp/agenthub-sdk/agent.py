@@ -100,6 +100,142 @@ class AgentConfig:
                     if field not in self.acp_manifest:
                         errors.append(f"ACP manifest missing required field: {field}")
         
+        # Validate config_schema if present
+        if self.config_schema:
+            schema_errors = self._validate_config_schema()
+            errors.extend(schema_errors)
+        
+        return errors
+    
+    def _validate_config_schema(self) -> List[str]:
+        """Validate the config_schema parameter types and formats."""
+        errors = []
+        
+        if not isinstance(self.config_schema, dict):
+            errors.append("config_schema must be a dictionary")
+            return errors
+        
+        # Valid parameter types
+        valid_types = {
+            "string", "number", "integer", "float", "boolean", 
+            "choice", "select", "textarea", "array", "object"
+        }
+        
+        # Valid choice/select formats
+        valid_choice_formats = {"options", "choices"}
+        
+        for param_name, param_config in self.config_schema.items():
+            # Validate parameter name
+            if not isinstance(param_name, str) or not param_name.strip():
+                errors.append(f"Parameter name must be a non-empty string, got: {param_name}")
+                continue
+            
+            # Validate parameter config is a dictionary
+            if not isinstance(param_config, dict):
+                errors.append(f"Parameter '{param_name}' config must be a dictionary")
+                continue
+            
+            # Validate required fields
+            if "type" not in param_config:
+                errors.append(f"Parameter '{param_name}' missing required 'type' field")
+                continue
+            
+            param_type = param_config["type"]
+            
+            # Validate parameter type
+            if param_type not in valid_types:
+                errors.append(f"Parameter '{param_name}' has invalid type '{param_type}'. Valid types: {', '.join(sorted(valid_types))}")
+                continue
+            
+            # Validate type-specific requirements
+            if param_type == "choice":
+                # Choice parameters must have either 'options' or 'choices' array
+                has_options = "options" in param_config
+                has_choices = "choices" in param_config
+                
+                if not has_options and not has_choices:
+                    errors.append(f"Parameter '{param_name}' (choice type) must have either 'options' or 'choices' array")
+                elif has_options and has_choices:
+                    errors.append(f"Parameter '{param_name}' (choice type) cannot have both 'options' and 'choices' arrays")
+                elif has_options:
+                    # Validate options format
+                    options = param_config["options"]
+                    if not isinstance(options, list):
+                        errors.append(f"Parameter '{param_name}' options must be a list")
+                    else:
+                        for i, option in enumerate(options):
+                            if not isinstance(option, dict):
+                                errors.append(f"Parameter '{param_name}' option {i} must be a dictionary")
+                            elif "value" not in option or "label" not in option:
+                                errors.append(f"Parameter '{param_name}' option {i} must have 'value' and 'label' fields")
+                elif has_choices:
+                    # Validate choices format (legacy format)
+                    choices = param_config["choices"]
+                    if not isinstance(choices, list):
+                        errors.append(f"Parameter '{param_name}' choices must be a list")
+                    elif not all(isinstance(choice, str) for choice in choices):
+                        errors.append(f"Parameter '{param_name}' choices must be a list of strings")
+            
+            elif param_type == "select":
+                # Select parameters must have 'options' array
+                if "options" not in param_config:
+                    errors.append(f"Parameter '{param_name}' (select type) must have 'options' array")
+                else:
+                    options = param_config["options"]
+                    if not isinstance(options, list):
+                        errors.append(f"Parameter '{param_name}' options must be a list")
+                    else:
+                        for i, option in enumerate(options):
+                            if not isinstance(option, dict):
+                                errors.append(f"Parameter '{param_name}' option {i} must be a dictionary")
+                            elif "value" not in option or "label" not in option:
+                                errors.append(f"Parameter '{param_name}' option {i} must have 'value' and 'label' fields")
+            
+            elif param_type in ["number", "integer", "float"]:
+                # Numeric parameters can have min/max constraints
+                for constraint in ["min", "max", "minimum", "maximum"]:
+                    if constraint in param_config:
+                        value = param_config[constraint]
+                        if not isinstance(value, (int, float)):
+                            errors.append(f"Parameter '{param_name}' {constraint} must be a number")
+            
+            elif param_type == "string":
+                # String parameters can have pattern validation
+                if "pattern" in param_config:
+                    pattern = param_config["pattern"]
+                    if not isinstance(pattern, str):
+                        errors.append(f"Parameter '{param_name}' pattern must be a string")
+                    else:
+                        try:
+                            import re
+                            re.compile(pattern)
+                        except re.error:
+                            errors.append(f"Parameter '{param_name}' pattern is not a valid regex")
+            
+            # Validate default value type matches parameter type
+            if "default" in param_config:
+                default_value = param_config["default"]
+                if param_type == "boolean" and not isinstance(default_value, bool):
+                    errors.append(f"Parameter '{param_name}' default value must be boolean for boolean type")
+                elif param_type in ["number", "integer", "float"] and not isinstance(default_value, (int, float)):
+                    errors.append(f"Parameter '{param_name}' default value must be a number for {param_type} type")
+                elif param_type == "string" and not isinstance(default_value, str):
+                    errors.append(f"Parameter '{param_name}' default value must be a string for string type")
+                elif param_type == "choice" and "options" in param_config:
+                    # Check if default value exists in options
+                    valid_values = [opt["value"] for opt in param_config["options"]]
+                    if default_value not in valid_values:
+                        errors.append(f"Parameter '{param_name}' default value '{default_value}' not found in options: {valid_values}")
+                elif param_type == "choice" and "choices" in param_config:
+                    # Check if default value exists in choices (legacy format)
+                    if default_value not in param_config["choices"]:
+                        errors.append(f"Parameter '{param_name}' default value '{default_value}' not found in choices: {param_config['choices']}")
+                elif param_type == "select":
+                    # Check if default value exists in options
+                    valid_values = [opt["value"] for opt in param_config["options"]]
+                    if default_value not in valid_values:
+                        errors.append(f"Parameter '{param_name}' default value '{default_value}' not found in options: {valid_values}")
+        
         return errors
 
 
