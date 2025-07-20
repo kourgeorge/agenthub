@@ -5,38 +5,39 @@
   "author": "AgentHub Team",
   "email": "team@agenthub.com",
   "entry_point": "agent.py",
+  "agent_type": "acp_server",
   "requirements": [
     "acp-sdk",
-    "llama_index",
+    "llama-index",
     "python-dotenv",
     "ollama"
   ],
   "config_schema": {
-      "debug": {
-        "type": "boolean",
-        "default": false,
-        "description": "Enable debug mode"
-      },
-      "model_name": {
-        "type": "string",
-        "default": "qwen2.5",
-        "description": "Ollama model to use for LLM"
-      },
-      "embedding_model": {
-        "type": "string",
-        "default": "nomic-embed-text",
-        "description": "Ollama model to use for embeddings"
-      },
-      "document_url": {
-        "type": "string",
-        "default": "https://arxiv.org/pdf/2408.09869",
-        "description": "URL of the document to load for RAG"
-      },
-      "temperature": {
-        "type": "number",
-        "default": 0,
-        "description": "Temperature for LLM responses"
-      }
+    "debug": {
+      "type": "boolean",
+      "default": false,
+      "description": "Enable debug mode"
+    },
+    "model_name": {
+      "type": "string",
+      "default": "qwen2.5",
+      "description": "Ollama model to use for LLM"
+    },
+    "embedding_model": {
+      "type": "string",
+      "default": "nomic-embed-text",
+      "description": "Ollama model to use for embeddings"
+    },
+    "document_url": {
+      "type": "string",
+      "default": "https://arxiv.org/pdf/2408.09869",
+      "description": "URL of the document to load for RAG"
+    },
+    "temperature": {
+      "type": "number",
+      "default": 0,
+      "description": "Temperature for LLM responses"
+    }
   },
   "tags": [
     "rag",
@@ -48,12 +49,14 @@
   ],
   "category": "research",
   "pricing_model": "free",
-  "max_execution_time": 0,
+  "max_execution_time": 300,
   "memory_limit": "1GB",
-  "agent_type": "acp_server",
   "acp_manifest": {
     "acp_version": "1.0.0",
     "endpoints": {
+      "health": "/health",
+      "chat": "/chat",
+      "tools": "/tools",
       "runs": "/runs"
     },
     "capabilities": [
@@ -64,6 +67,7 @@
     ],
     "deployment": {
       "port": 8001,
+      "health_check_path": "/health",
       "startup_timeout": 60,
       "shutdown_timeout": 10
     }

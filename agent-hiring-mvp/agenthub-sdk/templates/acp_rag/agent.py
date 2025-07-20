@@ -92,6 +92,50 @@ async def llamaindex_rag_agent(message: Message) -> AsyncGenerator[Message, None
         yield Message(parts=[MessagePart(text=f"Error: {str(e)}")])
 
 
+def main(input_data: dict, config: dict) -> dict:
+    """
+    Main function for the ACP RAG agent.
+    
+    This function is required for validation but the agent primarily runs as an ACP server.
+    For ACP server agents, the main functionality is handled by the server endpoints.
+    
+    Args:
+        input_data: Dictionary containing input parameters
+        config: Agent configuration dictionary
+    
+    Returns:
+        Dictionary containing status and information about the ACP server
+    """
+    try:
+        # For ACP server agents, the main function is primarily for validation
+        # The actual functionality is handled by the ACP server endpoints
+        
+        return {
+            "status": "success",
+            "message": "ACP RAG agent is configured as an ACP server",
+            "agent_type": "acp_server",
+            "endpoints": {
+                "health": "/health",
+                "chat": "/chat", 
+                "tools": "/tools",
+                "runs": "/runs"
+            },
+            "capabilities": [
+                "document_question_answering",
+                "knowledge_retrieval", 
+                "rag_processing",
+                "streaming_responses"
+            ],
+            "note": "This agent runs as an ACP server. Use the ACP endpoints for actual functionality."
+        }
+        
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e)
+        }
+
+
 if __name__ == "__main__":
     host = os.getenv("HOST", "0.0.0.0")
     port = int(os.getenv("PORT", 8001))
