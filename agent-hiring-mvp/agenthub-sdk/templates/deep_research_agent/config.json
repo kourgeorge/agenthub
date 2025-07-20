@@ -1,6 +1,6 @@
 {
   "name": "Deep Research Agent",
-  "description": "A comprehensive research agent that conducts deep, multi-source research using web search, MCP tools, and AI-powered analysis to provide detailed, well-sourced reports on any topic.",
+  "description": "A comprehensive research agent built using langraph that conducts deep, multi-source research using web search and AI-powered analysis to provide detailed, well-sourced reports on any topic.",
   "version": "1.0.0",
   "author": "AgentHub",
   "email": "team@agenthub.com",
@@ -69,9 +69,17 @@
       "default": true
     },
     "research_model": {
-      "type": "string",
+      "type": "choice",
       "description": "Model for conducting research",
-      "default": "openai:gpt-4o"
+      "default": "openai:gpt-4o",
+      "options": [
+        {"value": "openai:gpt-4o", "label": "OpenAI GPT-4o (Latest & Most Capable)"},
+        {"value": "openai:gpt-4o-mini", "label": "OpenAI GPT-4o Mini (Fast & Cost-effective)"},
+        {"value": "openai:gpt-4-turbo", "label": "OpenAI GPT-4 Turbo (Balanced)"},
+        {"value": "openai:gpt-3.5-turbo", "label": "OpenAI GPT-3.5 Turbo (Fast & Reliable)"},
+        {"value": "anthropic:claude-3-5-sonnet", "label": "Anthropic Claude 3.5 Sonnet (High Quality)"},
+        {"value": "anthropic:claude-3-haiku", "label": "Anthropic Claude 3 Haiku (Fast)"}
+      ]
     },
     "research_model_max_tokens": {
       "type": "integer",
@@ -81,9 +89,16 @@
       "default": 10000
     },
     "compression_model": {
-      "type": "string",
+      "type": "choice",
       "description": "Model for compressing research findings",
-      "default": "openai:gpt-4o-mini"
+      "default": "openai:gpt-4o-mini",
+      "options": [
+        {"value": "openai:gpt-4o-mini", "label": "OpenAI GPT-4o Mini (Fast & Cost-effective)"},
+        {"value": "openai:gpt-4o", "label": "OpenAI GPT-4o (High Quality)"},
+        {"value": "openai:gpt-3.5-turbo", "label": "OpenAI GPT-3.5 Turbo (Fast & Reliable)"},
+        {"value": "anthropic:claude-3-haiku", "label": "Anthropic Claude 3 Haiku (Fast)"},
+        {"value": "anthropic:claude-3-5-sonnet", "label": "Anthropic Claude 3.5 Sonnet (High Quality)"}
+      ]
     },
     "compression_model_max_tokens": {
       "type": "integer",
@@ -93,9 +108,17 @@
       "default": 8192
     },
     "final_report_model": {
-      "type": "string",
+      "type": "choice",
       "description": "Model for writing the final report",
-      "default": "openai:gpt-4o"
+      "default": "openai:gpt-4o",
+      "options": [
+        {"value": "openai:gpt-4o", "label": "OpenAI GPT-4o (Latest & Most Capable)"},
+        {"value": "openai:gpt-4o-mini", "label": "OpenAI GPT-4o Mini (Fast & Cost-effective)"},
+        {"value": "openai:gpt-4-turbo", "label": "OpenAI GPT-4 Turbo (Balanced)"},
+        {"value": "openai:gpt-3.5-turbo", "label": "OpenAI GPT-3.5 Turbo (Fast & Reliable)"},
+        {"value": "anthropic:claude-3-5-sonnet", "label": "Anthropic Claude 3.5 Sonnet (High Quality)"},
+        {"value": "anthropic:claude-3-haiku", "label": "Anthropic Claude 3 Haiku (Fast)"}
+      ]
     },
     "final_report_model_max_tokens": {
       "type": "integer",
@@ -127,9 +150,13 @@
           "description": "The tools to make available to the LLM"
         },
         "auth_required": {
-          "type": "string",
+          "type": "choice",
           "description": "Whether the MCP server requires authentication",
-          "default": false
+          "default": "false",
+          "options": [
+            {"value": "true", "label": "Yes (Authentication Required)"},
+            {"value": "false", "label": "No (No Authentication Required)"}
+          ]
         }
       },
       "required": false
