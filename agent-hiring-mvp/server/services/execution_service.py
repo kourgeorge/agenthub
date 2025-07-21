@@ -14,6 +14,7 @@ from ..models.hiring import Hiring
 from ..models.agent_file import AgentFile
 from ..database.config import get_session
 from .agent_runtime import AgentRuntimeService, RuntimeStatus, RuntimeResult
+from .resource_manager import ResourceManager
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,9 @@ class ExecutionService:
             self.db = get_session()
         else:
             self.db = db
+        
+        # Initialize resource manager for usage tracking
+        self.resource_manager = ResourceManager(self.db)
     
     def create_execution(self, execution_data: ExecutionCreateRequest) -> Execution:
         """Create a new execution record."""
@@ -134,11 +138,14 @@ class ExecutionService:
             .all()
         )
     
-    def execute_agent(self, execution_id: str) -> Dict[str, Any]:
+    async def execute_agent(self, execution_id: str) -> Dict[str, Any]:
         """Execute an agent using the real runtime service."""
         execution = self.get_execution(execution_id)
         if not execution:
             return {"status": "error", "message": "Execution not found"}
+        
+        # Start resource tracking for this execution
+        await self.resource_manager.start_execution(execution_id, execution.user_id or 1)
         
         # Update status to running
         self.update_execution_status(execution_id, ExecutionStatus.RUNNING)
@@ -158,6 +165,9 @@ class ExecutionService:
             else:
                 # Handle function-based agents with Docker deployment
                 runtime_result = self._execute_function_agent(agent, execution.input_data or {}, execution_id)
+            
+            # End resource tracking and get usage summary
+            usage_summary = await self.resource_manager.end_execution(execution_id, "completed")
             
             # Process runtime result
             if runtime_result.status == RuntimeStatus.COMPLETED:
@@ -179,10 +189,12 @@ class ExecutionService:
                     "status": "success",
                     "execution_id": execution_id,
                     "result": output_data,
-                    "execution_time": runtime_result.execution_time
+                    "execution_time": runtime_result.execution_time,
+                    "usage_summary": usage_summary
                 }
             
             elif runtime_result.status == RuntimeStatus.FAILED:
+                await self.resource_manager.end_execution(execution_id, "failed")
                 error_msg = runtime_result.error or "Execution failed"
                 self.update_execution_status(execution_id, ExecutionStatus.FAILED, error_message=error_msg, container_logs=runtime_result.container_logs)
                 return {
@@ -192,6 +204,7 @@ class ExecutionService:
                 }
             
             else:  # FAILED or other status
+                await self.resource_manager.end_execution(execution_id, "failed")
                 error_msg = runtime_result.error or "Execution failed"
                 self.update_execution_status(execution_id, ExecutionStatus.FAILED, error_message=error_msg, container_logs=runtime_result.container_logs)
                 return {
@@ -201,6 +214,8 @@ class ExecutionService:
                 }
         
         except Exception as e:
+            # End resource tracking on error
+            await self.resource_manager.end_execution(execution_id, "failed")
             error_msg = f"Execution failed: {str(e)}"
             self.update_execution_status(execution_id, ExecutionStatus.FAILED, error_message=error_msg)
             return {

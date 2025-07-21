@@ -67,18 +67,28 @@ def get_execution(execution_id: str, db: Session = Depends(get_session_dependenc
 
 
 @router.post("/{execution_id}/run")
-def run_execution(execution_id: str, db: Session = Depends(get_session_dependency)):
+async def run_execution(execution_id: str, db: Session = Depends(get_session_dependency)):
     """Run an execution."""
-    execution_service = ExecutionService(db)
-    result = execution_service.execute_agent(execution_id)
-    
-    if result.get("status") == "error":
+    try:
+        execution_service = ExecutionService(db)
+        result = await execution_service.execute_agent(execution_id)
+        
+        if result.get("status") == "error":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=result.get("error", "Execution failed")
+            )
+        
+        return result
+    except Exception as e:
+        # Log the error for debugging
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Execution failed for {execution_id}: {str(e)}")
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=result.get("error", "Execution failed")
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Internal server error: {str(e)}"
         )
-    
-    return result
 
 
 @router.get("/agent/{agent_id}", response_model=List[dict])
