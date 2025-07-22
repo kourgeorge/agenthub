@@ -34,6 +34,7 @@ class Hiring(Base):
     
     # Configuration
     config = Column(JSON, nullable=True)  # Agent-specific configuration
+    state = Column(JSON, nullable=True)  # Persistent agent state data
     acp_endpoint = Column(String(500), nullable=True)  # ACP communication endpoint
     
     # Usage Tracking

@@ -84,7 +84,12 @@ def get_hiring(hiring_id: int, db: Session = Depends(get_session_dependency)):
             detail="Hiring not found"
         )
     
-    return {
+    # Get deployment information
+    deployment = db.query(AgentDeployment).filter(
+        AgentDeployment.hiring_id == hiring_id
+    ).first()
+    
+    response = {
         "id": hiring.id,
         "agent_id": hiring.agent_id,
         "user_id": hiring.user_id,
@@ -92,9 +97,35 @@ def get_hiring(hiring_id: int, db: Session = Depends(get_session_dependency)):
         "hired_at": hiring.hired_at.isoformat(),
         "expires_at": hiring.expires_at.isoformat() if hiring.expires_at else None,
         "config": hiring.config,
+        "state": hiring.state,
         "total_executions": hiring.total_executions,
         "last_executed_at": hiring.last_executed_at.isoformat() if hiring.last_executed_at else None,
     }
+    
+    # Add agent information including agent_type
+    if hiring.agent:
+        response.update({
+            "agent_name": hiring.agent.name,
+            "agent_type": hiring.agent.agent_type,
+            "agent_description": hiring.agent.description,
+        })
+    
+    # Add deployment information if available
+    if deployment:
+        response["deployment"] = {
+            "deployment_id": deployment.deployment_id,
+            "status": deployment.status,
+            "container_id": deployment.container_id,
+            "container_name": deployment.container_name,
+            "deployment_type": deployment.deployment_type,
+            "started_at": deployment.started_at.isoformat() if deployment.started_at else None,
+            "stopped_at": deployment.stopped_at.isoformat() if deployment.stopped_at else None,
+            "is_healthy": deployment.is_healthy,
+            "internal_port": deployment.internal_port,
+            "external_port": deployment.external_port
+        }
+    
+    return response
 
 
 @router.get("/user/{user_id}", response_model=List[dict])
@@ -340,4 +371,7 @@ def get_active_hirings(db: Session = Depends(get_session_dependency)):
             "total_executions": hiring.total_executions,
         }
         for hiring in hirings
-    ] 
+    ]
+
+
+ 

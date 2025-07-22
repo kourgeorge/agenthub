@@ -25,26 +25,20 @@ CLI usage:
     agenthub config --author "Your Name" --email "your@email.com"
 """
 
-from .agent import Agent, AgentConfig, SimpleAgent, DataProcessingAgent, ChatAgent, ACPServerAgent
-from .agent import create_simple_agent, create_data_agent, create_chat_agent, create_acp_server_agent
+from .agent import Agent, PersistentAgent, AgentConfig, validate_agent_config, load_agent_class
 from .client import AgentHubClient
 
 __version__ = "1.0.0"
 
 __all__ = [
-    # Agent Creation
+    # Agent Base Classes
     "Agent",
-    "AgentConfig",
-    "SimpleAgent", 
-    "DataProcessingAgent",
-    "ChatAgent",
-    "ACPServerAgent",
+    "PersistentAgent",
     
-    # Agent Factory Functions
-    "create_simple_agent",
-    "create_data_agent",
-    "create_chat_agent",
-    "create_acp_server_agent",
+    # Configuration
+    "AgentConfig",
+    "validate_agent_config",
+    "load_agent_class",
     
     # Client
     "AgentHubClient",

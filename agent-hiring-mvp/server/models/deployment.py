@@ -30,6 +30,7 @@ class AgentDeployment(Base):
     agent_id = Column(Integer, ForeignKey("agents.id"), nullable=False)
     hiring_id = Column(Integer, ForeignKey("hirings.id"), nullable=False)
     deployment_id = Column(String(50), nullable=False, unique=True, index=True)
+    deployment_type = Column(String(20), nullable=True, default="acp")  # acp, function, persistent
     
     # Container Information
     container_id = Column(String(255), nullable=True)  # Docker container ID

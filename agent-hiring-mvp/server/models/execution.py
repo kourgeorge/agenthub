@@ -20,6 +20,12 @@ class ExecutionStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
+class ExecutionType(str, Enum):
+    """Execution type enumeration."""
+    INITIALIZE = "initialize"
+    RUN = "run"
+
+
 class Execution(Base):
     """Execution model for tracking agent execution logs."""
     
@@ -32,6 +38,7 @@ class Execution(Base):
     
     # Execution Details
     status = Column(String(20), nullable=False, default=ExecutionStatus.PENDING.value)
+    execution_type = Column(String(20), nullable=False, default="run")  # "initialize" or "run"
     started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
     duration_ms = Column(Integer, nullable=True)  # Execution duration in milliseconds

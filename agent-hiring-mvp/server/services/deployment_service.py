@@ -10,6 +10,7 @@ import uuid
 import asyncio
 import aiohttp
 import requests
+import time
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 from pathlib import Path
@@ -114,7 +115,7 @@ class DeploymentService:
         raise RuntimeError("No available ports for deployment")
     
     def create_deployment(self, hiring_id: int) -> Dict[str, Any]:
-        """Create a new deployment for a hired ACP agent."""
+        """Create a new deployment for a hired agent (any type)."""
         try:
             # Get hiring and agent information
             hiring = self.db.query(Hiring).filter(Hiring.id == hiring_id).first()
@@ -125,9 +126,9 @@ class DeploymentService:
             if not agent:
                 return {"error": "Agent not found"}
             
-            # Check if agent is ACP server type
-            if agent.agent_type != AgentType.ACP_SERVER.value:
-                return {"error": "Agent is not an ACP server type"}
+            # Accept all agent types (function, persistent, acp)
+            if agent.agent_type not in ["function", "persistent", "acp"]:
+                return {"error": f"Unsupported agent type: {agent.agent_type}"}
             
             # Check if deployment already exists
             existing_deployment = self.db.query(AgentDeployment).filter(
@@ -137,41 +138,52 @@ class DeploymentService:
             if existing_deployment:
                 return {"error": "Deployment already exists", "deployment_id": existing_deployment.deployment_id}
             
-            # Generate deployment ID
+            # Generate deployment ID with agent type
             user_id = hiring.user_id or "anon"
-            deployment_id = f"user-{user_id}-agent-{agent.id}-hire-{hiring_id}-{uuid.uuid4().hex[:8]}"
-            
-            # Get available port
-            external_port = self.get_available_port()
+            agent_type = agent.agent_type
+            deployment_id = f"{agent_type}-user-{user_id}-agent-{agent.id}-hire-{hiring_id}-{uuid.uuid4().hex[:8]}"
             
             # Create deployment record
-            deployment = AgentDeployment(
-                agent_id=agent.id,
-                hiring_id=hiring_id,
-                deployment_id=deployment_id,
-                external_port=external_port,
-                status=DeploymentStatus.PENDING.value,
-                proxy_endpoint=f"http://{self.server_hostname}:{external_port}",
-                environment_vars={
-                    "PORT": "8001",
+            deployment_config = {
+                "agent_id": agent.id,
+                "hiring_id": hiring_id,
+                "deployment_id": deployment_id,
+                "status": DeploymentStatus.PENDING.value,
+                "deployment_type": agent.agent_type,
+                "environment_vars": {
                     "DEPLOYMENT_ID": deployment_id,
                     "AGENT_ID": str(agent.id),
                     "HIRING_ID": str(hiring_id),
-                    "USER_ID": str(user_id)
+                    "USER_ID": str(user_id),
+                    "AGENT_TYPE": agent.agent_type
                 }
-            )
+            }
+            
+            # Add port configuration only for server-based agents (acp)
+            if agent.agent_type == "acp":
+                external_port = self.get_available_port()
+                deployment_config["external_port"] = external_port
+                deployment_config["proxy_endpoint"] = f"http://{self.server_hostname}:{external_port}"
+                deployment_config["environment_vars"]["PORT"] = "8001"
+            
+            deployment = AgentDeployment(**deployment_config)
             
             self.db.add(deployment)
             self.db.commit()
             
             logger.info(f"Created deployment {deployment_id} for agent {agent.id}")
             
-            return {
+            result = {
                 "deployment_id": deployment_id,
-                "status": "created",
-                "external_port": external_port,
-                "proxy_endpoint": deployment.proxy_endpoint
+                "status": "created"
             }
+            
+            # Add port info only for server-based agents
+            if agent.agent_type == "acp":
+                result["external_port"] = deployment.external_port
+                result["proxy_endpoint"] = deployment.proxy_endpoint
+            
+            return result
             
         except Exception as e:
             logger.error(f"Failed to create deployment: {e}")
@@ -204,7 +216,8 @@ class DeploymentService:
             
             # Build Docker image
             user_id = deployment.hiring.user_id or "anon"
-            image_name = f"user-{user_id}-agent-{agent.id}-hire-{deployment.hiring_id}:{deployment_id}"
+            agent_type = agent.agent_type
+            image_name = f"{agent_type}-user-{user_id}-agent-{agent.id}-hire-{deployment.hiring_id}:{deployment_id}"
             image = self._build_docker_image(deploy_dir, image_name)
             
             # Update deployment with image info
@@ -272,10 +285,60 @@ class DeploymentService:
         )
         logger.info(f"Created merged .env file for deployment: {merged_env_path}")
         
-        # Create basic Dockerfile if not exists
+        # Create Dockerfile based on agent type
         dockerfile = deploy_dir / "Dockerfile"
         if not dockerfile.exists():
-            dockerfile_content = """FROM python:3.11-slim
+            agent_type = agent.agent_type
+            
+            if agent_type == "function":
+                # Function agents run once and exit
+                dockerfile_content = """FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements and install
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY . .
+
+# Function agents run once and exit
+CMD ["python", "main.py"]
+"""
+            elif agent_type == "persistent":
+                # Persistent agents stay running and use docker exec for operations
+                dockerfile_content = """FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements and install
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY . .
+
+# Create state directory for persistent agents
+RUN mkdir -p /app/state
+
+# Set environment variables
+ENV PYTHONPATH=/app
+ENV STATE_DIR=/app/state
+ENV PYTHONUNBUFFERED=1
+
+# Keep container running for persistent agent execution
+CMD ["tail", "-f", "/dev/null"]
+"""
+            else:  # acp or other types
+                # ACP agents run a server
+                dockerfile_content = """FROM python:3.11-slim
 
 WORKDIR /app
 
@@ -299,6 +362,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \\
 # Run the application
 CMD ["python", "main.py"]
 """
+            
             dockerfile.write_text(dockerfile_content, encoding='utf-8')
     
     def _extract_agent_files(self, agent: Agent, deploy_dir: Path):
@@ -349,7 +413,8 @@ CMD ["python", "main.py"]
     def _deploy_container(self, deployment: AgentDeployment, image_name: str):
         """Deploy Docker container for the agent."""
         user_id = deployment.hiring.user_id or "anon"
-        container_name = f"user-{user_id}-agent-{deployment.agent_id}-hire-{deployment.hiring_id}-{deployment.deployment_id}"
+        agent_type = deployment.deployment_type or "function"
+        container_name = f"{agent_type}-user-{user_id}-agent-{deployment.agent_id}-hire-{deployment.hiring_id}-{deployment.deployment_id}"
         
         logger.info(f"Deploying container {container_name}")
         
@@ -357,11 +422,20 @@ CMD ["python", "main.py"]
         container_config = {
             "image": image_name,
             "name": container_name,
-            "ports": {f"{deployment.internal_port}/tcp": deployment.external_port},
             "environment": deployment.environment_vars,
-            "detach": True,
-            "restart_policy": {"Name": "unless-stopped"}
+            "detach": True
         }
+        
+        # Add port mapping for server-based agents (acp only)
+        if agent_type == "acp" and deployment.external_port:
+            container_config["ports"] = {f"{deployment.internal_port}/tcp": deployment.external_port}
+            container_config["restart_policy"] = {"Name": "unless-stopped"}
+        elif agent_type == "persistent":
+            # Persistent agents stay running and need restart policy
+            container_config["restart_policy"] = {"Name": "unless-stopped"}
+        else:
+            # Function agents don't need restart policy since they run once
+            container_config["restart_policy"] = {"Name": "no"}
         
         # Add any additional deployment configuration
         if deployment.deployment_config:
@@ -599,31 +673,66 @@ CMD ["python", "main.py"]
         if not deployment:
             return {"error": "Deployment not found"}
         
-        if not deployment.proxy_endpoint:
-            return {"error": "No proxy endpoint configured"}
+        # For persistent agents, check if container is running and responsive
+        if deployment.deployment_type == "persistent":
+            try:
+                # Check if container is running
+                container = self.docker_client.containers.get(deployment.container_name)
+                if container.status != "running":
+                    deployment.is_healthy = False
+                    deployment.health_check_failures += 1
+                    deployment.last_health_check = datetime.utcnow()
+                    self.db.commit()
+                    return {"status": "unhealthy", "error": f"Container status: {container.status}"}
+                
+                # Test if container responds to docker exec
+                result = container.exec_run("echo 'health_check'")
+                if result.exit_code == 0:
+                    deployment.is_healthy = True
+                    deployment.health_check_failures = 0
+                    deployment.last_health_check = datetime.utcnow()
+                    self.db.commit()
+                    return {"status": "healthy"}
+                else:
+                    deployment.is_healthy = False
+                    deployment.health_check_failures += 1
+                    deployment.last_health_check = datetime.utcnow()
+                    self.db.commit()
+                    return {"status": "unhealthy", "error": f"Exec failed with exit code: {result.exit_code}"}
+                    
+            except Exception as e:
+                deployment.is_healthy = False
+                deployment.health_check_failures += 1
+                deployment.last_health_check = datetime.utcnow()
+                self.db.commit()
+                return {"status": "unhealthy", "error": str(e)}
         
-        try:
-            async with aiohttp.ClientSession() as session:
-                health_url = f"{deployment.proxy_endpoint}/health"
-                async with session.get(health_url, timeout=5) as response:
-                    if response.status == 200:
-                        deployment.is_healthy = True
-                        deployment.health_check_failures = 0
-                        deployment.last_health_check = datetime.utcnow()
-                        self.db.commit()
-                        return {"status": "healthy"}
-                    else:
-                        deployment.health_check_failures += 1
-                        deployment.last_health_check = datetime.utcnow()
-                        self.db.commit()
-                        return {"status": "unhealthy", "http_status": response.status}
-        
-        except Exception as e:
-            deployment.is_healthy = False
-            deployment.health_check_failures += 1
-            deployment.last_health_check = datetime.utcnow()
-            self.db.commit()
-            return {"status": "unhealthy", "error": str(e)}
+        # For ACP agents, check HTTP endpoint
+        elif deployment.proxy_endpoint:
+            try:
+                async with aiohttp.ClientSession() as session:
+                    health_url = f"{deployment.proxy_endpoint}/health"
+                    async with session.get(health_url, timeout=5) as response:
+                        if response.status == 200:
+                            deployment.is_healthy = True
+                            deployment.health_check_failures = 0
+                            deployment.last_health_check = datetime.utcnow()
+                            self.db.commit()
+                            return {"status": "healthy"}
+                        else:
+                            deployment.health_check_failures += 1
+                            deployment.last_health_check = datetime.utcnow()
+                            self.db.commit()
+                            return {"status": "unhealthy", "http_status": response.status}
+            
+            except Exception as e:
+                deployment.is_healthy = False
+                deployment.health_check_failures += 1
+                deployment.last_health_check = datetime.utcnow()
+                self.db.commit()
+                return {"status": "unhealthy", "error": str(e)}
+        else:
+            return {"error": "No proxy endpoint configured for ACP agent"}
     
     def list_deployments(self, agent_id: Optional[int] = None, status: Optional[str] = None) -> List[Dict[str, Any]]:
         """List deployments with optional filtering and real-time health checks."""
@@ -645,23 +754,49 @@ CMD ["python", "main.py"]
         for deployment in deployments:
             # Perform real-time health check for running deployments
             real_time_health = deployment.is_healthy
-            if deployment.status == DeploymentStatus.RUNNING.value and deployment.proxy_endpoint:
-                try:
-                    health_url = f"{deployment.proxy_endpoint}/health"
-                    response = requests.get(health_url, timeout=1)  # Quick timeout for list
-                    if response.status_code == 200:
-                        real_time_health = True
-                        # Update database with fresh health status
-                        deployment.is_healthy = True
-                        deployment.health_check_failures = 0
-                        deployment.last_health_check = datetime.utcnow()
-                    else:
+            if deployment.status == DeploymentStatus.RUNNING.value:
+                # For persistent agents, check container status
+                if deployment.deployment_type == "persistent":
+                    try:
+                        container = self.docker_client.containers.get(deployment.container_name)
+                        if container.status == "running":
+                            # Test if container responds to docker exec
+                            exec_result = container.exec_run("echo 'health_check'")
+                            if exec_result.exit_code == 0:
+                                real_time_health = True
+                                deployment.is_healthy = True
+                                deployment.health_check_failures = 0
+                                deployment.last_health_check = datetime.utcnow()
+                            else:
+                                real_time_health = False
+                                deployment.health_check_failures += 1
+                                deployment.last_health_check = datetime.utcnow()
+                        else:
+                            real_time_health = False
+                            deployment.health_check_failures += 1
+                            deployment.last_health_check = datetime.utcnow()
+                    except Exception:
+                        # Health check failed, but don't update database on temporary failures
                         real_time_health = False
-                        deployment.health_check_failures += 1
-                        deployment.last_health_check = datetime.utcnow()
-                except Exception:
-                    # Health check failed, but don't update database on temporary failures
-                    real_time_health = False
+                
+                # For ACP agents, check HTTP endpoint
+                elif deployment.proxy_endpoint:
+                    try:
+                        health_url = f"{deployment.proxy_endpoint}/health"
+                        response = requests.get(health_url, timeout=1)  # Quick timeout for list
+                        if response.status_code == 200:
+                            real_time_health = True
+                            # Update database with fresh health status
+                            deployment.is_healthy = True
+                            deployment.health_check_failures = 0
+                            deployment.last_health_check = datetime.utcnow()
+                        else:
+                            real_time_health = False
+                            deployment.health_check_failures += 1
+                            deployment.last_health_check = datetime.utcnow()
+                    except Exception:
+                        # Health check failed, but don't update database on temporary failures
+                        real_time_health = False
             
             result.append({
                 "deployment_id": deployment.deployment_id,
@@ -678,4 +813,459 @@ CMD ["python", "main.py"]
         # Commit any health check updates
         self.db.commit()
         
-        return result 
+        return result
+
+    # =============================================================================
+    # PERSISTENT AGENT OPERATIONS
+    # =============================================================================
+
+    def _get_agent_config_from_files(self, agent_id: int) -> Dict[str, Any]:
+        """Get agent configuration from config.json file."""
+        from ..models.agent_file import AgentFile
+        
+        config_file = self.db.query(AgentFile).filter(
+            AgentFile.agent_id == agent_id,
+            AgentFile.file_path == 'config.json'
+        ).first()
+        
+        if not config_file:
+            raise Exception("Agent configuration file not found")
+        
+        import json
+        return json.loads(config_file.file_content)
+
+    def execute_persistent_agent(self, deployment_id: str, input_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute a persistent agent in its container via docker exec."""
+        try:
+            # Get deployment information
+            deployment = self.db.query(AgentDeployment).filter(
+                AgentDeployment.deployment_id == deployment_id
+            ).first()
+            
+            if not deployment:
+                return {"error": "Deployment not found"}
+            
+            if deployment.status != DeploymentStatus.RUNNING.value:
+                return {"error": "Deployment is not running"}
+            
+            # Get agent configuration to determine entry point and class
+            from ..models.agent import Agent
+            agent = self.db.query(Agent).filter(Agent.id == deployment.agent_id).first()
+            if not agent:
+                return {"error": "Agent not found"}
+            
+            # Get agent configuration from config.json file
+            try:
+                agent_config = self._get_agent_config_from_files(deployment.agent_id)
+                entry_point = agent_config.get('entry_point', 'persistent_rag_agent.py')
+                agent_class = agent_config.get('agent_class', 'RAGAgent')
+            except Exception as e:
+                return {"error": f"Failed to get agent configuration: {str(e)}"}
+            
+            # Execute in container
+            container_name = f"{deployment.deployment_type}-user-{deployment.hiring.user_id or 'anon'}-agent-{deployment.agent_id}-hire-{deployment.hiring_id}-{deployment.deployment_id}"
+            exec_input = {
+                "operation": "execute",
+                "input": input_data,
+                "entry_point": entry_point,
+                "agent_class": agent_class
+            }
+            
+            result = self._execute_in_container(container_name, exec_input)
+            
+            if result.get("status") == "success":
+                return {
+                    "status": "success",
+                    "result": result.get("result", {})
+                }
+            else:
+                return {
+                    "status": "error",
+                    "error": result.get("error", "Execution failed")
+                }
+                
+        except Exception as e:
+            logger.error(f"Error executing persistent agent: {e}")
+            return {"error": str(e)}
+
+    def initialize_persistent_agent(self, deployment_id: str, init_config: Dict[str, Any]) -> Dict[str, Any]:
+        """Initialize a persistent agent in its container via docker exec."""
+        try:
+            # Get deployment information
+            deployment = self.db.query(AgentDeployment).filter(
+                AgentDeployment.deployment_id == deployment_id
+            ).first()
+            
+            if not deployment:
+                return {"error": "Deployment not found"}
+            
+            if deployment.status != DeploymentStatus.RUNNING.value:
+                return {"error": "Deployment is not running"}
+            
+            # Get agent configuration to determine entry point and class
+            from ..models.agent import Agent
+            agent = self.db.query(Agent).filter(Agent.id == deployment.agent_id).first()
+            if not agent:
+                return {"error": "Agent not found"}
+            
+            # Get agent configuration from config.json file
+            try:
+                agent_config = self._get_agent_config_from_files(deployment.agent_id)
+                entry_point = agent_config.get('entry_point', 'persistent_rag_agent.py')
+                agent_class = agent_config.get('agent_class', 'RAGAgent')
+            except Exception as e:
+                return {"error": f"Failed to get agent configuration: {str(e)}"}
+            
+            # Execute in container
+            container_name = f"{deployment.deployment_type}-user-{deployment.hiring.user_id or 'anon'}-agent-{deployment.agent_id}-hire-{deployment.hiring_id}-{deployment.deployment_id}"
+            exec_input = {
+                "operation": "initialize",
+                "input": init_config,
+                "entry_point": entry_point,
+                "agent_class": agent_class
+            }
+            
+            result = self._execute_in_container(container_name, exec_input)
+            
+            if result.get("status") == "success":
+                # Update hiring state in database
+                try:
+                    hiring = self.db.query(Hiring).filter(Hiring.id == deployment.hiring_id).first()
+                    if hiring:
+                        hiring.state = {
+                            'status': 'ready',
+                            'config': init_config,
+                            'state_data': result.get("result", {}),
+                            'created_at': time.time(),
+                            'last_accessed': time.time(),
+                            'execution_count': 0
+                        }
+                        self.db.commit()
+                        logger.info(f"Updated hiring state for hiring {deployment.hiring_id}")
+                except Exception as e:
+                    logger.error(f"Failed to update hiring state: {e}")
+                
+                return {
+                    "status": "success",
+                    "result": result.get("result", {})
+                }
+            else:
+                return {
+                    "status": "error",
+                    "error": result.get("error", "Initialization failed")
+                }
+                
+        except Exception as e:
+            logger.error(f"Error initializing persistent agent: {e}")
+            return {"error": str(e)}
+
+    def cleanup_persistent_agent(self, deployment_id: str) -> Dict[str, Any]:
+        """Clean up a persistent agent in its container via docker exec."""
+        try:
+            # Get deployment information
+            deployment = self.db.query(AgentDeployment).filter(
+                AgentDeployment.deployment_id == deployment_id
+            ).first()
+            
+            if not deployment:
+                return {"error": "Deployment not found"}
+            
+            if deployment.status != DeploymentStatus.RUNNING.value:
+                return {"error": "Deployment is not running"}
+            
+            # Get agent configuration to determine entry point and class
+            from ..models.agent import Agent
+            agent = self.db.query(Agent).filter(Agent.id == deployment.agent_id).first()
+            if not agent:
+                return {"error": "Agent not found"}
+            
+            # Get agent configuration from config.json file
+            try:
+                agent_config = self._get_agent_config_from_files(deployment.agent_id)
+                entry_point = agent_config.get('entry_point', 'persistent_rag_agent.py')
+                agent_class = agent_config.get('agent_class', 'RAGAgent')
+            except Exception as e:
+                return {"error": f"Failed to get agent configuration: {str(e)}"}
+            
+            # Execute in container
+            container_name = f"{deployment.deployment_type}-user-{deployment.hiring.user_id or 'anon'}-agent-{deployment.agent_id}-hire-{deployment.hiring_id}-{deployment.deployment_id}"
+            exec_input = {
+                "operation": "cleanup",
+                "entry_point": entry_point,
+                "agent_class": agent_class
+            }
+            
+            result = self._execute_in_container(container_name, exec_input)
+            
+            if result.get("status") == "success":
+                return {
+                    "status": "success",
+                    "result": result.get("result", {})
+                }
+            else:
+                return {
+                    "status": "error",
+                    "error": result.get("error", "Cleanup failed")
+                }
+                
+        except Exception as e:
+            logger.error(f"Error cleaning up persistent agent: {e}")
+            return {"error": str(e)}
+
+    def _execute_in_container(self, container_name: str, input_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute a command in a persistent agent container via Docker exec."""
+        try:
+            container = self.docker_client.containers.get(container_name)
+            
+            # Determine operation type
+            operation = input_data.get('operation', 'execute')
+            
+            if operation == 'initialize':
+                # Execute initialization
+                python_script = f"""
+import json
+import sys
+import os
+import tempfile
+import time
+from io import StringIO
+from contextlib import redirect_stdout, redirect_stderr
+
+print("Starting initialization script...", file=sys.stderr)
+sys.path.append('/app')
+
+# Capture both stdout and stderr
+stdout_capture = StringIO()
+stderr_capture = StringIO()
+
+try:
+    print("Importing agent class...", file=sys.stderr)
+    # Import the agent class
+    from {input_data.get('entry_point', 'persistent_rag_agent').replace('.py', '')} import {input_data.get('agent_class', 'RAGAgent')}
+    print("Agent class imported successfully", file=sys.stderr)
+
+    print("Creating agent instance...", file=sys.stderr)
+    # Create agent instance and initialize
+    agent = {input_data.get('agent_class', 'RAGAgent')}()
+    print("Agent instance created", file=sys.stderr)
+    
+    print("Starting agent initialization...", file=sys.stderr)
+    start_time = time.time()
+    with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
+        result = agent.initialize({json.dumps(input_data.get('input', {}))})
+    end_time = time.time()
+    print(f"Agent initialization completed in {{end_time - start_time:.2f}} seconds", file=sys.stderr)
+
+    print("Saving agent state...", file=sys.stderr)
+    # Save state to file (only essential data, not the full agent object)
+    state_data = {{
+        'initialized': True,
+        'config': {input_data.get('input', {})},
+        'agent_state': agent._state if hasattr(agent, '_state') else {{}}
+    }}
+    
+    with open('/app/state/agent_state.json', 'w') as f:
+        json.dump(state_data, f)
+    print("Agent state saved", file=sys.stderr)
+
+    print("Writing result to temp file...", file=sys.stderr)
+    # Write result to temp file
+    with open('/tmp/agent_result.json', 'w') as f:
+        json.dump({{"status": "success", "result": result}}, f)
+    print("Result written to temp file", file=sys.stderr)
+        
+except Exception as e:
+    print(f"Exception during initialization: {{str(e)}}", file=sys.stderr)
+    import traceback
+    traceback.print_exc(file=sys.stderr)
+    # Capture any exceptions in stderr
+    stderr_capture.write(f"Error: {{str(e)}}\\n")
+    # Write error result to temp file
+    with open('/tmp/agent_result.json', 'w') as f:
+        json.dump({{"status": "error", "error": str(e)}}, f)
+
+print("Writing captured output to temp files...", file=sys.stderr)
+# Write captured output to temp files
+with open('/tmp/agent_stdout.txt', 'w') as f:
+    f.write(stdout_capture.getvalue())
+
+with open('/tmp/agent_stderr.txt', 'w') as f:
+    f.write(stderr_capture.getvalue())
+
+print("Initialization script completed", file=sys.stderr)
+"""
+                exec_command = ["python", "-c", python_script]
+                
+            elif operation == 'execute':
+                # Execute the agent
+                python_script = f"""
+import json
+import sys
+import os
+import tempfile
+from io import StringIO
+from contextlib import redirect_stdout, redirect_stderr
+
+sys.path.append('/app')
+
+# Capture both stdout and stderr
+stdout_capture = StringIO()
+stderr_capture = StringIO()
+
+try:
+    # Load state from file
+    try:
+        with open('/app/state/agent_state.json', 'r') as f:
+            state_data = json.load(f)
+    except FileNotFoundError:
+        raise Exception("Agent not initialized. Call initialize first.")
+
+    # Import the agent class
+    from {input_data.get('entry_point', 'persistent_rag_agent').replace('.py', '')} import {input_data.get('agent_class', 'RAGAgent')}
+
+    # Create agent instance and restore state
+    agent = {input_data.get('agent_class', 'RAGAgent')}()
+    agent._initialized = state_data.get('initialized', False)
+    agent._state = state_data.get('agent_state', {{}})
+
+    with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
+        result = agent.execute({json.dumps(input_data.get('input', {}))})
+
+    # Save updated state
+    state_data['agent_state'] = agent._state if hasattr(agent, '_state') else {{}}
+    with open('/app/state/agent_state.json', 'w') as f:
+        json.dump(state_data, f)
+
+    # Write result to temp file
+    with open('/tmp/agent_result.json', 'w') as f:
+        json.dump({{"status": "success", "result": result}}, f)
+        
+except Exception as e:
+    # Capture any exceptions in stderr
+    stderr_capture.write(f"Error: {{str(e)}}\\n")
+    # Write error result to temp file
+    with open('/tmp/agent_result.json', 'w') as f:
+        json.dump({{"status": "error", "error": str(e)}}, f)
+
+# Write captured output to temp files
+with open('/tmp/agent_stdout.txt', 'w') as f:
+    f.write(stdout_capture.getvalue())
+
+with open('/tmp/agent_stderr.txt', 'w') as f:
+    f.write(stderr_capture.getvalue())
+"""
+                exec_command = ["python", "-c", python_script]
+                
+            elif operation == 'cleanup':
+                # Cleanup the agent
+                python_script = f"""
+import json
+import sys
+import os
+import tempfile
+from io import StringIO
+from contextlib import redirect_stdout, redirect_stderr
+
+sys.path.append('/app')
+
+# Capture both stdout and stderr
+stdout_capture = StringIO()
+stderr_capture = StringIO()
+
+try:
+    # Load state from file
+    try:
+        with open('/app/state/agent_state.json', 'r') as f:
+            state_data = json.load(f)
+    except FileNotFoundError:
+        # No state to cleanup
+        result = {{"status": "cleaned_up", "message": "No agent state to cleanup"}}
+    else:
+        # Import the agent class
+        from {input_data.get('entry_point', 'persistent_rag_agent').replace('.py', '')} import {input_data.get('agent_class', 'RAGAgent')}
+
+        # Create agent instance and restore state
+        agent = {input_data.get('agent_class', 'RAGAgent')}()
+        agent._initialized = state_data.get('initialized', False)
+        agent._state = state_data.get('agent_state', {{}})
+
+        with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
+            result = agent.cleanup()
+
+        # Remove state file
+        os.remove('/app/state/agent_state.json')
+
+    # Write result to temp file
+    with open('/tmp/agent_result.json', 'w') as f:
+        json.dump({{"status": "success", "result": result}}, f)
+        
+except Exception as e:
+    # Capture any exceptions in stderr
+    stderr_capture.write(f"Error: {{str(e)}}\\n")
+    # Write error result to temp file
+    with open('/tmp/agent_result.json', 'w') as f:
+        json.dump({{"status": "error", "error": str(e)}}, f)
+
+# Write captured output to temp files
+with open('/tmp/agent_stdout.txt', 'w') as f:
+    f.write(stdout_capture.getvalue())
+
+with open('/tmp/agent_stderr.txt', 'w') as f:
+    f.write(stderr_capture.getvalue())
+"""
+                exec_command = ["python", "-c", python_script]
+            else:
+                return {"status": "error", "error": f"Unknown operation: {operation}"}
+            
+            # Execute command in container
+            exec_result = container.exec_run(exec_command)
+            
+            # Read captured stdout and stderr
+            stdout_result = container.exec_run(cmd=["cat", "/tmp/agent_stdout.txt"])
+            stderr_result = container.exec_run(cmd=["cat", "/tmp/agent_stderr.txt"])
+            
+            # Combine logs
+            stdout_logs = stdout_result.output.decode() if stdout_result.exit_code == 0 else ""
+            stderr_logs = stderr_result.output.decode() if stderr_result.exit_code == 0 else ""
+            
+            # Create combined logs
+            container_logs = ""
+            if stdout_logs:
+                container_logs += f"=== STDOUT ===\n{stdout_logs}\n"
+            if stderr_logs:
+                container_logs += f"=== STDERR ===\n{stderr_logs}\n"
+            if exec_result.output:
+                container_logs += f"=== CONTAINER OUTPUT ===\n{exec_result.output.decode()}\n"
+            
+            if exec_result.exit_code != 0:
+                error_msg = f"Container execution failed (exit code: {exec_result.exit_code}): {exec_result.output.decode()}"
+                logger.error(f"Container execution failed for {container_name}: {error_msg}")
+                logger.error(f"Container logs: {container_logs}")
+                return {
+                    "status": "error",
+                    "error": error_msg,
+                    "container_logs": container_logs
+                }
+            
+            # Read result from temp file
+            read_result = container.exec_run(cmd=["cat", "/tmp/agent_result.json"])
+            if read_result.exit_code != 0:
+                error_msg = f"Failed to read result file (exit code: {read_result.exit_code}): {read_result.output.decode()}"
+                logger.error(f"Failed to read result file from {container_name}: {error_msg}")
+                return {
+                    "status": "error", 
+                    "error": error_msg,
+                    "container_logs": container_logs
+                }
+            
+            result_json = read_result.output.decode().strip()
+            result_data = json.loads(result_json)
+            
+            # Clean up temp files
+            container.exec_run(cmd=["rm", "-f", "/tmp/agent_result.json", "/tmp/agent_stdout.txt", "/tmp/agent_stderr.txt"])
+            
+            return result_data
+                
+        except Exception as e:
+            logger.error(f"Error executing in container: {e}")
+            return {"status": "error", "error": str(e)} 

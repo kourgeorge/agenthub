@@ -45,8 +45,18 @@
     "agent_type": {
       "type": "string",
       "description": "Type of agent",
-      "enum": ["function", "acp_server"],
+      "enum": ["function", "acp", "persistent"],
       "default": "function"
+    },
+    "agent_class": {
+      "type": "string",
+      "description": "Name of the agent class (required for persistent agents)",
+      "maxLength": 100
+    },
+    "requires_initialization": {
+      "type": "boolean",
+      "description": "Whether the agent requires explicit initialization",
+      "default": false
     },
     "config_schema": {
       "type": "object",
@@ -233,9 +243,31 @@
       "examples": ["100MB", "1GB", "512MB"],
       "default": "100MB"
     },
+    "lifecycle": {
+      "type": "object",
+      "description": "Lifecycle configuration for the agent",
+      "properties": {
+        "initialize": {
+          "type": "string",
+          "description": "Function name for initialization (required if requires_initialization is true)"
+        },
+        "execute": {
+          "type": "string",
+          "description": "Function name for execution",
+          "default": "execute"
+        },
+        "cleanup": {
+          "type": "string",
+          "description": "Function name for cleanup (optional)",
+          "default": "cleanup"
+        }
+      },
+      "required": ["execute"],
+      "additionalProperties": false
+    },
     "acp_manifest": {
       "type": "object",
-      "description": "ACP server manifest (required for acp_server agents)",
+      "description": "ACP server manifest (required for acp agents)",
       "properties": {
         "acp_version": {
           "type": "string",
@@ -318,6 +350,26 @@
         "type": "string"
       }
     },
+    "state_storage": {
+      "type": "object",
+      "description": "State storage configuration for persistent agents",
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Type of state storage",
+          "enum": ["file", "database", "memory"]
+        },
+        "path": {
+          "type": "string",
+          "description": "Path for file-based storage"
+        },
+        "persistence": {
+          "type": "boolean",
+          "description": "Whether state should persist across restarts"
+        }
+      },
+      "additionalProperties": false
+    },
     "limitations": {
       "type": "array",
       "description": "List of agent limitations",
@@ -345,10 +397,30 @@
     },
     {
       "if": {
-        "properties": { "agent_type": { "enum": ["acp_server"] } }
+        "properties": { "agent_type": { "enum": ["acp"] } }
       },
       "then": {
         "required": ["acp_manifest"]
+      }
+    },
+    {
+      "if": {
+        "properties": { "agent_type": { "enum": ["persistent"] } }
+      },
+      "then": {
+        "required": ["agent_class"]
+      }
+    },
+    {
+      "if": {
+        "properties": { "requires_initialization": { "const": true } }
+      },
+      "then": {
+        "properties": {
+          "lifecycle": {
+            "required": ["initialize"]
+          }
+        }
       }
     }
   ],

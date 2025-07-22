@@ -23,6 +23,7 @@ class AgentType(str, Enum):
     """Agent type enumeration."""
     FUNCTION = "function"  # Traditional function-based agent
     ACP_SERVER = "acp_server"  # ACP server-based agent
+    PERSISTENT = "persistent"  # Persistent agent with lifecycle management
 
 
 class Agent(Base):

@@ -606,7 +606,7 @@ def main(input_data: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
     try:
         # Extract parameters from input
         topic = input_data.get("topic", "Machine Learning in Healthcare")
-        max_papers_per_source = input_data.get("max_papers_per_source", 10)
+        max_papers_per_source = input_data.get("max_papers_per_source", 2)
         search_depth = input_data.get("search_depth", 2)
         model = input_data.get("model", "gpt-3.5-turbo")
 
@@ -642,12 +642,21 @@ def main(input_data: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
 
 
 if __name__ == "__main__":
-    # Test the agent
-    test_input = {
-        "topic": "Transformer models in natural language processing",
-        "max_papers_per_source": 5,
-        "search_depth": 2
-    }
-    
-    result = main(test_input, {})
-    print(json.dumps(result, indent=2)) 
+    # Only run test if explicitly called as main script
+    # This prevents the agent from running automatically when container starts
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == "--test":
+        # Test the agent
+        test_input = {
+            "topic": "Transformer models in natural language processing",
+            "max_papers_per_source": 5,
+            "search_depth": 2
+        }
+        
+        result = main(test_input, {})
+        print(json.dumps(result, indent=2))
+    else:
+        # Keep the container running
+        import time
+        while True:
+            time.sleep(3600)  # Sleep for 1 hour 

@@ -255,6 +255,17 @@ class AgentService:
                     # Stop the deployment based on agent type
                     if deployment.agent.agent_type == "acp_server":
                         stop_result = deployment_service.stop_deployment(deployment.deployment_id, timeout=60)
+                    elif deployment.agent.agent_type == "persistent":
+                        # For persistent agents, try to cleanup first, then stop
+                        try:
+                            cleanup_result = deployment_service.cleanup_persistent_agent(deployment.deployment_id)
+                            if "error" in cleanup_result:
+                                logger.warning(f"Failed to cleanup persistent agent {deployment.deployment_id}: {cleanup_result['error']}")
+                            else:
+                                logger.info(f"Successfully cleaned up persistent agent {deployment.deployment_id}")
+                        except Exception as e:
+                            logger.warning(f"Error during persistent agent cleanup: {e}")
+                        stop_result = deployment_service.stop_deployment(deployment.deployment_id, timeout=60)
                     else:
                         stop_result = function_deployment_service.stop_function_deployment(deployment.deployment_id)
                     

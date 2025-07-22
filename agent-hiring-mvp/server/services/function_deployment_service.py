@@ -581,6 +581,37 @@ with open('/tmp/agent_stderr.txt', 'w') as f:
         logger.info(f"Function container {container_name} started with ID {container.id}")
         return container
     
+    def _recreate_function_container(self, deployment: AgentDeployment):
+        """Recreate a function container that was lost."""
+        try:
+            # Get the image name from the deployment
+            user_id = deployment.hiring.user_id or "anon"
+            image_name = f"func-user-{user_id}-agent-{deployment.agent_id}-hire-{deployment.hiring_id}-{deployment.deployment_id}"
+            
+            # Container configuration for function agents
+            container_name = f"func-user-{user_id}-agent-{deployment.agent_id}-hire-{deployment.hiring_id}-{deployment.deployment_id}"
+            
+            logger.info(f"Recreating function container {container_name}")
+            
+            container_config = {
+                "image": image_name,
+                "name": container_name,
+                "environment": deployment.environment_vars,
+                "detach": True,
+                "restart_policy": {"Name": "unless-stopped"},
+                "working_dir": "/app"
+            }
+            
+            # Create and start container
+            container = self.docker_client.containers.run(**container_config)
+            
+            logger.info(f"Function container {container_name} recreated with ID {container.id}")
+            return container
+            
+        except Exception as e:
+            logger.error(f"Failed to recreate function container: {e}")
+            raise
+
     def _generate_function_dockerfile(self) -> str:
         """Generate Dockerfile for function agents."""
         return """FROM python:3.11-slim

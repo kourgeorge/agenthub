@@ -2,6 +2,7 @@
 
 import logging
 import uuid
+import json
 from datetime import datetime
 from typing import Dict, Any, Optional, List
 
@@ -14,6 +15,7 @@ from ..models.hiring import Hiring
 from ..models.agent_file import AgentFile
 from ..database.config import get_session
 from .agent_runtime import AgentRuntimeService, RuntimeStatus, RuntimeResult
+from .persistent_agent_runtime import PersistentAgentRuntimeService
 from .resource_manager import ResourceManager
 
 logger = logging.getLogger(__name__)
@@ -24,6 +26,7 @@ class ExecutionCreateRequest(BaseModel):
     hiring_id: int  # Now required
     user_id: Optional[int] = None
     input_data: Optional[Dict[str, Any]] = None
+    execution_type: str = "run"  # "initialize" or "run"
 
 
 class ExecutionService:
@@ -37,6 +40,9 @@ class ExecutionService:
         
         # Initialize resource manager for usage tracking
         self.resource_manager = ResourceManager(self.db)
+        
+        # Initialize persistent agent runtime
+        self.persistent_runtime = PersistentAgentRuntimeService()
     
     def create_execution(self, execution_data: ExecutionCreateRequest) -> Execution:
         """Create a new execution record."""
@@ -63,6 +69,7 @@ class ExecutionService:
             hiring_id=execution_data.hiring_id,
             user_id=execution_data.user_id,
             status=ExecutionStatus.PENDING.value,
+            execution_type=execution_data.execution_type,
             input_data=execution_data.input_data or {},
             execution_id=execution_id,
         )
@@ -139,7 +146,7 @@ class ExecutionService:
         )
     
     async def execute_agent(self, execution_id: str) -> Dict[str, Any]:
-        """Execute an agent using the real runtime service."""
+        """Execute an agent using the unified runtime service."""
         execution = self.get_execution(execution_id)
         if not execution:
             return {"status": "error", "message": "Execution not found"}
@@ -156,14 +163,50 @@ class ExecutionService:
             if not agent:
                 raise Exception("Agent not found")
             
-            # Check agent type and handle accordingly
+            # Get agent configuration
+            agent_config = self._get_agent_config(agent)
+            requires_initialization = agent_config.get('requires_initialization', False)
+            
+            # Check agent type and execute accordingly
             agent_type = getattr(agent, 'agent_type', 'function')
             
             if agent_type == 'acp_server':
                 # Handle ACP server agents
                 runtime_result = self._execute_acp_server_agent(agent, execution.input_data or {}, execution_id)
+            elif agent_type == 'persistent':
+                # Handle persistent agents
+                # Check if agent has a Docker deployment for this hiring
+                deployment = self._get_active_deployment_for_hiring(execution.hiring_id)
+                if deployment:
+                    # Use Docker-based persistent agent
+                    from .deployment_service import DeploymentService
+                    deployment_service = DeploymentService(self.db)
+                    result = deployment_service.execute_persistent_agent(deployment.deployment_id, execution.input_data or {})
+                    
+                    if result.get("status") == "success":
+                        runtime_result = RuntimeResult(
+                            status=RuntimeStatus.COMPLETED,
+                            output=result.get("result", {})
+                        )
+                    else:
+                        runtime_result = RuntimeResult(
+                            status=RuntimeStatus.FAILED,
+                            error=result.get("error", "Execution failed")
+                        )
+                else:
+                    # Use in-process persistent agent (fallback)
+                    agent_files = self._get_agent_files(agent.id)
+                    if not agent_files:
+                        raise Exception("Agent files not found")
+                    
+                    runtime_result = self.persistent_runtime.execute_agent(
+                        agent_id=agent.id,
+                        input_data=execution.input_data or {},
+                        agent_files=agent_files,
+                        entry_point=agent.entry_point
+                    )
             else:
-                # Handle function-based agents with Docker deployment
+                # Handle function agents (implicit initialization)
                 runtime_result = self._execute_function_agent(agent, execution.input_data or {}, execution_id)
             
             # End resource tracking and get usage summary
@@ -410,6 +453,8 @@ class ExecutionService:
                 error=f"ACP execution error: {str(e)}",
                 execution_time=time.time() - start_time
             )
+
+
     
     def get_execution_stats(self, agent_id: Optional[int] = None, user_id: Optional[int] = None) -> Dict[str, Any]:
         """Get execution statistics."""
@@ -430,4 +475,279 @@ class ExecutionService:
             "completed_executions": completed_executions,
             "failed_executions": failed_executions,
             "success_rate": (completed_executions / total_executions * 100) if total_executions > 0 else 0,
-        } 
+        }
+    
+    # =============================================================================
+    # PERSISTENT AGENT METHODS
+    # =============================================================================
+    
+    def initialize_persistent_agent(self, agent_id: int, init_config: Dict[str, Any], hiring_id: Optional[int] = None) -> Dict[str, Any]:
+        """Initialize a persistent agent."""
+        try:
+            # Get agent details
+            agent = self.db.query(Agent).filter(Agent.id == agent_id).first()
+            if not agent:
+                return {"error": "Agent not found"}
+            
+            # Check if agent has a Docker deployment
+            deployment = self._get_active_deployment_for_agent(agent_id)
+            if deployment:
+                # Use Docker-based persistent agent
+                from .deployment_service import DeploymentService
+                deployment_service = DeploymentService(self.db)
+                return deployment_service.initialize_persistent_agent(deployment.deployment_id, init_config)
+            else:
+                # Use in-process persistent agent
+                agent_files = self._get_agent_files(agent_id)
+                if not agent_files:
+                    return {"error": "Agent files not found"}
+                
+                # Initialize the agent
+                result = self.persistent_runtime.initialize_agent(
+                    agent_id=agent_id,
+                    init_config=init_config,
+                    agent_files=agent_files,
+                    entry_point=agent.entry_point,
+                    hiring_id=hiring_id
+                )
+                
+                if result.status == RuntimeStatus.COMPLETED:
+                    return {
+                        "status": "success",
+                        "message": f"Agent {agent_id} initialized successfully",
+                        "result": result.output if result.output else {}
+                    }
+                else:
+                    return {
+                        "status": "error",
+                        "error": result.error or "Initialization failed"
+                    }
+                
+        except Exception as e:
+            logger.error(f"Error initializing persistent agent {agent_id}: {e}")
+            return {"error": str(e)}
+
+    async def execute_initialization(self, execution_id: str) -> Dict[str, Any]:
+        """Execute an initialization execution."""
+        execution = self.get_execution(execution_id)
+        if not execution:
+            return {"status": "error", "message": "Execution not found"}
+        
+        if execution.execution_type != "initialize":
+            return {"status": "error", "message": "Execution is not an initialization execution"}
+        
+        # Start resource tracking for this execution
+        await self.resource_manager.start_execution(execution_id, execution.user_id or 1)
+        
+        # Update status to running
+        self.update_execution_status(execution_id, ExecutionStatus.RUNNING)
+        
+        try:
+            # Get agent details
+            agent = self.db.query(Agent).filter(Agent.id == execution.agent_id).first()
+            if not agent:
+                raise Exception("Agent not found")
+            
+            # Check if agent has a Docker deployment for this hiring
+            deployment = self._get_active_deployment_for_hiring(execution.hiring_id)
+            if deployment:
+                # Use Docker-based persistent agent
+                from .deployment_service import DeploymentService
+                deployment_service = DeploymentService(self.db)
+                result = deployment_service.initialize_persistent_agent(deployment.deployment_id, execution.input_data or {})
+            else:
+                # Use in-process persistent agent
+                result = self.initialize_persistent_agent(
+                    agent_id=agent.id,
+                    init_config=execution.input_data or {},
+                    hiring_id=execution.hiring_id
+                )
+            
+            # End resource tracking and get usage summary
+            usage_summary = await self.resource_manager.end_execution(execution_id, "completed")
+            
+            if result.get('status') == 'success':
+                self.update_execution_status(execution_id, ExecutionStatus.COMPLETED, result.get('result', {}))
+                return {
+                    "status": "success",
+                    "execution_id": execution_id,
+                    "result": result.get('result', {}),
+                    "message": result.get('message', 'Initialization completed successfully'),
+                    "usage_summary": usage_summary
+                }
+            else:
+                await self.resource_manager.end_execution(execution_id, "failed")
+                error_msg = result.get('error', 'Initialization failed')
+                self.update_execution_status(execution_id, ExecutionStatus.FAILED, error_message=error_msg)
+                return {
+                    "status": "error",
+                    "execution_id": execution_id,
+                    "error": error_msg
+                }
+        
+        except Exception as e:
+            # End resource tracking on error
+            await self.resource_manager.end_execution(execution_id, "failed")
+            error_msg = f"Initialization failed: {str(e)}"
+            self.update_execution_status(execution_id, ExecutionStatus.FAILED, error_message=error_msg)
+            return {
+                "status": "error",
+                "execution_id": execution_id,
+                "error": error_msg
+            }
+    
+    def execute_persistent_agent(self, agent_id: int, input_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute a persistent agent."""
+        try:
+            # Get agent details
+            agent = self.db.query(Agent).filter(Agent.id == agent_id).first()
+            if not agent:
+                return {"error": "Agent not found"}
+            
+            # Check if agent is persistent
+            if agent.agent_type != "persistent":
+                return {"error": "Agent is not a persistent agent"}
+            
+            # Use in-process persistent agent (no Docker deployment needed)
+            agent_files = self._get_agent_files(agent_id)
+            if not agent_files:
+                return {"error": "Agent files not found"}
+            
+            # Execute the agent
+            result = self.persistent_runtime.execute_agent(
+                agent_id=agent_id,
+                input_data=input_data,
+                agent_files=agent_files,
+                entry_point=agent.entry_point
+            )
+            
+            if result.status == RuntimeStatus.COMPLETED:
+                return {
+                    "status": "success",
+                    "result": result.output if result.output else {}
+                }
+            else:
+                return {
+                    "status": "error",
+                    "error": result.error or "Execution failed"
+                }
+                
+        except Exception as e:
+            logger.error(f"Error executing persistent agent {agent_id}: {e}")
+            return {"error": str(e)}
+    
+    def cleanup_persistent_agent(self, agent_id: int) -> Dict[str, Any]:
+        """Clean up a persistent agent."""
+        try:
+            # Get agent details
+            agent = self.db.query(Agent).filter(Agent.id == agent_id).first()
+            if not agent:
+                return {"error": "Agent not found"}
+            
+            # Check if agent has a Docker deployment
+            deployment = self._get_active_deployment_for_agent(agent_id)
+            if deployment:
+                # Use Docker-based persistent agent
+                from .deployment_service import DeploymentService
+                deployment_service = DeploymentService(self.db)
+                return deployment_service.cleanup_persistent_agent(deployment.deployment_id)
+            else:
+                # Use in-process persistent agent (fallback)
+                agent_files = self._get_agent_files(agent_id)
+                if not agent_files:
+                    return {"error": "Agent files not found"}
+                
+                # Clean up the agent
+                result = self.persistent_runtime.cleanup_agent(
+                    agent_id=agent_id,
+                    agent_files=agent_files,
+                    entry_point=agent.entry_point
+                )
+                    
+                if result.status == RuntimeStatus.COMPLETED:
+                    return {
+                        "status": "success",
+                        "message": f"Agent {agent_id} cleaned up successfully",
+                        "result": result.output if result.output else {}
+                    }
+                else:
+                    return {
+                        "status": "error",
+                        "error": result.error or "Cleanup failed"
+                    }
+                
+        except Exception as e:
+            logger.error(f"Error cleaning up persistent agent {agent_id}: {e}")
+            return {"error": str(e)}
+    
+    def get_persistent_agent_status(self, agent_id: int) -> Dict[str, Any]:
+        """Get the status of a persistent agent."""
+        try:
+            status = self.persistent_runtime.get_agent_status(agent_id)
+            if status:
+                return {"status": "success", "data": status}
+            else:
+                return {"status": "not_found", "message": f"Agent {agent_id} not found"}
+        except Exception as e:
+            logger.error(f"Error getting persistent agent status {agent_id}: {e}")
+            return {"error": str(e)}
+    
+    def list_persistent_agents(self) -> Dict[str, Any]:
+        """List all persistent agents."""
+        try:
+            agents = self.persistent_runtime.list_agents()
+            return {"status": "success", "data": agents}
+        except Exception as e:
+            logger.error(f"Error listing persistent agents: {e}")
+            return {"error": str(e)}
+    
+    def _get_agent_config(self, agent: Agent) -> Dict[str, Any]:
+        """Get agent configuration from agent files."""
+        try:
+            logger.info(f"Getting agent config for agent {agent.id}")
+            agent_files = self._get_agent_files(agent.id)
+            logger.info(f"Found {len(agent_files) if agent_files else 0} agent files")
+            
+            if not agent_files:
+                logger.warning(f"No agent files found for agent {agent.id}")
+                return {}
+                
+            for file_data in agent_files:
+                logger.info(f"Checking file: {file_data.get('file_path')}")
+                if file_data.get('file_path') == 'config.json':
+                    logger.info(f"Found config.json, content length: {len(file_data.get('file_content', ''))}")
+                    return json.loads(file_data['file_content'])
+                    
+            logger.warning(f"No config.json found in agent files for agent {agent.id}")
+            return {}
+        except Exception as e:
+            logger.error(f"Error getting agent config for agent {agent.id}: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return {}
+    
+    def _get_active_deployment_for_agent(self, agent_id: int):
+        """Get active deployment for an agent."""
+        try:
+            from ..models.deployment import AgentDeployment, DeploymentStatus
+            deployment = self.db.query(AgentDeployment).filter(
+                AgentDeployment.agent_id == agent_id,
+                AgentDeployment.status == DeploymentStatus.RUNNING.value
+            ).first()
+            return deployment
+        except Exception as e:
+            logger.error(f"Error getting deployment for agent {agent_id}: {e}")
+            return None
+    
+    def _get_active_deployment_for_hiring(self, hiring_id: int):
+        """Get active deployment for a hiring."""
+        try:
+            from ..models.deployment import AgentDeployment, DeploymentStatus
+            deployment = self.db.query(AgentDeployment).filter(
+                AgentDeployment.hiring_id == hiring_id,
+                AgentDeployment.status == DeploymentStatus.RUNNING.value
+            ).first()
+            return deployment
+        except Exception as e:
+            logger.error(f"Error getting deployment for hiring {hiring_id}: {e}")
+            return None 
