@@ -18,13 +18,13 @@ from click import echo, style
 
 try:
     # Try relative imports first (when installed as package)
-    from .agent import Agent, AgentConfig, SimpleAgent, DataProcessingAgent, ChatAgent
+    from .agent import Agent, AgentConfig, validate_agent_config
     from .client import AgentHubClient
     from .config_validator import AgentConfigValidator
 except ImportError:
     # Fall back to absolute imports (when run as script)
     sys.path.insert(0, str(Path(__file__).parent))
-    from agent import Agent, AgentConfig, SimpleAgent, DataProcessingAgent, ChatAgent
+    from agent import Agent, AgentConfig, validate_agent_config
     from client import AgentHubClient
     from config_validator import AgentConfigValidator
 
@@ -68,13 +68,13 @@ def show_next_steps(command: str, **kwargs):
     elif command == "hire agent":
         hiring_id = kwargs.get('hiring_id')
         if hiring_id:
-            echo(f"  (use 'agenthub execute hiring {hiring_id} --input '{{\"data\": \"your input\"}}' to execute your hired agent)")
+            echo(f"  (use 'agenthub execute hiring {hiring_id} --input '{{\\\"data\\\": \\\"your input\\\"}}' to execute your hired agent)")
+            echo(f"  (use 'agenthub hired initialize {hiring_id} --config '{{\\\"config\\\": \\\"data\\\"}}' to initialize agents)")
             echo(f"  (use 'agenthub hired info {hiring_id}' to view hiring details)")
-            echo(f"  (use 'agenthub hired suspend {hiring_id}' to suspend the hiring)")
         else:
-            echo("  (use 'agenthub execute hiring <hiring_id> --input '{\"data\": \"your input\"}' to execute your hired agent)")
+            echo("  (use 'agenthub execute hiring <hiring_id> --input '{\\\"data\\\": \\\"your input\\\"}' to execute your hired agent)")
+            echo("  (use 'agenthub hired initialize <hiring_id> --config '{\\\"config\\\": \\\"data\\\"}' to initialize agents)")
             echo("  (use 'agenthub hired list' to see all your hirings)")
-            echo("  (use 'agenthub hired suspend <hiring_id>' to suspend a hiring)")
             
     elif command == "deploy create":
         deployment_id = kwargs.get('deployment_id')
@@ -97,15 +97,15 @@ def show_next_steps(command: str, **kwargs):
         else:
             echo("  (use 'agenthub deploy restart <deployment_id>' to restart if needed)")
             echo("  (use 'agenthub deploy list' to see all your deployments)")
-            
+        
     elif command == "agent list":
         echo("  (use 'agenthub agent info <agent_id>' to get detailed information)")
         echo("  (use 'agenthub agent approve <agent_id>' to approve an agent)")
         echo("  (use 'agenthub hire agent <agent_id>' to hire an approved agent)")
         
     elif command == "hired list":
-        echo("  (use 'agenthub deploy create <hiring_id>' to deploy a hired agent)")
         echo("  (use 'agenthub hired info <hiring_id>' to view hiring details)")
+        echo("  (use 'agenthub execute hiring <hiring_id> --input '{\\\"data\\\": \\\"your input\\\"}' to execute your hired agent)")
         echo("  (use 'agenthub hired cancel <hiring_id>' to cancel a hiring)")
         
     elif command == "deploy list":
@@ -180,7 +180,7 @@ def agent():
 @agent.command()
 @click.argument('name')
 @click.option('--type', '-t', 'agent_type', 
-              type=click.Choice(['simple', 'data', 'chat', 'acp_server']), 
+              type=click.Choice(['simple', 'data', 'chat', 'acp_server', 'persistent', 'function']), 
               default='simple', 
               help='Type of agent to create')
 @click.option('--author', '-a', help='Agent author name')
@@ -219,27 +219,32 @@ def init(ctx, name, agent_type, author, email, description, category, pricing, p
     
     target_dir.mkdir(parents=True, exist_ok=True)
     
-    # Create agent configuration
-    config = AgentConfig(
-        name=name,
-        description=description,
-        author=author,
-        email=email,
-        entry_point=f"{name.lower().replace(' ', '_').replace('-', '_')}.py",
-        category=category,
-        pricing_model=pricing,
-        tags=tags.split(',') if tags else [],
-    )
+    # Create agent configuration data
+    config_data = {
+        "name": name,
+        "description": description,
+        "author": author,
+        "email": email,
+        "version": "1.0.0",
+        "entry_point": f"{name.lower().replace(' ', '_').replace('-', '_')}.py",
+        "agent_type": "function",
+        "category": category,
+        "pricing_model": pricing,
+        "tags": tags.split(',') if tags else [],
+        "requirements": [],
+        "capabilities": [],
+        "config_schema": {}
+    }
     
     if price is not None:
         if pricing == 'per_use':
-            config.price_per_use = price
+            config_data["price_per_use"] = price
         elif pricing == 'monthly':
-            config.monthly_price = price
+            config_data["subscription_price"] = price
     
     # Generate agent files
     try:
-        _create_agent_files(target_dir, config, agent_type, verbose)
+        _create_agent_files(target_dir, config_data, agent_type, verbose)
         echo(style(f"✓ Agent '{name}' initialized successfully!", fg='green'))
         echo(f"  Location: {target_dir}")
         echo(f"  Type: {agent_type}")
@@ -323,21 +328,21 @@ def validate(ctx, directory):
         if verbose:
             echo(style("Step 4: Creating AgentConfig object...", fg='cyan'))
         
-        config = AgentConfig(**config_data)
+        config = AgentConfig(str(config_file))
         
         if verbose:
-            echo(style("  ✅ PASSED: AgentConfig object created", fg='green'))
-            echo(f"    Name: {config.name}")
-            echo(f"    Version: {config.version}")
-            echo(f"    Author: {config.author}")
-            echo(f"    Entry point: {config.entry_point}")
-            echo(f"    Agent type: {config.agent_type}")
+            echo(style("  ✅ PASSED: Configuration loaded", fg='green'))
+            echo(f"    Name: {config.get('name', 'Unknown')}")
+            echo(f"    Version: {config.get('version', 'Unknown')}")
+            echo(f"    Author: {config.get('author', 'Unknown')}")
+            echo(f"    Entry point: {config.get('entry_point', 'agent.py')}")
+            echo(f"    Agent type: {config.get('agent_type', 'Unknown')}")
         
         # Step 5: Static Code Validation (Business Logic)
         if verbose:
             echo(style("Step 5: Business logic validation...", fg='cyan'))
         
-        static_errors = config.validate()
+        static_errors = validate_agent_config(config_data)
         
         if static_errors:
             if verbose:
@@ -361,15 +366,15 @@ def validate(ctx, directory):
         if verbose:
             echo(style("Step 6: Checking entry point file...", fg='cyan'))
         
-        entry_point = agent_dir / config.entry_point
+        entry_point = agent_dir / config.get('entry_point', 'agent.py')
         if not entry_point.exists():
             if verbose:
-                echo(style(f"  ❌ FAILED: Entry point file not found: {config.entry_point}", fg='red'))
-            echo(style(f"✗ Entry point file not found: {config.entry_point}", fg='red'))
+                echo(style(f"  ❌ FAILED: Entry point file not found: {config.get('entry_point', 'agent.py')}", fg='red'))
+            echo(style(f"✗ Entry point file not found: {config.get('entry_point', 'agent.py')}", fg='red'))
             sys.exit(1)
         
         if verbose:
-            echo(style(f"  ✅ PASSED: Entry point file found: {config.entry_point}", fg='green'))
+            echo(style(f"  ✅ PASSED: Entry point file found: {config.get('entry_point', 'agent.py')}", fg='green'))
         
         # Step 7: Validate main function (static analysis)
         if verbose:
@@ -435,13 +440,13 @@ def validate(ctx, directory):
                 echo(style("  ⚠ WARNING: .gitignore not found", fg='yellow'))
         
         # Step 10: Validate config_schema parameters (if present)
-        if config.config_schema and verbose:
+        if config.get('config_schema') and verbose:
             echo(style("Step 10: Validating config_schema parameters...", fg='cyan'))
             
-            param_count = len(config.config_schema)
+            param_count = len(config.get('config_schema', {}))
             echo(f"    Parameters found: {param_count}")
             
-            for param_name, param_config in config.config_schema.items():
+            for param_name, param_config in config.get('config_schema', {}).items():
                 param_type = param_config.get('type', 'unknown')
                 required = param_config.get('required', False)
                 has_default = 'default' in param_config
@@ -563,8 +568,9 @@ def publish(ctx, directory, api_key, base_url, dry_run):
         with open(config_file, 'r') as f:
             config_data = json.load(f)
         
-        config = AgentConfig(**config_data)
-        errors = config.validate()
+        # Create AgentConfig with the config file path
+        config = AgentConfig(str(config_file))
+        errors = validate_agent_config(config_data)
         
         if errors:
             echo(style("✗ Configuration validation failed:", fg='red'))
@@ -573,7 +579,7 @@ def publish(ctx, directory, api_key, base_url, dry_run):
             sys.exit(1)
         
         # Validate main function
-        main_errors = _validate_main_function(agent_dir, config)
+        main_errors = _validate_main_function(agent_dir, config_data)
         if main_errors:
             echo(style("✗ Main function validation failed:", fg='red'))
             for error in main_errors:
@@ -601,8 +607,8 @@ def publish(ctx, directory, api_key, base_url, dry_run):
                 echo(style(f"⚠ Warning: Could not read requirements.txt: {e}", fg='yellow'))
         
         # Merge config requirements with local requirements
-        all_requirements = list(set(config.requirements + local_requirements))
-        config.requirements = all_requirements
+        all_requirements = list(set(config_data.get('requirements', []) + local_requirements))
+        config_data['requirements'] = all_requirements
         
         if verbose and all_requirements:
             echo(f"  Total requirements to publish: {', '.join(all_requirements)}")
@@ -610,7 +616,7 @@ def publish(ctx, directory, api_key, base_url, dry_run):
             echo(f"  📦 Publishing with {len(all_requirements)} requirements")
         
         # Create temporary agent instance for publishing
-        agent = _create_agent_instance(config)
+        agent = _create_agent_instance(config_data)
         
         # Publish the agent
         echo(style("📤 Publishing agent...", fg='blue'))
@@ -881,7 +887,7 @@ def reject(ctx, agent_id, reason, base_url):
 
 
 @agent.command()
-@click.argument('template_type', type=click.Choice(['simple', 'data', 'chat', 'acp_server', 'acp_template']))
+@click.argument('template_type', type=click.Choice(['simple', 'data', 'chat', 'acp_server', 'acp_template', 'persistent', 'function']))
 @click.argument('target_directory', required=False)
 @click.pass_context
 def template(ctx, template_type, target_directory):
@@ -981,6 +987,9 @@ def deploy():
     pass
 
 
+
+
+
 @marketplace.command()
 @click.option('--query', '-q', help='Search query')
 @click.option('--category', '-c', help='Filter by category')
@@ -1069,12 +1078,12 @@ def categories(ctx, base_url):
 @click.option('--config', '-c', help='JSON configuration for the agent')
 @click.option('--billing-cycle', '-b', help='Billing cycle (per_use, monthly)')
 @click.option('--user-id', '-u', type=int, help='User ID (for multi-user scenarios)')
-@click.option('--wait', '-w', is_flag=True, help='Wait for deployment completion (for ACP agents)')
+@click.option('--wait', '-w', is_flag=True, help='Wait for deployment completion')
 @click.option('--timeout', '-t', default=300, help='Timeout in seconds when waiting for deployment')
 @click.option('--base-url', help='Base URL of the AgentHub server')
 @click.pass_context
 def hire_agent_cmd(ctx, agent_id, config, billing_cycle, user_id, wait, timeout, base_url):
-    """Hire an agent by ID. Automatically handles deployment for ACP server agents.
+    """Hire an agent by ID. Automatically deploys the agent in a Docker container.
     
     For ACP server agents, use --wait to wait for deployment completion before returning.
     This ensures the agent is ready for immediate execution.
@@ -1100,11 +1109,17 @@ def hire_agent_cmd(ctx, agent_id, config, billing_cycle, user_id, wait, timeout,
                     user_id=user_id
                 )
                 
-                # If waiting for deployment completion and it's an ACP agent
-                if wait and result.get('agent_type') == 'acp_server':
+                # If waiting for deployment completion and it's an agent that requires deployment
+                if wait and result.get('agent_type') in ['acp_server', 'persistent', 'function']:
                     hiring_id = result.get('hiring_id')
                     if hiring_id:
-                        echo(style("  🐳 ACP Server Agent - Waiting for deployment completion...", fg='cyan'))
+                        agent_type = result.get('agent_type')
+                        if agent_type == 'acp_server':
+                            echo(style("  🐳 ACP Server Agent - Waiting for deployment completion...", fg='cyan'))
+                        elif agent_type == 'persistent':
+                            echo(style("  🔄 Persistent Agent - Waiting for deployment completion...", fg='cyan'))
+                        elif agent_type == 'function':
+                            echo(style("  ⚡ Function Agent - Waiting for deployment completion...", fg='cyan'))
                         echo(style("  ⏳ Container deployment is in progress...", fg='yellow'))
                         
                         # Poll deployment status until ready
@@ -1157,7 +1172,7 @@ def hire_agent_cmd(ctx, agent_id, config, billing_cycle, user_id, wait, timeout,
                     echo(style("  💡 Your ACP agent is now accessible at the endpoint above", fg='green'))
         elif agent_type == 'function':
             echo(style("  ⚡ Function Agent - Docker container being prepared", fg='cyan'))
-            echo(style("  🐳 Container will be ready for persistent execution", fg='blue'))
+    
             echo(style("  💡 Requirements installed once, reused for all executions", fg='green'))
             
             # Check if there's deployment info for function agents
@@ -1228,13 +1243,13 @@ def execute_hiring_cmd(ctx, hiring_id, input, config, user_id, wait, timeout, ba
         echo(f"  Execution ID: {result.get('execution_id')}")
         echo(f"  Status: {result.get('status')}")
         
-        # Display results - check both possible locations
+        # Display results - check multiple possible locations
         output_data = result.get('output_data')
         if output_data:
             echo("\n📊 Result:")
             if isinstance(output_data, dict):
                 if 'output' in output_data:
-                    echo(output_data['output'])
+                    echo(json.dumps(output_data['output'], indent=2))
                 else:
                     echo(json.dumps(output_data, indent=2))
             else:
@@ -1242,6 +1257,9 @@ def execute_hiring_cmd(ctx, hiring_id, input, config, user_id, wait, timeout, ba
         elif result.get('result'):
             echo("\n📊 Result:")
             echo(json.dumps(result['result'], indent=2))
+        elif result.get('output'):
+            echo("\n📊 Result:")
+            echo(json.dumps(result['output'], indent=2))
         
         if verbose:
             echo("\nFull response:")
@@ -1464,6 +1482,28 @@ def info_hired(ctx, hiring_id, base_url):
         if details.get('expires_at'):
             echo(f"   Expires At: {details['expires_at']}")
         
+        # Display deployment information if available
+        deployment = details.get('deployment')
+        if deployment:
+            echo(style(f"\n🐳 Deployment Information", fg='cyan', bold=True))
+            echo(f"   Deployment ID: {deployment['deployment_id']}")
+            echo(f"   Status: {style(deployment['status'], fg='green' if deployment['status'] == 'running' else 'yellow')}")
+            echo(f"   Type: {deployment['deployment_type']}")
+            if deployment.get('container_name'):
+                echo(f"   Container: {deployment['container_name']}")
+            if deployment.get('container_id'):
+                echo(f"   Container ID: {deployment['container_id'][:12]}...")
+            if deployment.get('started_at'):
+                echo(f"   Started: {deployment['started_at']}")
+            if deployment.get('external_port'):
+                echo(f"   External Port: {deployment['external_port']}")
+            if deployment.get('is_healthy') is not None:
+                health_status = "✅ Healthy" if deployment['is_healthy'] else "❌ Unhealthy"
+                echo(f"   Health: {health_status}")
+        else:
+            echo(style(f"\n⚠️  No deployment found", fg='yellow'))
+            echo("   This hiring doesn't have an associated deployment yet.")
+        
         # Display API endpoints if available
         api_endpoints = details.get('api_endpoints', {})
         if api_endpoints:
@@ -1641,6 +1681,52 @@ def activate_hired(ctx, hiring_id, notes, base_url):
             
     except Exception as e:
         echo(style(f"✗ Error activating hiring: {e}", fg='red'))
+        sys.exit(1)
+
+
+@hired.command(name='initialize')
+@click.argument('hiring_id', type=int)
+@click.option('--config', '-c', required=True, help='JSON configuration for initialization')
+@click.option('--base-url', help='Base URL of the AgentHub server')
+@click.pass_context
+def initialize_hired(ctx, hiring_id, config, base_url):
+    """Initialize a hired agent (for agents that require initialization)."""
+    verbose = ctx.obj.get('verbose', False)
+    
+    base_url = base_url or cli_config.get('base_url', 'http://localhost:8002')
+    
+    try:
+        # Parse config JSON
+        try:
+            config_data = json.loads(config)
+        except json.JSONDecodeError as e:
+            echo(style(f"✗ Invalid JSON in config: {e}", fg='red'))
+            sys.exit(1)
+        
+        echo(style(f"🔧 Initializing hired agent (hiring ID: {hiring_id})...", fg='blue'))
+        if verbose:
+            echo(f"Config: {json.dumps(config_data, indent=2)}")
+        
+        async def initialize_agent():
+            async with AgentHubClient(base_url) as client:
+                # Initialize the hired agent
+                result = await client.initialize_hired_agent(hiring_id, config_data)
+                return result
+        
+        result = asyncio.run(initialize_agent())
+        
+        if result.get('status') == 'success':
+            echo(style("✅ Agent initialized successfully!", fg='green'))
+            if verbose:
+                echo(f"Result: {json.dumps(result.get('result', {}), indent=2)}")
+            
+            show_next_steps("hiring initialize", hiring_id=hiring_id)
+        else:
+            echo(style(f"✗ Failed to initialize agent: {result.get('error', 'Unknown error')}", fg='red'))
+            sys.exit(1)
+            
+    except Exception as e:
+        echo(style(f"✗ Error initializing agent: {e}", fg='red'))
         sys.exit(1)
 
 
@@ -2162,12 +2248,19 @@ def restart(ctx, deployment_id, base_url):
         sys.exit(1)
 
 
-def _create_agent_files(target_dir: Path, config: AgentConfig, agent_type: str, verbose: bool):
+# =============================================================================
+# PERSISTENT AGENT COMMANDS
+# =============================================================================
+
+
+
+
+def _create_agent_files(target_dir: Path, config_data: Dict[str, Any], agent_type: str, verbose: bool):
     """Create agent files in the target directory."""
     
     # For ACP server agents, modify the config to include ACP manifest
     if agent_type == 'acp_server':
-        config_dict = config.to_dict()
+        config_dict = config_data.copy()
         config_dict['agent_type'] = 'acp_server'
         config_dict['acp_manifest'] = {
             "acp_version": "1.0.0",
@@ -2199,7 +2292,7 @@ def _create_agent_files(target_dir: Path, config: AgentConfig, agent_type: str, 
             }
         }
     else:
-        config_dict = config.to_dict()
+        config_dict = config_data.copy()
     
     # Create config.json
     config_file = target_dir / "config.json"
@@ -2207,29 +2300,30 @@ def _create_agent_files(target_dir: Path, config: AgentConfig, agent_type: str, 
         json.dump(config_dict, f, indent=2)
     
     # Create main agent file
-    agent_code = _generate_agent_code(config, agent_type)
-    agent_file = target_dir / config.entry_point
+    agent_code = _generate_agent_code(config_dict, agent_type)
+    agent_file = target_dir / config_dict.get('entry_point', 'agent.py')
     with open(agent_file, 'w') as f:
         f.write(agent_code)
     
     # Create requirements.txt
     requirements_file = target_dir / "requirements.txt"
     with open(requirements_file, 'w') as f:
+        requirements = config_dict.get('requirements', [])
         if agent_type == 'acp_server':
             # Add ACP server requirements
             f.write("aiohttp>=3.8.0,<4.0.0\n")
             f.write("aiohttp-cors>=0.7.0,<1.0.0\n")
-            if config.requirements:
-                f.write('\n'.join(config.requirements))
-        elif config.requirements:
-            f.write('\n'.join(config.requirements))
+            if requirements:
+                f.write('\n'.join(requirements))
+        elif requirements:
+            f.write('\n'.join(requirements))
         else:
             f.write("# Add your agent dependencies here\n")
     
     # Create README.md
     readme_file = target_dir / "README.md"
     with open(readme_file, 'w') as f:
-        f.write(_generate_readme(config, agent_type))
+        f.write(_generate_readme(config_dict, agent_type))
     
     # Create .gitignore
     gitignore_file = target_dir / ".gitignore"
@@ -2252,7 +2346,7 @@ def _create_agent_files(target_dir: Path, config: AgentConfig, agent_type: str, 
             echo(f"  Created: {dockerfile}")
 
 
-def _generate_agent_code(config: AgentConfig, agent_type: str) -> str:
+def _generate_agent_code(config: Dict[str, Any], agent_type: str) -> str:
     """Generate agent code based on type."""
     
     if agent_type == 'simple':
@@ -2820,7 +2914,7 @@ if __name__ == "__main__":
     return ""
 
 
-def _generate_readme(config: AgentConfig, agent_type: str) -> str:
+def _generate_readme(config: Dict[str, Any], agent_type: str) -> str:
     """Generate README file content."""
     if agent_type == 'acp_server':
         return f"""# {config.name}
@@ -3146,100 +3240,139 @@ temp/
 """
 
 
-def _validate_main_function(agent_dir: Path, config: AgentConfig) -> List[str]:
-    """Validate that the main function exists and has the correct signature using static analysis."""
+def _validate_main_function(agent_dir: Path, config: Dict[str, Any]) -> List[str]:
+    """Validate that the agent has the correct structure for its type."""
     errors = []
     
     try:
         # Check if entry point file exists
-        entry_point = agent_dir / config.entry_point
+        entry_point = agent_dir / config.get('entry_point', 'agent.py')
         if not entry_point.exists():
-            errors.append(f"Entry point file not found: {config.entry_point}")
+            errors.append(f"Entry point file not found: {config.get('entry_point', 'agent.py')}")
             return errors
         
         # Read the file content for static analysis
         with open(entry_point, 'r', encoding='utf-8') as f:
             content = f.read()
         
-        # Check if main function is defined (basic regex check)
-        import re
+        # Check agent type
+        agent_type = config.get('agent_type', 'function')
         
-        # Look for main function definition - handle type annotations
-        main_pattern = r'def\s+main\s*\('
-        if not re.search(main_pattern, content):
-            errors.append(f"Main function 'main' not found in {config.entry_point}")
-            return errors
-        
-        # Check for async def main (should not be async)
-        async_main_pattern = r'async\s+def\s+main\s*\('
-        if re.search(async_main_pattern, content):
-            errors.append(f"Main function should be synchronous, not async. Use a synchronous wrapper for async operations.")
-            return errors
-        
-        # Find the main function definition line
-        lines = content.split('\n')
-        main_line = None
-        for i, line in enumerate(lines):
-            if re.search(main_pattern, line):
-                main_line = line.strip()
-                break
-        
-        if not main_line:
-            errors.append(f"Could not find main function definition line in {config.entry_point}")
-            return errors
-        
-        # Extract parameters from the main function line
-        # Handle complex signatures with type annotations
-        param_match = re.search(r'def\s+main\s*\(([^)]*)\)', main_line)
-        
-        if param_match:
-            params_str = param_match.group(1).strip()
-            if params_str:
-                # Split by comma, but be careful with nested parentheses and brackets (type annotations)
-                params = []
-                current_param = ""
-                paren_count = 0
-                bracket_count = 0
-                
-                for char in params_str:
-                    if char == '(':
-                        paren_count += 1
-                    elif char == ')':
-                        paren_count -= 1
-                    elif char == '[':
-                        bracket_count += 1
-                    elif char == ']':
-                        bracket_count -= 1
-                    elif char == ',' and paren_count == 0 and bracket_count == 0:
-                        # This is a parameter separator (not inside type annotations)
+        if agent_type == 'persistent':
+            # For persistent agents, validate the class exists
+            agent_class = config.get('agent_class')
+            if not agent_class:
+                errors.append("agent_class is required for persistent agents")
+                return errors
+            
+            # Check if the class is defined
+            import re
+            class_pattern = rf'class\s+{agent_class}\s*[\(:]'
+            if not re.search(class_pattern, content):
+                errors.append(f"Agent class '{agent_class}' not found in {config.get('entry_point', 'agent.py')}")
+                return errors
+            
+            # Check if the class inherits from PersistentAgent
+            inheritance_pattern = rf'class\s+{agent_class}\s*\([^)]*PersistentAgent[^)]*\)'
+            if not re.search(inheritance_pattern, content):
+                errors.append(f"Agent class '{agent_class}' should inherit from PersistentAgent")
+                return errors
+            
+            # Check for required methods
+            required_methods = ['initialize', 'execute']
+            for method in required_methods:
+                method_pattern = rf'def\s+{method}\s*\('
+                if not re.search(method_pattern, content):
+                    errors.append(f"Required method '{method}' not found in agent class")
+                    return errors
+            
+            # Check for async methods (should not be async)
+            for method in required_methods:
+                async_method_pattern = rf'async\s+def\s+{method}\s*\('
+                if re.search(async_method_pattern, content):
+                    errors.append(f"Method '{method}' should be synchronous, not async")
+                    return errors
+            
+        else:
+            # For function agents, validate the main function exists
+            import re
+            
+            # Look for main function definition - handle type annotations
+            main_pattern = r'def\s+main\s*\('
+            if not re.search(main_pattern, content):
+                errors.append(f"Main function 'main' not found in {config.get('entry_point', 'agent.py')}")
+                return errors
+            
+            # Check for async def main (should not be async)
+            async_main_pattern = r'async\s+def\s+main\s*\('
+            if re.search(async_main_pattern, content):
+                errors.append(f"Main function should be synchronous, not async. Use a synchronous wrapper for async operations.")
+                return errors
+            
+            # Find the main function definition line
+            lines = content.split('\n')
+            main_line = None
+            for i, line in enumerate(lines):
+                if re.search(main_pattern, line):
+                    main_line = line.strip()
+                    break
+            
+            if not main_line:
+                errors.append(f"Could not find main function definition line in {config.get('entry_point', 'agent.py')}")
+                return errors
+            
+            # Extract parameters from the main function line
+            # Handle complex signatures with type annotations
+            param_match = re.search(r'def\s+main\s*\(([^)]*)\)', main_line)
+            
+            if param_match:
+                params_str = param_match.group(1).strip()
+                if params_str:
+                    # Split by comma, but be careful with nested parentheses and brackets (type annotations)
+                    params = []
+                    current_param = ""
+                    paren_count = 0
+                    bracket_count = 0
+                    
+                    for char in params_str:
+                        if char == '(':
+                            paren_count += 1
+                        elif char == ')':
+                            paren_count -= 1
+                        elif char == '[':
+                            bracket_count += 1
+                        elif char == ']':
+                            bracket_count -= 1
+                        elif char == ',' and paren_count == 0 and bracket_count == 0:
+                            # This is a parameter separator (not inside type annotations)
+                            param_name = current_param.strip().split(':')[0].strip()
+                            if param_name:
+                                params.append(param_name)
+                            current_param = ""
+                            continue
+                        
+                        current_param += char
+                    
+                    # Add the last parameter
+                    if current_param.strip():
                         param_name = current_param.strip().split(':')[0].strip()
                         if param_name:
                             params.append(param_name)
-                        current_param = ""
-                        continue
                     
-                    current_param += char
-                
-                # Add the last parameter
-                if current_param.strip():
-                    param_name = current_param.strip().split(':')[0].strip()
-                    if param_name:
-                        params.append(param_name)
-                
-                # Check if it has exactly 2 parameters
-                if len(params) != 2:
-                    errors.append(f"Main function should have exactly 2 parameters (input_data, context), found {len(params)}: {params}")
-                # If len(params) == 2, that's correct - no error to add
+                    # Check if it has exactly 2 parameters
+                    if len(params) != 2:
+                        errors.append(f"Main function should have exactly 2 parameters (input_data, context), found {len(params)}: {params}")
+                    # If len(params) == 2, that's correct - no error to add
+                else:
+                    errors.append(f"Main function should have exactly 2 parameters (input_data, context), found 0")
             else:
-                errors.append(f"Main function should have exactly 2 parameters (input_data, context), found 0")
-        else:
-            errors.append(f"Could not parse main function parameters in {config.entry_point}")
+                errors.append(f"Could not parse main function parameters in {config.get('entry_point', 'agent.py')}")
         
         # Note: Removed compile() syntax check to avoid import resolution issues
         # Static analysis above is sufficient for validation
         
     except Exception as e:
-        errors.append(f"Error validating main function: {str(e)}")
+        errors.append(f"Error validating agent structure: {str(e)}")
     
     return errors
 
@@ -3277,17 +3410,36 @@ print(json.dumps(result, indent=2))
     return json.loads(result.stdout)
 
 
-def _create_agent_instance(config: AgentConfig) -> Agent:
+def _create_agent_instance(config: Dict[str, Any]) -> Agent:
     """Create a minimal agent instance for publishing."""
-    
-    class PublishAgent(SimpleAgent):
-        def __init__(self, config: AgentConfig):
-            super().__init__(config)
+    # Create a minimal agent instance for publishing
+    class MinimalAgent(Agent):
+        def __init__(self, config_dict):
+            self.config_dict = config_dict
+            # Create a temporary config file
+            import tempfile
+            import json
+            self.temp_config_file = tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False)
+            json.dump(config_dict, self.temp_config_file)
+            self.temp_config_file.close()
         
-        def generate_code(self) -> str:
-            return f"# Agent: {config.name}\n# Generated for publishing"
+        def execute(self, input_data, config):
+            return {"status": "not_implemented", "message": "This is a placeholder agent for publishing"}
+        
+        def get_config(self):
+            # Create an AgentConfig object from the temporary file
+            return AgentConfig(self.temp_config_file.name)
+        
+        def __del__(self):
+            # Clean up temporary file
+            try:
+                import os
+                if hasattr(self, 'temp_config_file'):
+                    os.unlink(self.temp_config_file.name)
+            except:
+                pass
     
-    return PublishAgent(config)
+    return MinimalAgent(config)
 
 
 def _generate_template(template_type: str) -> str:
@@ -3369,7 +3521,7 @@ def _generate_acp_manifest(config: AgentConfig) -> str:
         "pricing": {
             "model": config.pricing_model,
             "price_per_use": config.price_per_use,
-            "monthly_price": config.monthly_price
+            "monthly_price": config.subscription_price
         }
     }
     

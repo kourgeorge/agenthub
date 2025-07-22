@@ -27,6 +27,7 @@ CLI usage:
 
 from .agent import Agent, PersistentAgent, AgentConfig, validate_agent_config, load_agent_class
 from .client import AgentHubClient
+from .cli import cli
 
 __version__ = "1.0.0"
 
@@ -42,4 +43,7 @@ __all__ = [
     
     # Client
     "AgentHubClient",
+    
+    # CLI
+    "cli",
 ] 

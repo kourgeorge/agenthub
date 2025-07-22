@@ -113,14 +113,14 @@ class AgentHubClient:
             if config.price_per_use is not None:
                 form_data.add_field("price_per_use", str(config.price_per_use))
             
-            if config.monthly_price is not None:
-                form_data.add_field("monthly_price", str(config.monthly_price))
+            if config.subscription_price is not None:
+                form_data.add_field("monthly_price", str(config.subscription_price))
             
             # Add agent type and ACP manifest
             if config.agent_type:
                 form_data.add_field("agent_type", config.agent_type)
             
-            if config.acp_manifest:
+            if hasattr(config, 'acp_manifest') and config.acp_manifest:
                 form_data.add_field("acp_manifest", json.dumps(config.acp_manifest))
             
             # Add code file
@@ -158,7 +158,7 @@ class AgentHubClient:
                 os.unlink(zip_path)
     
     async def _validate_main_function(self, code_directory: str, config) -> List[str]:
-        """Validate that the main function exists and has the correct signature using static analysis."""
+        """Validate that the agent has the correct structure for its type."""
         errors = []
         
         try:
@@ -172,85 +172,124 @@ class AgentHubClient:
             with open(entry_point_path, 'r', encoding='utf-8') as f:
                 content = f.read()
             
-            # Check if main function is defined (basic regex check)
-            import re
+            # Check agent type
+            agent_type = getattr(config, 'agent_type', 'function')
             
-            # Look for main function definition - handle type annotations
-            main_pattern = r'def\s+main\s*\('
-            if not re.search(main_pattern, content):
-                errors.append(f"Main function 'main' not found in {config.entry_point}")
-                return errors
+            if agent_type == 'persistent':
+                # For persistent agents, validate the class exists
+                agent_class = getattr(config, 'agent_class', None)
+                if not agent_class:
+                    errors.append("agent_class is required for persistent agents")
+                    return errors
+                
+                # Check if the class is defined
+                import re
+                class_pattern = rf'class\s+{agent_class}\s*[\(:]'
+                if not re.search(class_pattern, content):
+                    errors.append(f"Agent class '{agent_class}' not found in {config.entry_point}")
+                    return errors
+                
+                # Check if the class inherits from PersistentAgent
+                inheritance_pattern = rf'class\s+{agent_class}\s*\([^)]*PersistentAgent[^)]*\)'
+                if not re.search(inheritance_pattern, content):
+                    errors.append(f"Agent class '{agent_class}' should inherit from PersistentAgent")
+                    return errors
+                
+                # Check for required methods
+                required_methods = ['initialize', 'execute']
+                for method in required_methods:
+                    method_pattern = rf'def\s+{method}\s*\('
+                    if not re.search(method_pattern, content):
+                        errors.append(f"Required method '{method}' not found in agent class")
+                        return errors
+                
+                # Check for async methods (should not be async)
+                for method in required_methods:
+                    async_method_pattern = rf'async\s+def\s+{method}\s*\('
+                    if re.search(async_method_pattern, content):
+                        errors.append(f"Method '{method}' should be synchronous, not async")
+                        return errors
+                
+            else:
+                # For function agents, validate the main function exists
+                import re
+                
+                # Look for main function definition - handle type annotations
+                main_pattern = r'def\s+main\s*\('
+                if not re.search(main_pattern, content):
+                    errors.append(f"Main function 'main' not found in {config.entry_point}")
+                    return errors
             
-            # Check for async def main (should not be async)
-            async_main_pattern = r'async\s+def\s+main\s*\('
-            if re.search(async_main_pattern, content):
-                errors.append(f"Main function should be synchronous, not async. Use a synchronous wrapper for async operations.")
-                return errors
-            
-            # Find the main function definition line
-            lines = content.split('\n')
-            main_line = None
-            for i, line in enumerate(lines):
-                if re.search(main_pattern, line):
-                    main_line = line.strip()
-                    break
-            
-            if not main_line:
-                errors.append(f"Could not find main function definition line in {config.entry_point}")
-                return errors
-            
-            # Extract parameters from the main function line
-            # Handle complex signatures with type annotations
-            param_match = re.search(r'def\s+main\s*\(([^)]*)\)', main_line)
-            
-            if param_match:
-                params_str = param_match.group(1).strip()
-                if params_str:
-                    # Split by comma, but be careful with nested parentheses and brackets (type annotations)
-                    params = []
-                    current_param = ""
-                    paren_count = 0
-                    bracket_count = 0
-                    
-                    for char in params_str:
-                        if char == '(':
-                            paren_count += 1
-                        elif char == ')':
-                            paren_count -= 1
-                        elif char == '[':
-                            bracket_count += 1
-                        elif char == ']':
-                            bracket_count -= 1
-                        elif char == ',' and paren_count == 0 and bracket_count == 0:
-                            # This is a parameter separator (not inside type annotations)
+                # Check for async def main (should not be async)
+                async_main_pattern = r'async\s+def\s+main\s*\('
+                if re.search(async_main_pattern, content):
+                    errors.append(f"Main function should be synchronous, not async. Use a synchronous wrapper for async operations.")
+                    return errors
+                
+                # Find the main function definition line
+                lines = content.split('\n')
+                main_line = None
+                for i, line in enumerate(lines):
+                    if re.search(main_pattern, line):
+                        main_line = line.strip()
+                        break
+                
+                if not main_line:
+                    errors.append(f"Could not find main function definition line in {config.entry_point}")
+                    return errors
+                
+                # Extract parameters from the main function line
+                # Handle complex signatures with type annotations
+                param_match = re.search(r'def\s+main\s*\(([^)]*)\)', main_line)
+                
+                if param_match:
+                    params_str = param_match.group(1).strip()
+                    if params_str:
+                        # Split by comma, but be careful with nested parentheses and brackets (type annotations)
+                        params = []
+                        current_param = ""
+                        paren_count = 0
+                        bracket_count = 0
+                        
+                        for char in params_str:
+                            if char == '(':
+                                paren_count += 1
+                            elif char == ')':
+                                paren_count -= 1
+                            elif char == '[':
+                                bracket_count += 1
+                            elif char == ']':
+                                bracket_count -= 1
+                            elif char == ',' and paren_count == 0 and bracket_count == 0:
+                                # This is a parameter separator (not inside type annotations)
+                                param_name = current_param.strip().split(':')[0].strip()
+                                if param_name:
+                                    params.append(param_name)
+                                current_param = ""
+                                continue
+                            
+                            current_param += char
+                        
+                        # Add the last parameter
+                        if current_param.strip():
                             param_name = current_param.strip().split(':')[0].strip()
                             if param_name:
                                 params.append(param_name)
-                            current_param = ""
-                            continue
                         
-                        current_param += char
-                    
-                    # Add the last parameter
-                    if current_param.strip():
-                        param_name = current_param.strip().split(':')[0].strip()
-                        if param_name:
-                            params.append(param_name)
-                    
-                    # Check if it has exactly 2 parameters
-                    if len(params) != 2:
-                        errors.append(f"Main function should have exactly 2 parameters (input_data, context), found {len(params)}: {params}")
-                    # If len(params) == 2, that's correct - no error to add
+                        # Check if it has exactly 2 parameters
+                        if len(params) != 2:
+                            errors.append(f"Main function should have exactly 2 parameters (input_data, context), found {len(params)}: {params}")
+                        # If len(params) == 2, that's correct - no error to add
+                    else:
+                        errors.append(f"Main function should have exactly 2 parameters (input_data, context), found 0")
                 else:
-                    errors.append(f"Main function should have exactly 2 parameters (input_data, context), found 0")
-            else:
-                errors.append(f"Could not parse main function parameters in {config.entry_point}")
+                    errors.append(f"Could not parse main function parameters in {config.entry_point}")
             
             # Note: Removed compile() syntax check to avoid import resolution issues
             # Static analysis above is sufficient for validation
             
         except Exception as e:
-            errors.append(f"Error validating main function: {str(e)}")
+            errors.append(f"Error validating agent structure: {str(e)}")
         
         return errors
     
@@ -501,51 +540,8 @@ class AgentHubClient:
         hiring_id: Optional[int] = None,
         user_id: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """Execute an agent."""
-        if not self.session:
-            raise RuntimeError("Client not initialized. Use async context manager.")
-        
-        data = {
-            "agent_id": agent_id,
-            "input_data": input_data,
-        }
-        
-        if hiring_id:
-            data["hiring_id"] = hiring_id
-        if user_id:
-            data["user_id"] = user_id
-        
-        # Step 1: Create execution
-        async with self.session.post(
-            f"{self.api_base}/execution",
-            json=data,
-        ) as response:
-            if response.status == 200:
-                result = await response.json()
-            else:
-                error_text = await response.text()
-                raise Exception(f"Failed to create execution: {error_text}")
-        
-        # Step 2: Trigger execution automatically
-        execution_id = result.get("execution_id")
-        if not execution_id:
-            raise Exception("No execution ID returned")
-        
-        async with self.session.post(
-            f"{self.api_base}/execution/{execution_id}/run",
-        ) as response:
-            if response.status == 200:
-                # Return the execution result for immediate executions
-                execution_result = await response.json()
-                return {
-                    "execution_id": execution_id,
-                    "status": "running",
-                    "result": execution_result.get("result"),
-                    "message": "Execution triggered successfully"
-                }
-            else:
-                error_text = await response.text()
-                raise Exception(f"Failed to trigger execution: {error_text}")
+        """Execute an agent directly (DEPRECATED - use hiring workflow instead)."""
+        raise ValueError("Direct agent execution is deprecated. Please use the hiring workflow: 1) hire_agent() 2) execute_hired_agent()")
     
     async def get_execution_status(self, execution_id: str) -> Dict[str, Any]:
         """Get execution status."""
@@ -874,6 +870,64 @@ class AgentHubClient:
                 else:
                     error_text = await response.text()
                     return {"status": "error", "message": f"HTTP {response.status}: {error_text}"}
+    
+    # =============================================================================
+    # PERSISTENT AGENT METHODS
+    # =============================================================================
+    
+    async def create_execution(self, hiring_id: int, execution_type: str, input_data: Optional[Dict[str, Any]] = None, user_id: Optional[int] = None) -> Dict[str, Any]:
+        """Create a new execution (initialize, run, or cleanup)."""
+        if not self.session:
+            raise RuntimeError("Client not initialized. Use async context manager.")
+        
+        headers = {}
+        if user_id:
+            headers["X-User-ID"] = str(user_id)
+        
+        async with self.session.post(
+            f"{self.api_base}/execution/",
+            json={
+                "hiring_id": hiring_id,
+                "execution_type": execution_type,
+                "input_data": input_data,
+                "user_id": user_id
+            },
+            headers=headers
+        ) as response:
+            if response.status == 200:
+                return await response.json()
+            else:
+                error_text = await response.text()
+                raise Exception(f"Execution creation failed: {error_text}")
+    
+    async def run_execution(self, execution_id: str) -> Dict[str, Any]:
+        """Run an execution."""
+        if not self.session:
+            raise RuntimeError("Client not initialized. Use async context manager.")
+        
+        async with self.session.post(
+            f"{self.api_base}/execution/{execution_id}/run"
+        ) as response:
+            if response.status == 200:
+                return await response.json()
+            else:
+                error_text = await response.text()
+                raise Exception(f"Execution failed: {error_text}")
+    
+    async def initialize_hired_agent(self, hiring_id: int, init_config: Dict[str, Any], user_id: Optional[int] = None) -> Dict[str, Any]:
+        """Initialize a hired agent (legacy method for backward compatibility)."""
+        # Create initialization execution
+        result = await self.create_execution(hiring_id, "initialize", init_config, user_id)
+        execution_id = result.get('execution_id')
+        
+        if execution_id:
+            # Run the initialization
+            return await self.run_execution(execution_id)
+        else:
+            # Agent doesn't require initialization
+            return result
+    
+
 
 
 # Synchronous wrapper functions for convenience

@@ -57,6 +57,9 @@ packages = ["agenthub_sdk"]
 [tool.setuptools.package-dir]
 "agenthub_sdk" = "."
 
+[tool.setuptools.package-data]
+"agenthub_sdk" = ["*.py", "*.json", "*.md"]
+
 [tool.black]
 line-length = 88
 target-version = ['py38']
