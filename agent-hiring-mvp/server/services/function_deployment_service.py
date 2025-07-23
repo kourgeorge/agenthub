@@ -282,10 +282,14 @@ with open('/tmp/agent_stderr.txt', 'w') as f:
     f.write(stderr_capture.getvalue())
 """
             
+            logger.info(f"Executing function in container {container.id} with environment: {env_vars}")
+            
             exec_result = container.exec_run(
                 cmd=["python", "-c", python_script],
                 environment=env_vars
             )
+            
+            logger.info(f"Container execution completed with exit code: {exec_result.exit_code}")
             
             # Read captured stdout and stderr
             stdout_result = container.exec_run(cmd=["cat", "/tmp/agent_stdout.txt"])
@@ -561,7 +565,12 @@ with open('/tmp/agent_stderr.txt', 'w') as f:
     def _deploy_function_container(self, deployment: AgentDeployment, image_name: str):
         """Deploy Docker container for the function agent."""
         user_id = deployment.hiring.user_id or "anon"
-        container_name = f"func-user-{user_id}-agent-{deployment.agent_id}-hire-{deployment.hiring_id}-{deployment.deployment_id}"
+        # Use shorter container name to avoid Docker name length limits
+        container_name = f"func-{user_id}-{deployment.agent_id}-{deployment.hiring_id}-{deployment.deployment_id[:8]}"
+        
+        # Ensure container name doesn't exceed Docker's 64 character limit
+        if len(container_name) > 64:
+            container_name = f"func-{deployment.agent_id}-{deployment.hiring_id}-{deployment.deployment_id[:8]}"
         
         logger.info(f"Deploying function container {container_name}")
         
@@ -580,37 +589,6 @@ with open('/tmp/agent_stderr.txt', 'w') as f:
         
         logger.info(f"Function container {container_name} started with ID {container.id}")
         return container
-    
-    def _recreate_function_container(self, deployment: AgentDeployment):
-        """Recreate a function container that was lost."""
-        try:
-            # Get the image name from the deployment
-            user_id = deployment.hiring.user_id or "anon"
-            image_name = f"func-user-{user_id}-agent-{deployment.agent_id}-hire-{deployment.hiring_id}-{deployment.deployment_id}"
-            
-            # Container configuration for function agents
-            container_name = f"func-user-{user_id}-agent-{deployment.agent_id}-hire-{deployment.hiring_id}-{deployment.deployment_id}"
-            
-            logger.info(f"Recreating function container {container_name}")
-            
-            container_config = {
-                "image": image_name,
-                "name": container_name,
-                "environment": deployment.environment_vars,
-                "detach": True,
-                "restart_policy": {"Name": "unless-stopped"},
-                "working_dir": "/app"
-            }
-            
-            # Create and start container
-            container = self.docker_client.containers.run(**container_config)
-            
-            logger.info(f"Function container {container_name} recreated with ID {container.id}")
-            return container
-            
-        except Exception as e:
-            logger.error(f"Failed to recreate function container: {e}")
-            raise
 
     def _generate_function_dockerfile(self) -> str:
         """Generate Dockerfile for function agents."""

@@ -81,12 +81,19 @@ class HiringService:
                 
                 try:
                     # Import here to avoid circular imports
-                    from .deployment_service import DeploymentService
-                    
-                    deployment_service = DeploymentService(db)
+                    if agent.agent_type == AgentType.FUNCTION.value:
+                        from .function_deployment_service import FunctionDeploymentService
+                        deployment_service = FunctionDeploymentService(db)
+                    else:
+                        from .deployment_service import DeploymentService
+                        deployment_service = DeploymentService(db)
                     
                     # Create deployment
-                    deployment_result = deployment_service.create_deployment(hiring.id)
+                    if agent.agent_type == AgentType.FUNCTION.value:
+                        deployment_result = deployment_service.create_function_deployment(hiring.id)
+                    else:
+                        deployment_result = deployment_service.create_deployment(hiring.id)
+                    
                     if "error" in deployment_result:
                         logger.error(f"Failed to create deployment for hiring {hiring.id}: {deployment_result['error']}")
                         return
@@ -95,7 +102,11 @@ class HiringService:
                     logger.info(f"Created deployment {deployment_id} for hiring {hiring.id}")
                     
                     # Build and deploy the container
-                    deploy_result = deployment_service.build_and_deploy(deployment_id)
+                    if agent.agent_type == AgentType.FUNCTION.value:
+                        deploy_result = deployment_service.build_and_deploy_function(deployment_id)
+                    else:
+                        deploy_result = deployment_service.build_and_deploy(deployment_id)
+                    
                     if "error" in deploy_result:
                         logger.error(f"Failed to deploy {deployment_id}: {deploy_result['error']}")
                         return
