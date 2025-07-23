@@ -377,6 +377,10 @@ CMD ["python", "main.py"]
             
             logger.info(f"Extracted file: {agent_file.file_path}")
         
+        # For persistent agents, include the agenthub_sdk files
+        if agent.agent_type == "persistent":
+            self._include_sdk_files(deploy_dir)
+        
         # Ensure main.py exists (for backward compatibility)
         main_file = deploy_dir / "main.py"
         if not main_file.exists():
@@ -389,6 +393,119 @@ CMD ["python", "main.py"]
                 python_files = [f for f in agent.files if f.file_type == '.py']
                 if python_files:
                     main_file.write_text(python_files[0].file_content, encoding='utf-8')
+    
+    def _include_sdk_files(self, deploy_dir: Path):
+        """Include agenthub_sdk files for persistent agents."""
+        try:
+            # Create agenthub_sdk directory
+            sdk_dir = deploy_dir / "agenthub_sdk"
+            sdk_dir.mkdir(exist_ok=True)
+            
+            # Create __init__.py
+            init_file = sdk_dir / "__init__.py"
+            init_file.write_text("""#!/usr/bin/env python3
+\"\"\"
+AgentHub SDK - Agent Base Classes and Utilities
+\"\"\"
+
+from .agent import Agent, PersistentAgent
+
+__all__ = ['Agent', 'PersistentAgent']
+""", encoding='utf-8')
+            
+            # Create agent.py with the base classes
+            agent_file = sdk_dir / "agent.py"
+            agent_file.write_text("""#!/usr/bin/env python3
+\"\"\"
+AgentHub SDK - Agent Base Classes and Utilities
+\"\"\"
+
+import json
+import logging
+from abc import ABC, abstractmethod
+from typing import Dict, Any, Optional, List
+from pathlib import Path
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+class Agent(ABC):
+    \"\"\"Base class for all agents.\"\"\"
+    
+    def __init__(self):
+        \"\"\"Initialize the agent.\"\"\"
+        pass
+    
+    @abstractmethod
+    def execute(self, input_data: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+        \"\"\"
+        Execute the agent with input data and configuration.
+        
+        Args:
+            input_data: Input data for execution
+            config: Configuration data for the agent
+            
+        Returns:
+            Dict with execution result
+        \"\"\"
+        pass
+
+
+class PersistentAgent(ABC):
+    \"\"\"
+    Base class for persistent agents with state management.
+    
+    This class provides:
+    - State management (_get_state/_set_state)
+    - Lifecycle management (_is_initialized/_mark_initialized)
+    - Abstract methods for agent implementation
+    
+    The platform handles all platform concerns (IDs, tracking, etc.).
+    Agents focus only on business logic.
+    \"\"\"
+    
+    def __init__(self):
+        self._state = {}
+        self._initialized = False
+    
+    @abstractmethod
+    def initialize(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        \"\"\"Initialize the agent with configuration.\"\"\"
+        pass
+    
+    @abstractmethod
+    def execute(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
+        \"\"\"Execute the agent with input_data.\"\"\"
+        pass
+    
+    def cleanup(self) -> Dict[str, Any]:
+        \"\"\"Clean up agent resources.\"\"\"
+        return {\"status\": \"cleaned_up\", \"message\": \"Default cleanup completed\"}
+    
+    def _get_state(self, key: str, default: Any = None) -> Any:
+        \"\"\"Get value from agent state.\"\"\"
+        return self._state.get(key, default)
+    
+    def _set_state(self, key: str, value: Any) -> None:
+        \"\"\"Set value in agent state.\"\"\"
+        self._state[key] = value
+    
+    def _is_initialized(self) -> bool:
+        \"\"\"Check if agent is initialized.\"\"\"
+        return self._initialized
+    
+    def _mark_initialized(self) -> None:
+        \"\"\"Mark agent as initialized.\"\"\"
+        self._initialized = True
+""", encoding='utf-8')
+            
+            logger.info("Included agenthub_sdk files for persistent agent")
+            
+        except Exception as e:
+            logger.error(f"Failed to include SDK files: {e}")
+            # Don't fail the deployment if SDK inclusion fails
     
     def _build_docker_image(self, deploy_dir: Path, image_name: str):
         """Build Docker image for the agent."""
