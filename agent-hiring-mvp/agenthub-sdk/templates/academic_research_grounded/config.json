@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "entry_point": "academic_research.py",
   "author": "AgentHub Team",
+  "agent_type": "function",
   "email": "team@agenthub.com",
   "requirements": ["openai", "requests", "python-dotenv", "PyPDF2"],
   "config_schema": {
