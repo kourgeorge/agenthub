@@ -176,14 +176,34 @@ class PersistentAgentRuntimeService:
             return None
     
     def _load_existing_states(self) -> None:
-        """Load all existing agent states from disk."""
+        """Load all existing agent states from database."""
+        try:
+            engine = get_engine()
+            Session = sessionmaker(bind=engine)
+            with Session() as session:
+                # Query database for all active hirings with state
+                hirings = session.query(Hiring).filter(
+                    Hiring.state.isnot(None)  # Has state data
+                ).all()
+                
+                for hiring in hirings:
+                    agent_state = self._load_agent_state(str(hiring.agent_id))
+                    if agent_state:
+                        self._agent_states[str(hiring.agent_id)] = agent_state
+                        logger.info(f"Loaded existing state for agent {hiring.agent_id} from database")
+        except Exception as e:
+            logger.error(f"Error loading existing states from database: {e}")
+            
+        # Fallback: also check disk files for backward compatibility
         for state_file in Path(self.state_dir).glob("agent_*.json"):
             try:
                 agent_id = state_file.stem.replace("agent_", "")
-                agent_state = self._load_agent_state(agent_id)
-                if agent_state:
-                    self._agent_states[agent_id] = agent_state
-                    logger.info(f"Loaded existing state for agent {agent_id}")
+                # Only load from disk if not already loaded from database
+                if agent_id not in self._agent_states:
+                    agent_state = self._load_agent_state(agent_id)
+                    if agent_state:
+                        self._agent_states[agent_id] = agent_state
+                        logger.info(f"Loaded existing state for agent {agent_id} from disk (fallback)")
             except Exception as e:
                 logger.error(f"Error loading state file {state_file}: {e}")
     
@@ -268,18 +288,24 @@ class PersistentAgentRuntimeService:
         agent_id_str = str(agent_id)
         
         try:
-            # Check if agent is already initialized
-            if agent_id_str in self._agent_states:
-                existing_state = self._agent_states[agent_id_str]
-                if existing_state.status == PersistentAgentStatus.READY:
-                    return RuntimeResult(
-                        status=RuntimeStatus.COMPLETED,
-                        output=json.dumps({
-                            "status": "already_initialized",
-                            "message": f"Agent {agent_id} already initialized",
-                            "agent_id": agent_id_str
-                        })
-                    )
+            # Check if agent is already initialized - check database first, then memory cache
+            agent_state = self._agent_states.get(agent_id_str)
+            if not agent_state:
+                # Not in memory cache, try to load from database
+                agent_state = self._load_agent_state(agent_id_str)
+                if agent_state:
+                    # Update memory cache for performance
+                    self._agent_states[agent_id_str] = agent_state
+            
+            if agent_state and agent_state.status == PersistentAgentStatus.READY:
+                return RuntimeResult(
+                    status=RuntimeStatus.COMPLETED,
+                    output=json.dumps({
+                        "status": "already_initialized",
+                        "message": f"Agent {agent_id} already initialized",
+                        "agent_id": agent_id_str
+                    })
+                )
             
             # Get agent configuration
             agent_config = self._get_agent_config(agent_id, agent_files)
@@ -370,14 +396,20 @@ class PersistentAgentRuntimeService:
         agent_id_str = str(agent_id)
         
         try:
-            # Check if agent is initialized
-            if agent_id_str not in self._agent_states:
-                return RuntimeResult(
-                    status=RuntimeStatus.FAILED,
-                    error=f"Agent {agent_id} not initialized. Call initialize_agent first."
-                )
+            # Check if agent is initialized - read from database first, then memory cache
+            agent_state = self._agent_states.get(agent_id_str)
+            if not agent_state:
+                # Not in memory cache, try to load from database
+                agent_state = self._load_agent_state(agent_id_str)
+                if agent_state:
+                    # Update memory cache for performance
+                    self._agent_states[agent_id_str] = agent_state
+                else:
+                    return RuntimeResult(
+                        status=RuntimeStatus.FAILED,
+                        error=f"Agent {agent_id} not initialized. Call initialize_agent first."
+                    )
             
-            agent_state = self._agent_states[agent_id_str]
             if agent_state.status != PersistentAgentStatus.READY:
                 return RuntimeResult(
                     status=RuntimeStatus.FAILED,
@@ -451,54 +483,59 @@ class PersistentAgentRuntimeService:
         agent_id_str = str(agent_id)
         
         try:
-            # Check if agent exists
-            if agent_id_str not in self._agent_states:
-                return RuntimeResult(
-                    status=RuntimeStatus.COMPLETED,
-                    output=json.dumps({
-                        "status": "not_found",
-                        "message": f"Agent {agent_id} not found"
-                    })
-                )
-            
-            agent_state = self._agent_states[agent_id_str]
+            # Check if agent exists - check database first, then memory cache
+            agent_state = self._agent_states.get(agent_id_str)
+            if not agent_state:
+                # Not in memory cache, try to load from database
+                agent_state = self._load_agent_state(agent_id_str)
+                if not agent_state:
+                    return RuntimeResult(
+                        status=RuntimeStatus.COMPLETED,
+                        output=json.dumps({
+                            "status": "not_found",
+                            "message": f"Agent {agent_id} not found"
+                        })
+                    )
+                else:
+                    # Update memory cache for performance
+                    self._agent_states[agent_id_str] = agent_state
             
             # Get agent instance if available
             agent_instance = self._agent_instances.get(agent_id_str)
             if agent_instance:
                 try:
-                    # Call cleanup method
+                    # Call cleanup on the agent instance
                     cleanup_result = agent_instance.cleanup()
-                    logger.info(f"Agent {agent_id} cleanup result: {cleanup_result}")
+                    logger.info(f"Agent {agent_id} cleanup completed: {cleanup_result}")
                 except Exception as e:
-                    logger.error(f"Error during agent cleanup: {e}")
+                    logger.warning(f"Error during agent cleanup: {e}")
                     cleanup_result = {"status": "error", "error": str(e)}
-                
-                # Remove instance from memory
-                del self._agent_instances[agent_id_str]
             else:
-                cleanup_result = {"status": "cleaned_up", "message": "Agent instance not in memory"}
+                cleanup_result = {"status": "no_instance", "message": "No agent instance to cleanup"}
             
-            # Add agent ID to response (platform concern)
-            if isinstance(cleanup_result, dict):
-                cleanup_result["agent_id"] = agent_id_str
-            
-            # Update state
+            # Update state to cleaned up
             agent_state.status = PersistentAgentStatus.CLEANED_UP
+            agent_state.last_accessed = time.time()
             self._save_agent_state(agent_state)
             
             # Remove from memory cache
             if agent_id_str in self._agent_states:
                 del self._agent_states[agent_id_str]
+            if agent_id_str in self._agent_instances:
+                del self._agent_instances[agent_id_str]
             
-            # Delete state file
+            # Delete from disk (for backward compatibility)
             self._delete_agent_state(agent_id_str)
             
             return RuntimeResult(
                 status=RuntimeStatus.COMPLETED,
-                output=json.dumps(cleanup_result)
+                output=json.dumps({
+                    "status": "cleaned_up",
+                    "message": f"Agent {agent_id} cleaned up successfully",
+                    "cleanup_result": cleanup_result
+                })
             )
-            
+                
         except Exception as e:
             logger.error(f"Error cleaning up persistent agent {agent_id}: {e}")
             return RuntimeResult(
@@ -510,10 +547,17 @@ class PersistentAgentRuntimeService:
         """Get the status of a persistent agent."""
         agent_id_str = str(agent_id)
         
-        if agent_id_str not in self._agent_states:
-            return None
+        # Check memory cache first, then database
+        agent_state = self._agent_states.get(agent_id_str)
+        if not agent_state:
+            # Not in memory cache, try to load from database
+            agent_state = self._load_agent_state(agent_id_str)
+            if agent_state:
+                # Update memory cache for performance
+                self._agent_states[agent_id_str] = agent_state
+            else:
+                return None
         
-        agent_state = self._agent_states[agent_id_str]
         return {
             "agent_id": agent_id_str,
             "status": agent_state.status.value,
@@ -526,6 +570,28 @@ class PersistentAgentRuntimeService:
     def list_agents(self) -> List[Dict[str, Any]]:
         """List all persistent agents."""
         agents = []
+        
+        # First, ensure we have all agents from database loaded in memory
+        try:
+            engine = get_engine()
+            Session = sessionmaker(bind=engine)
+            with Session() as session:
+                # Query database for all active hirings with state
+                hirings = session.query(Hiring).filter(
+                    Hiring.state.isnot(None)  # Has state data
+                ).all()
+                
+                for hiring in hirings:
+                    agent_id_str = str(hiring.agent_id)
+                    if agent_id_str not in self._agent_states:
+                        # Load from database if not in memory
+                        agent_state = self._load_agent_state(agent_id_str)
+                        if agent_state:
+                            self._agent_states[agent_id_str] = agent_state
+        except Exception as e:
+            logger.error(f"Error loading agents from database: {e}")
+        
+        # Now list all agents from memory cache (which now includes database data)
         for agent_id, agent_state in self._agent_states.items():
             agents.append({
                 "agent_id": agent_id,

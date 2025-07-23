@@ -47,59 +47,7 @@ except ImportError:
     LANGCHAIN_AVAILABLE = False
 
 # Import the base PersistentAgent class from the SDK
-try:
-    from agenthub_sdk.agent import PersistentAgent
-except ImportError:
-    # Fallback for when running standalone
-    from abc import ABC, abstractmethod
-
-
-    class PersistentAgent(ABC):
-        """
-        Base class for persistent agents with state management.
-        
-        This class provides:
-        - State management (_get_state/_set_state)
-        - Lifecycle management (_is_initialized/_mark_initialized)
-        - Abstract methods for agent implementation
-        
-        The platform handles all platform concerns (IDs, tracking, etc.).
-        Agents focus only on business logic.
-        """
-
-        def __init__(self):
-            self._state = {}
-            self._initialized = False
-
-        @abstractmethod
-        def initialize(self, config: Dict[str, Any]) -> Dict[str, Any]:
-            """Initialize the agent with configuration."""
-            pass
-
-        @abstractmethod
-        def execute(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
-            """Execute the agent with input data."""
-            pass
-
-        def cleanup(self) -> Dict[str, Any]:
-            """Clean up agent resources."""
-            return {"status": "cleaned_up", "message": "Default cleanup completed"}
-
-        def _get_state(self, key: str, default: Any = None) -> Any:
-            """Get value from agent state."""
-            return self._state.get(key, default)
-
-        def _set_state(self, key: str, value: Any) -> None:
-            """Set value in agent state."""
-            self._state[key] = value
-
-        def _is_initialized(self) -> bool:
-            """Check if agent is initialized."""
-            return self._initialized
-
-        def _mark_initialized(self) -> None:
-            """Mark agent as initialized."""
-            self._initialized = True
+from agenthub_sdk.agent import PersistentAgent
 
 
 class RAGAgent(PersistentAgent):
