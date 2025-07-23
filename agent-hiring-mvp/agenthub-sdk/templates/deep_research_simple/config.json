@@ -1,8 +1,9 @@
 {
-  "name": "Deep Research Agent (Simple)",
+  "name": "Deep Research Agent Simple",
   "description": "A functional agent that performs deep research on topics using web search and AI analysis",
   "version": "1.0.0",
   "entry_point": "deep_research.py",
+  "agent_type": "function",
   "author": "AgentHub Team",
   "email": "team@agenthub.com",
   "pricing_model": "per_use",
