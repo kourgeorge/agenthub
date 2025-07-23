@@ -347,11 +347,40 @@ class PersistentAgentRuntimeService:
             try:
                 init_result = agent_instance.initialize(init_config)
                 
-                if isinstance(init_result, dict) and init_result.get("status") in ["initialized", "already_initialized"]:
-                    # Add agent ID to response (platform concern)
-                    init_result["agent_id"] = agent_id_str
+                # Check if initialization was successful
+                is_successful = False
+                if isinstance(init_result, dict):
+                    status = init_result.get("status", "")
+                    error = init_result.get("error", "")
                     
-                    # Update agent state
+                    # Check for explicit success statuses
+                    if status in ["initialized", "already_initialized"]:
+                        is_successful = True
+                    # Check for explicit error indicators
+                    elif status == "error" or error or "Error code:" in str(init_result):
+                        is_successful = False
+                    # If no clear status, check if there's any error content
+                    elif any(error_indicator in str(init_result).lower() for error_indicator in 
+                           ["error", "failed", "quota", "insufficient", "429", "500", "400"]):
+                        is_successful = False
+                    else:
+                        # Default to success if no clear error indicators
+                        is_successful = True
+                else:
+                    # Non-dict result, treat as success unless it contains error indicators
+                    result_str = str(init_result).lower()
+                    if any(error_indicator in result_str for error_indicator in 
+                           ["error", "failed", "quota", "insufficient", "429", "500", "400"]):
+                        is_successful = False
+                    else:
+                        is_successful = True
+                
+                if is_successful:
+                    # Add agent ID to response (platform concern)
+                    if isinstance(init_result, dict):
+                        init_result["agent_id"] = agent_id_str
+                    
+                    # Update agent state to READY
                     agent_state.status = PersistentAgentStatus.READY
                     agent_state.state_data = init_result
                     agent_state.last_accessed = time.time()
@@ -360,15 +389,22 @@ class PersistentAgentRuntimeService:
                     logger.info(f"Successfully initialized persistent agent {agent_id}")
                     return RuntimeResult(
                         status=RuntimeStatus.COMPLETED,
-                        output=json.dumps(init_result)
+                        output=json.dumps(init_result) if isinstance(init_result, dict) else str(init_result)
                     )
                 else:
                     # Initialization failed - add agent ID for consistency
                     if isinstance(init_result, dict):
                         init_result["agent_id"] = agent_id_str
                     
+                    # Mark agent as ERROR and clean up
                     agent_state.status = PersistentAgentStatus.ERROR
                     self._save_agent_state(agent_state, hiring_id)
+                    
+                    # Remove failed instance from memory
+                    if agent_id_str in self._agent_instances:
+                        del self._agent_instances[agent_id_str]
+                    
+                    logger.error(f"Agent initialization failed for {agent_id}: {init_result}")
                     return RuntimeResult(
                         status=RuntimeStatus.FAILED,
                         output=json.dumps(init_result) if isinstance(init_result, dict) else str(init_result)
@@ -378,6 +414,11 @@ class PersistentAgentRuntimeService:
                 logger.error(f"Error during agent initialization: {e}")
                 agent_state.status = PersistentAgentStatus.ERROR
                 self._save_agent_state(agent_state, hiring_id)
+                
+                # Remove failed instance from memory
+                if agent_id_str in self._agent_instances:
+                    del self._agent_instances[agent_id_str]
+                
                 return RuntimeResult(
                     status=RuntimeStatus.FAILED,
                     error=f"Initialization error: {e}"
