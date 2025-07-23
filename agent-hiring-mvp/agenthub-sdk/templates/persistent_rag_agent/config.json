@@ -1,0 +1,103 @@
+{
+  "name": "Persistent RAG Agent",
+  "description": "A RAG (Retrieval-Augmented Generation) agent that demonstrates the new persistent agent architecture with separate initialization and execution phases using inheritance-based design.",
+  "version": "1.0.0",
+  "entry_point": "persistent_rag_agent.py",
+  "agent_type": "persistent",
+  "agent_class": "RAGAgent",
+  "requires_initialization": true,
+  "author": "AgentHub Team",
+  "email": "team@agenthub.com",
+  "pricing_model": "per_use",
+  "price_per_use": 0.3,
+  "requirements": [
+    "langchain",
+    "langchain-openai",
+    "langchain-community",
+    "faiss-cpu",
+    "requests",
+    "python-dotenv",
+    "beautifulsoup4",
+    "pypdf"
+  ],
+  "lifecycle": {
+    "initialize": "initialize",
+    "execute": "execute",
+    "cleanup": "cleanup"
+  },
+  "config_schema": {
+    "initialize": {
+      "website_url": {
+        "type": "string",
+        "description": "URL of the website to index for RAG",
+        "required": true,
+        "placeholder": "https://example.com"
+      },
+      "model_name": {
+        "type": "choice",
+        "description": "OpenAI model to use for LLM",
+        "default": "gpt-3.5-turbo",
+        "options": [
+          {
+            "value": "gpt-3.5-turbo",
+            "label": "GPT-3.5 Turbo (Fast & Cost-effective)"
+          },
+          {
+            "value": "gpt-4",
+            "label": "GPT-4 (High Quality)"
+          },
+          {
+            "value": "gpt-4o",
+            "label": "GPT-4o (Latest & Most Capable)"
+          }
+        ]
+      },
+      "temperature": {
+        "type": "number",
+        "description": "Temperature for LLM responses",
+        "default": 0,
+        "minimum": 0,
+        "maximum": 2
+      },
+      "chunk_size": {
+        "type": "integer",
+        "description": "Size of text chunks for processing",
+        "default": 1000,
+        "minimum": 100,
+        "maximum": 4000
+      },
+      "chunk_overlap": {
+        "type": "integer",
+        "description": "Overlap between text chunks",
+        "default": 200,
+        "minimum": 0,
+        "maximum": 1000
+      }
+    },
+    "execute": {
+      "question": {
+        "type": "string",
+        "description": "Question to ask about the indexed content",
+        "required": true,
+        "placeholder": "What is this website about?"
+      }
+    }
+  },
+
+  "capabilities": [
+    "document_indexing",
+    "rag_queries",
+    "persistent_state",
+    "web_scraping",
+    "pdf_processing"
+  ],
+  "tags": [
+    "rag",
+    "persistent",
+    "document-qa",
+    "knowledge-base",
+    "openai",
+    "langchain"
+  ],
+  "category": "research"
+} 
