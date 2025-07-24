@@ -1169,7 +1169,7 @@ try:
     print("Starting agent initialization...", file=sys.stderr)
     start_time = time.time()
     with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
-        result = agent.initialize({json.dumps(input_data.get('input', {}))})
+        result = agent.initialize({repr(input_data.get('input', {}))})
     end_time = time.time()
     print(f"Agent initialization completed in {{end_time - start_time:.2f}} seconds", file=sys.stderr)
 
@@ -1177,7 +1177,7 @@ try:
     # Save state to file (only essential data, not the full agent object)
     state_data = {{
         'initialized': True,
-        'config': {input_data.get('input', {})},
+        'config': {repr(input_data.get('input', {}))},
         'agent_state': agent._state if hasattr(agent, '_state') else {{}}
     }}
     
@@ -1246,7 +1246,7 @@ try:
     agent._state = state_data.get('agent_state', {{}})
 
     with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
-        result = agent.execute({json.dumps(input_data.get('input', {}))})
+        result = agent.execute({repr(input_data.get('input', {}))})
 
     # Save updated state
     state_data['agent_state'] = agent._state if hasattr(agent, '_state') else {{}}
