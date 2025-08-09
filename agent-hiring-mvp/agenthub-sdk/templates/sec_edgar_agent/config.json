@@ -1,0 +1,162 @@
+{
+  "name": "SEC EDGAR Data Extraction Agent",
+  "description": "A comprehensive agent that extracts financial data, filings, and reports from the SEC EDGAR database using official SEC APIs. Can fetch company information, financial statements, XBRL data, and filing history for comprehensive financial analysis.",
+  "version": "1.0.0",
+  "author": "AgentHub",
+  "email": "support@agenthub.com",
+  "entry_point": "sec_edgar_agent.py:main",
+  "agent_type": "function",
+  "pricing_model": "free",
+  "tags": ["finance", "sec", "edgar", "financial-analysis", "xbrl", "regulatory", "data-extraction"],
+  "category": "Financial Analysis",
+  "config_schema": {
+    "operation": {
+      "type": "choice",
+      "description": "Type of SEC EDGAR operation to perform",
+      "default": "company_info",
+      "options": [
+        {"value": "company_info", "label": "Company Information"},
+        {"value": "financial_analysis", "label": "Financial Analysis"},
+        {"value": "company_facts", "label": "Company Facts"},
+        {"value": "company_concept", "label": "Company Concept"},
+        {"value": "frame_data", "label": "Frame Data"},
+        {"value": "search_companies", "label": "Search Companies"},
+        {"value": "compare_companies", "label": "Compare Companies"},
+        {"value": "generate_report", "label": "Generate Report"}
+      ]
+    },
+    "cik": {
+      "type": "string",
+      "description": "Company CIK number (10-digit identifier) for single company operations",
+      "default": ""
+    },
+    "ciks": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "List of CIK numbers for comparison operations",
+      "default": []
+    },
+    "query": {
+      "type": "string",
+      "description": "Search query for company search operations",
+      "default": ""
+    },
+    "concept": {
+      "type": "string",
+      "description": "XBRL concept to analyze (e.g., NetIncomeLoss, Assets, Revenues)",
+      "default": "NetIncomeLoss"
+    },
+    "taxonomy": {
+      "type": "string",
+      "description": "XBRL taxonomy to use (us-gaap, ifrs-full, dei, srt)",
+      "default": "us-gaap"
+    },
+    "unit": {
+      "type": "string",
+      "description": "Unit of measure for frame data (USD, shares, etc.)",
+      "default": "USD"
+    },
+    "period": {
+      "type": "string",
+      "description": "Time period for frame data (e.g., CY2023, CY2023Q1)",
+      "default": "CY2023"
+    },
+    "report_type": {
+      "type": "choice",
+      "description": "Type of financial report to generate",
+      "default": "comprehensive",
+      "options": [
+        {"value": "comprehensive", "label": "Comprehensive"},
+        {"value": "summary", "label": "Summary"},
+        {"value": "detailed", "label": "Detailed"}
+      ]
+    },
+    "include_ai_insights": {
+      "type": "boolean",
+      "description": "Include AI-powered insights in reports",
+      "default": true
+    }
+  },
+  "requirements": [
+    "requests>=2.31.0",
+    "pandas>=2.0.0",
+    "numpy>=1.24.0",
+    "openai>=1.0.0",
+    "python-dotenv>=1.0.0"
+  ],
+  "examples": [
+    {
+      "name": "Get Apple Company Information",
+      "input": {
+        "operation": "company_info",
+        "cik": "0000320193"
+      },
+      "description": "Fetch basic company information and filing history for Apple Inc."
+    },
+    {
+      "name": "Financial Analysis for Microsoft",
+      "input": {
+        "operation": "financial_analysis",
+        "cik": "0000789019"
+      },
+      "description": "Analyze key financial metrics and ratios for Microsoft Corporation"
+    },
+    {
+      "name": "Compare Tech Companies",
+      "input": {
+        "operation": "compare_companies",
+        "ciks": ["0000320193", "0000789019", "0001652044"],
+        "concept": "NetIncomeLoss"
+      },
+      "description": "Compare net income across Apple, Microsoft, and Alphabet"
+    },
+    {
+      "name": "Generate Comprehensive Report",
+      "input": {
+        "operation": "generate_report",
+        "cik": "0000320193",
+        "report_type": "comprehensive",
+        "include_ai_insights": true
+      },
+      "description": "Generate a comprehensive financial report with AI insights for Apple Inc."
+    },
+    {
+      "name": "Search for Companies",
+      "input": {
+        "operation": "search_companies",
+        "query": "AAPL"
+      },
+      "description": "Search for companies by ticker symbol or name"
+    },
+    {
+      "name": "Get XBRL Concept Data",
+      "input": {
+        "operation": "company_concept",
+        "cik": "0000320193",
+        "concept": "Assets",
+        "taxonomy": "us-gaap"
+      },
+      "description": "Get historical assets data for Apple Inc. from XBRL filings"
+    }
+  ],
+  "capabilities": [
+    "SEC EDGAR data extraction",
+    "Company financial analysis",
+    "XBRL data processing",
+    "Financial ratio calculations",
+    "Company comparison analysis",
+    "Filing history tracking",
+    "AI-powered financial insights",
+    "Risk assessment",
+    "Investment recommendations"
+  ],
+  "limitations": [
+    "Requires valid CIK numbers for company-specific operations",
+    "Rate limited by SEC API (100ms delay between requests)",
+    "Some data may be delayed by up to 1 minute after filing",
+    "AI insights require OpenAI API key",
+    "Limited to publicly available SEC data"
+  ]
+} 
