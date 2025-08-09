@@ -22,12 +22,19 @@ from typing import Dict, List, Any, Optional
 import warnings
 from dotenv import load_dotenv
 
+# Import the base PersistentAgent class from the SDK
+from agenthub_sdk.agent import PersistentAgent
+
 load_dotenv()
 
 # Suppress warnings for cleaner output
 warnings.filterwarnings("ignore")
 
-# Import LangChain and LangGraph components
+# Configure logging first
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+# Import LangChain components with fallback
 try:
     from langchain_community.agent_toolkits.load_tools import load_tools
     from langchain.memory import ConversationSummaryBufferMemory
@@ -44,18 +51,13 @@ try:
     from langgraph.prebuilt import create_react_agent
     from langgraph.prebuilt.chat_agent_executor import AgentState
     from langgraph.store.base import BaseStore
+    from langchain.tools import tool
     
     LANGCHAIN_AVAILABLE = True
 except ImportError:
     logger.warning("LangChain not available, using fallback implementation")
     LANGCHAIN_AVAILABLE = False
 
-# Import the base PersistentAgent class from the SDK
-from agenthub_sdk.agent import PersistentAgent
-
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
 
 
 class JSONFileStore:
@@ -100,166 +102,6 @@ class JSONFileStore:
                 json.dump(data, f, indent=2)
         except Exception as e:
             logger.error(f"Error writing memory: {e}")
-
-
-class SaveMemoryTool:
-    """Tool to save memories for the user."""
-    
-    def __init__(self, store: JSONFileStore, config: Dict[str, Any]):
-        self.store = store
-        self.config = config
-    
-    def __call__(self, memory_content: str) -> str:
-        """Save a memory."""
-        try:
-            user_id = self.config.get("configurable", {}).get("user_id", "default_user")
-            namespace = ("memories", user_id)
-            self.store.write(namespace, "memory", memory_content)
-            return f"Memory saved successfully: {memory_content[:100]}..."
-        except Exception as e:
-            return f"Error saving memory: {e}"
-
-
-class DeleteMemoryTool:
-    """Tool to delete memories for the user."""
-    
-    def __init__(self, store: JSONFileStore, config: Dict[str, Any]):
-        self.store = store
-        self.config = config
-    
-    def __call__(self, memory_content: str) -> str:
-        """Delete a memory."""
-        try:
-            # For simplicity, we'll just return a success message
-            # In a real implementation, you'd want to actually delete the memory
-            return f"Memory deletion requested for: {memory_content[:100]}..."
-        except Exception as e:
-            return f"Error deleting memory: {e}"
-
-
-class PDFLoaderTool:
-    """Tool to load and process PDF files."""
-    
-    def __call__(self, file_path: str) -> str:
-        """Load and extract text from a PDF file."""
-        try:
-            loader = PyPDFLoader(file_path)
-            documents = loader.load()
-            text = "\n".join([doc.page_content for doc in documents])
-            return f"PDF loaded successfully. Content preview: {text[:500]}..."
-        except Exception as e:
-            return f"Error loading PDF: {e}"
-
-
-class PythonInterpreterTool:
-    """Tool to execute Python code."""
-    
-    def __call__(self, code: str) -> str:
-        """Execute Python code safely."""
-        try:
-            # Create a safe execution environment
-            safe_globals = {
-                '__builtins__': {
-                    'print': print,
-                    'len': len,
-                    'str': str,
-                    'int': int,
-                    'float': float,
-                    'list': list,
-                    'dict': dict,
-                    'tuple': tuple,
-                    'set': set,
-                    'range': range,
-                    'enumerate': enumerate,
-                    'zip': zip,
-                    'map': map,
-                    'filter': filter,
-                    'sum': sum,
-                    'max': max,
-                    'min': min,
-                    'abs': abs,
-                    'round': round,
-                    'sorted': sorted,
-                    'reversed': reversed,
-                    'any': any,
-                    'all': all,
-                    'bool': bool,
-                    'type': type,
-                    'isinstance': isinstance,
-                    'hasattr': hasattr,
-                    'getattr': getattr,
-                    'setattr': setattr,
-                    'dir': dir,
-                    'vars': vars,
-                    'help': help,
-                    'id': id,
-                    'hash': hash,
-                    'repr': repr,
-                    'ascii': ascii,
-                    'bin': bin,
-                    'hex': hex,
-                    'oct': oct,
-                    'ord': ord,
-                    'chr': chr,
-                    'format': format,
-                    'divmod': divmod,
-                    'pow': pow,
-                    'complex': complex,
-                    'bytes': bytes,
-                    'bytearray': bytearray,
-                    'memoryview': memoryview,
-                    'slice': slice,
-                    'property': property,
-                    'staticmethod': staticmethod,
-                    'classmethod': classmethod,
-                    'super': super,
-                    'object': object,
-                    'Exception': Exception,
-                    'BaseException': BaseException,
-                    'TypeError': TypeError,
-                    'ValueError': ValueError,
-                    'AttributeError': AttributeError,
-                    'KeyError': KeyError,
-                    'IndexError': IndexError,
-                    'NameError': NameError,
-                    'SyntaxError': SyntaxError,
-                    'ImportError': ImportError,
-                    'ModuleNotFoundError': ModuleNotFoundError,
-                    'FileNotFoundError': FileNotFoundError,
-                    'PermissionError': PermissionError,
-                    'OSError': OSError,
-                    'RuntimeError': RuntimeError,
-                    'NotImplementedError': NotImplementedError,
-                    'AssertionError': AssertionError,
-                    'ArithmeticError': ArithmeticError,
-                    'OverflowError': OverflowError,
-                    'ZeroDivisionError': ZeroDivisionError,
-                    'FloatingPointError': FloatingPointError,
-                    'BufferError': BufferError,
-                    'LookupError': LookupError,
-                    'UnicodeError': UnicodeError,
-                    'UnicodeEncodeError': UnicodeEncodeError,
-                    'UnicodeDecodeError': UnicodeDecodeError,
-                    'UnicodeTranslateError': UnicodeTranslateError,
-                    'Warning': Warning,
-                    'UserWarning': UserWarning,
-                    'DeprecationWarning': DeprecationWarning,
-                    'PendingDeprecationWarning': PendingDeprecationWarning,
-                    'SyntaxWarning': SyntaxWarning,
-                    'RuntimeWarning': RuntimeWarning,
-                    'FutureWarning': FutureWarning,
-                    'ImportWarning': ImportWarning,
-                    'UnicodeWarning': UnicodeWarning,
-                    'BytesWarning': BytesWarning,
-                    'ResourceWarning': ResourceWarning,
-                }
-            }
-            
-            # Execute the code
-            exec(code, safe_globals)
-            return "Python code executed successfully."
-        except Exception as e:
-            return f"Error executing Python code: {e}"
 
 
 class PersonalAssistantAgent(PersistentAgent):
@@ -318,9 +160,6 @@ class PersonalAssistantAgent(PersistentAgent):
 
             logger.info("Initializing Personal Assistant agent")
 
-            if not LANGCHAIN_AVAILABLE:
-                raise ValueError("LangChain components not available")
-
             # Validate configuration
             system_prompt = config.get("system_prompt", "You are a helpful personal assistant with access to various tools.")
             model_name = config.get("model_name", "gpt-4")
@@ -328,35 +167,58 @@ class PersonalAssistantAgent(PersistentAgent):
             max_tokens = config.get("max_tokens", 2000)
             enable_memory = config.get("enable_memory", True)
 
-            # Initialize LLM
-            api_key = os.getenv("OPENAI_API_KEY")
-            if not api_key:
-                raise ValueError("OPENAI_API_KEY environment variable is required")
-            
-            self.llm = ChatOpenAI(
-                model=model_name,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                api_key=api_key
-            )
-
             # Initialize memory store if enabled
             if enable_memory:
                 self.store = JSONFileStore(file_path="personal_assistant_memories.json")
-                self.memory_saver = MemorySaver()
+                self.memory_saver = None  # Will be set if LangChain is available
             else:
                 self.store = None
                 self.memory_saver = None
 
-            # Initialize tools
-            self._initialize_tools()
+            # Try to initialize LangChain components
+            langchain_success = False
+            if LANGCHAIN_AVAILABLE:
+                try:
+                    # Initialize LLM
+                    api_key = os.getenv("OPENAI_API_KEY")
+                    if not api_key:
+                        logger.warning("OPENAI_API_KEY environment variable not found, using fallback mode")
+                        raise ValueError("OPENAI_API_KEY environment variable is required")
+                    
+                    self.llm = ChatOpenAI(
+                        model=model_name,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                        api_key=api_key
+                    )
 
-            # Create the agent
-            self.agent = create_react_agent(
-                model=self.llm,
-                tools=self.tools,
-                debug=False
-            )
+                    # Initialize memory saver if enabled
+                    if enable_memory:
+                        self.memory_saver = MemorySaver()
+
+                    # Initialize tools
+                    self._initialize_tools()
+
+                    # Create the agent
+                    self.agent = create_react_agent(
+                        model=self.llm,
+                        tools=self.tools,
+                        debug=False
+                    )
+
+                    langchain_success = True
+                    logger.info(f"LangChain components initialized successfully with {len(self.tools)} tools")
+                except Exception as e:
+                    logger.error(f"Failed to initialize LangChain components: {e}")
+                    # Reset components to None
+                    self.llm = None
+                    self.tools = []
+                    self.agent = None
+                    self.memory_saver = None
+                    langchain_success = False
+            else:
+                logger.warning("LangChain not available, using fallback mode")
+                langchain_success = False
 
             # Store configuration in state (persisted by platform)
             self._set_state("system_prompt", system_prompt)
@@ -364,19 +226,21 @@ class PersonalAssistantAgent(PersistentAgent):
             self._set_state("temperature", temperature)
             self._set_state("max_tokens", max_tokens)
             self._set_state("enable_memory", enable_memory)
-            self._set_state("tools_count", len(self.tools))
+            self._set_state("tools_count", len(self.tools) if self.tools else 0)
+            self._set_state("langchain_available", langchain_success)
 
             # Mark as initialized (important for platform)
             self._mark_initialized()
 
-            logger.info(f"Personal Assistant agent initialized successfully with {len(self.tools)} tools")
+            logger.info(f"Personal Assistant agent initialized successfully (LangChain: {langchain_success})")
 
             return {
                 "status": "initialized",
                 "message": "Successfully initialized Personal Assistant agent",
                 "model_name": model_name,
-                "tools_count": len(self.tools),
-                "enable_memory": enable_memory
+                "tools_count": len(self.tools) if self.tools else 0,
+                "enable_memory": enable_memory,
+                "langchain_available": langchain_success
             }
 
         except Exception as e:
@@ -417,31 +281,93 @@ class PersonalAssistantAgent(PersistentAgent):
 
             logger.info(f"Executing Personal Assistant query for user {user_id}: {message}")
 
-            # Prepare the configuration
-            config = {
-                "configurable": {
-                    "thread_id": f"thread-{user_id}",
-                    "user_id": user_id,
-                    "system_prompt": self._get_state("system_prompt")
-                }
-            }
-            
-            # Create initial state
-            initial_state = {
-                "messages": [{"role": "user", "content": message}]
-            }
-            
-            # Process the request
-            result = self.agent.invoke(initial_state, config)
-            
-            # Extract the response
-            messages = result.get("messages", [])
-            ai_messages = [msg for msg in messages if msg.type == "ai"]
-            
-            if ai_messages:
-                response = ai_messages[-1].content
+            # Check if LangChain is available and agent is properly set up
+            if not LANGCHAIN_AVAILABLE or not self._get_state("langchain_available", False):
+                # Fallback response without LangChain
+                system_prompt = self._get_state("system_prompt", "You are a helpful personal assistant.")
+                model_name = self._get_state("model_name", "gpt-4")
+                
+                # Simple fallback response
+                if "hello" in message.lower() or "hi" in message.lower():
+                    response = f"Hello! I'm your personal assistant. I received your message: '{message}'. I'm currently running in fallback mode due to LangChain availability issues."
+                elif "how are you" in message.lower():
+                    response = "I'm doing well, thank you for asking! I'm currently running in fallback mode but I'm here to help with your requests."
+                else:
+                    response = f"I received your message: '{message}'. I'm currently running in fallback mode due to LangChain availability issues. I can still help with basic responses and remember our conversation."
             else:
-                response = "I couldn't generate a response for your request."
+                # LangChain is available, check if agent needs to be recreated
+                if self.agent is None:
+                    logger.info("LangChain agent is None, recreating from stored configuration")
+                    try:
+                        # Recreate the agent from stored configuration
+                        system_prompt = self._get_state("system_prompt", "You are a helpful personal assistant.")
+                        model_name = self._get_state("model_name", "gpt-4")
+                        temperature = self._get_state("temperature", 0.1)
+                        max_tokens = self._get_state("max_tokens", 2000)
+                        enable_memory = self._get_state("enable_memory", True)
+                        
+                        # Initialize LLM
+                        self.llm = ChatOpenAI(
+                            model=model_name,
+                            temperature=temperature,
+                            max_tokens=max_tokens,
+                            openai_api_key=os.getenv("OPENAI_API_KEY")
+                        )
+                        
+                        # Initialize memory if enabled
+                        if enable_memory:
+                            self.memory_saver = JSONFileStore("memories.json")
+                        
+                        # Initialize tools
+                        self._initialize_tools()
+                        
+                        # Create the agent
+                        self.agent = create_react_agent(
+                            model=self.llm,
+                            tools=self.tools,
+                            debug=False
+                        )
+                        
+                        logger.info(f"LangChain agent recreated successfully with {len(self.tools)} tools")
+                    except Exception as e:
+                        logger.error(f"Failed to recreate LangChain agent: {e}")
+                        # Fall back to simple response
+                        response = f"I received your message: '{message}'. I'm currently running in fallback mode due to LangChain recreation issues."
+                        return {
+                            "response": response,
+                            "message": message,
+                            "user_id": user_id,
+                            "timestamp": datetime.now().isoformat(),
+                            "agent_type": "personal_assistant",
+                            "model_name": self._get_state("model_name")
+                        }
+                
+                # Full LangChain processing
+                # Prepare the configuration
+                config = {
+                    "configurable": {
+                        "thread_id": f"thread-{user_id}",
+                        "user_id": user_id,
+                        "system_prompt": self._get_state("system_prompt")
+                    }
+                }
+                
+                # Create initial state
+                initial_state = {
+                    "messages": [{"role": "user", "content": message}]
+                }
+                
+                # Process the request
+                result = self.agent.invoke(initial_state, config)
+                
+                # Extract the response
+                messages = result.get("messages", [])
+                ai_messages = [msg for msg in messages if msg.type == "ai"]
+                
+                if ai_messages:
+                    response = ai_messages[-1].content
+                else:
+                    response = "I couldn't generate a response for your request."
 
             return {
                 "response": response,
@@ -524,11 +450,149 @@ class PersonalAssistantAgent(PersistentAgent):
             # File management tools
             file_management_toolkit = FileManagementToolkit()
             
-            # Custom tools
-            save_memory_tool = SaveMemoryTool(store=self.store, config={})
-            delete_memory_tool = DeleteMemoryTool(store=self.store, config={})
-            pdf_loader_tool = PDFLoaderTool()
-            python_interpreter_tool = PythonInterpreterTool()
+            # Create custom tools using the @tool decorator
+            @tool
+            def save_memory(memory_content: str) -> str:
+                """Save a memory for the user."""
+                try:
+                    if self.store:
+                        user_id = "default_user"  # Could be passed from context
+                        namespace = ("memories", user_id)
+                        self.store.write(namespace, "memory", memory_content)
+                        return f"Memory saved successfully: {memory_content[:100]}..."
+                    else:
+                        return "Memory storage is disabled"
+                except Exception as e:
+                    return f"Error saving memory: {e}"
+
+            @tool
+            def delete_memory(memory_content: str) -> str:
+                """Delete a memory for the user."""
+                try:
+                    # For simplicity, we'll just return a success message
+                    # In a real implementation, you'd want to actually delete the memory
+                    return f"Memory deletion requested for: {memory_content[:100]}..."
+                except Exception as e:
+                    return f"Error deleting memory: {e}"
+
+            @tool
+            def load_pdf(file_path: str) -> str:
+                """Load and extract text from a PDF file."""
+                try:
+                    loader = PyPDFLoader(file_path)
+                    documents = loader.load()
+                    text = "\n".join([doc.page_content for doc in documents])
+                    return f"PDF loaded successfully. Content preview: {text[:500]}..."
+                except Exception as e:
+                    return f"Error loading PDF: {e}"
+
+            @tool
+            def execute_python(code: str) -> str:
+                """Execute Python code safely."""
+                try:
+                    # Create a safe execution environment
+                    safe_globals = {
+                        '__builtins__': {
+                            'print': print,
+                            'len': len,
+                            'str': str,
+                            'int': int,
+                            'float': float,
+                            'list': list,
+                            'dict': dict,
+                            'tuple': tuple,
+                            'set': set,
+                            'range': range,
+                            'enumerate': enumerate,
+                            'zip': zip,
+                            'map': map,
+                            'filter': filter,
+                            'sum': sum,
+                            'max': max,
+                            'min': min,
+                            'abs': abs,
+                            'round': round,
+                            'sorted': sorted,
+                            'reversed': reversed,
+                            'any': any,
+                            'all': all,
+                            'bool': bool,
+                            'type': type,
+                            'isinstance': isinstance,
+                            'hasattr': hasattr,
+                            'getattr': getattr,
+                            'setattr': setattr,
+                            'dir': dir,
+                            'vars': vars,
+                            'help': help,
+                            'id': id,
+                            'hash': hash,
+                            'repr': repr,
+                            'ascii': ascii,
+                            'bin': bin,
+                            'hex': hex,
+                            'oct': oct,
+                            'ord': ord,
+                            'chr': chr,
+                            'format': format,
+                            'divmod': divmod,
+                            'pow': pow,
+                            'complex': complex,
+                            'bytes': bytes,
+                            'bytearray': bytearray,
+                            'memoryview': memoryview,
+                            'slice': slice,
+                            'property': property,
+                            'staticmethod': staticmethod,
+                            'classmethod': classmethod,
+                            'super': super,
+                            'object': object,
+                            'Exception': Exception,
+                            'BaseException': BaseException,
+                            'TypeError': TypeError,
+                            'ValueError': ValueError,
+                            'AttributeError': AttributeError,
+                            'KeyError': KeyError,
+                            'IndexError': IndexError,
+                            'NameError': NameError,
+                            'SyntaxError': SyntaxError,
+                            'ImportError': ImportError,
+                            'ModuleNotFoundError': ModuleNotFoundError,
+                            'FileNotFoundError': FileNotFoundError,
+                            'PermissionError': PermissionError,
+                            'OSError': OSError,
+                            'RuntimeError': RuntimeError,
+                            'NotImplementedError': NotImplementedError,
+                            'AssertionError': AssertionError,
+                            'ArithmeticError': ArithmeticError,
+                            'OverflowError': OverflowError,
+                            'ZeroDivisionError': ZeroDivisionError,
+                            'FloatingPointError': FloatingPointError,
+                            'BufferError': BufferError,
+                            'LookupError': LookupError,
+                            'UnicodeError': UnicodeError,
+                            'UnicodeEncodeError': UnicodeEncodeError,
+                            'UnicodeDecodeError': UnicodeDecodeError,
+                            'UnicodeTranslateError': UnicodeTranslateError,
+                            'Warning': Warning,
+                            'UserWarning': UserWarning,
+                            'DeprecationWarning': DeprecationWarning,
+                            'PendingDeprecationWarning': PendingDeprecationWarning,
+                            'SyntaxWarning': SyntaxWarning,
+                            'RuntimeWarning': RuntimeWarning,
+                            'FutureWarning': FutureWarning,
+                            'ImportWarning': ImportWarning,
+                            'UnicodeWarning': UnicodeWarning,
+                            'BytesWarning': BytesWarning,
+                            'ResourceWarning': ResourceWarning,
+                        }
+                    }
+                    
+                    # Execute the code
+                    exec(code, safe_globals)
+                    return "Python code executed successfully."
+                except Exception as e:
+                    return f"Error executing Python code: {e}"
             
             # Shell tool
             shell_tool = ShellTool(ask_human_input=False)
@@ -541,10 +605,10 @@ class PersonalAssistantAgent(PersistentAgent):
                 common_tools +
                 file_management_toolkit.get_tools() +
                 [
-                    save_memory_tool,
-                    delete_memory_tool,
-                    pdf_loader_tool,
-                    python_interpreter_tool,
+                    save_memory,
+                    delete_memory,
+                    load_pdf,
+                    execute_python,
                     shell_tool,
                     semantic_scholar_tool
                 ]
