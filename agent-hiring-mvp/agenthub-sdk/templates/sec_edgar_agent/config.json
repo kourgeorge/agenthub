@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "author": "AgentHub",
   "email": "support@agenthub.com",
-  "entry_point": "sec_edgar_agent.py:main",
+  "entry_point": "sec_edgar_agent.py",
   "agent_type": "function",
   "pricing_model": "free",
   "tags": ["finance", "sec", "edgar", "financial-analysis", "xbrl", "regulatory", "data-extraction"],
