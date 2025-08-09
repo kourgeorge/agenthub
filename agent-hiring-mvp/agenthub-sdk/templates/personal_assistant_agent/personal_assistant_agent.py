@@ -35,29 +35,15 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 # Import LangChain components with fallback
-try:
-    from langchain_community.agent_toolkits.load_tools import load_tools
-    from langchain.memory import ConversationSummaryBufferMemory
-    from langchain_community.agent_toolkits import GmailToolkit, FileManagementToolkit
-    from langchain_community.document_loaders import PyPDFLoader
-    from langchain_community.tools import ShellTool
-    from langchain_community.tools.gmail import get_gmail_credentials
-    from langchain_community.tools.gmail.utils import build_resource_service
-    from langchain_community.tools.semanticscholar import SemanticScholarQueryRun
-    from langchain_core.language_models import BaseChatModel
-    from langchain_core.runnables import RunnableConfig
-    from langchain_openai import ChatOpenAI
-    from langgraph.checkpoint.memory import MemorySaver
-    from langgraph.prebuilt import create_react_agent
-    from langgraph.prebuilt.chat_agent_executor import AgentState
-    from langgraph.store.base import BaseStore
-    from langchain.tools import tool
-    
-    LANGCHAIN_AVAILABLE = True
-except ImportError:
-    logger.warning("LangChain not available, using fallback implementation")
-    LANGCHAIN_AVAILABLE = False
-
+from langchain_community.agent_toolkits.load_tools import load_tools
+from langchain_community.agent_toolkits import GmailToolkit, FileManagementToolkit
+from langchain_community.document_loaders import PyPDFLoader
+from langchain_community.tools import ShellTool
+from langchain_community.tools.semanticscholar import SemanticScholarQueryRun
+from langchain_openai import ChatOpenAI
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.prebuilt import create_react_agent
+from langchain.tools import tool
 
 
 class JSONFileStore:
