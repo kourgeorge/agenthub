@@ -14,6 +14,8 @@ from fastapi.responses import JSONResponse
 
 from .database.init_db import init_database
 from .services.token_service import TokenService
+# Import models to ensure they're registered with SQLAlchemy Base metadata
+from .models import *
 from .api import (
     agents_router, 
     hiring_router, 
@@ -24,7 +26,8 @@ from .api import (
     deployment_router,
     agent_proxy_router,
     resources_router,
-    auth_router
+    auth_router,
+    api_keys_router
 )
 
 # Configure logging
@@ -105,6 +108,7 @@ app.include_router(deployment_router, prefix="/api/v1")
 app.include_router(agent_proxy_router, prefix="/api/v1")
 app.include_router(resources_router, prefix="/api/v1")
 app.include_router(auth_router, prefix="/api/v1")
+app.include_router(api_keys_router, prefix="/api/v1")
 
 
 
@@ -126,8 +130,7 @@ async def root():
             "deployment": "/api/v1/deployment",
             "agent_proxy": "/api/v1/agent-proxy",
             "resources": "/api/v1/resources",
-
-
+            "api_keys": "/api/v1/api-keys"
         }
     }
 
@@ -210,7 +213,7 @@ def main():
         port=args.port,
         reload=args.reload,
         log_level="debug" if args.dev else "info",
-        workers=4,  # Add this line
+        workers=1 if args.reload else 4,  # Use 1 worker if reload is enabled
     )
 
 

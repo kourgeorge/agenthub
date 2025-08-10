@@ -45,13 +45,17 @@ def safe_init_database():
         
         # Create all tables - this will handle the case where tables already exist
         try:
+            print(f"DEBUG: About to create all tables. Base metadata tables: {list(Base.metadata.tables.keys())}")
             Base.metadata.create_all(bind=engine)
             logger.info("Database tables created/verified successfully")
+            print(f"DEBUG: Successfully created all tables")
         except OperationalError as e:
             if "already exists" in str(e):
                 logger.info("Database tables already exist, continuing...")
+                print(f"DEBUG: Tables already exist, continuing...")
             else:
                 logger.error(f"Error creating database tables: {e}")
+                print(f"DEBUG: Error creating tables: {e}")
                 raise
         
         # Create session factory

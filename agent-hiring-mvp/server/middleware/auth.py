@@ -1,7 +1,7 @@
 """Authentication middleware for FastAPI."""
 
 from typing import Optional
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Header
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 import jwt
@@ -25,6 +25,7 @@ from server.database.config import get_session_dependency
 from server.models.user import User
 from server.services.auth_service import AuthService
 from server.services.token_service import TokenService
+from server.services.api_key_service import ApiKeyService
 
 security = HTTPBearer()
 
@@ -97,13 +98,23 @@ def verify_refresh_token(token: str) -> Optional[dict]:
 
 def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
     db: Session = Depends(get_session_dependency)
 ) -> User:
-    """Get the current authenticated user from the JWT token."""
+    """Get the current authenticated user from either JWT token or API key."""
+    
+    # Try API key authentication first
+    if x_api_key:
+        user = ApiKeyService.validate_api_key(db, x_api_key)
+        if user:
+            return user
+        # If API key is invalid, continue to JWT authentication
+    
+    # Fall back to JWT authentication
     if not credentials:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials",
+            detail="Could not validate credentials. Please provide either a valid JWT token or API key.",
             headers={"WWW-Authenticate": "Bearer"},
         )
     

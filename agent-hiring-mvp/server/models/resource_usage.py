@@ -60,18 +60,4 @@ class UserBudget(Base):
     user = relationship("User", back_populates="budget")
 
 
-class ApiKey(Base):
-    """Encrypted API keys for external services"""
-    __tablename__ = "api_keys"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    service = Column(String(50), nullable=False)  # openai, pinecone, serper
-    encrypted_key = Column(Text, nullable=False)
-    is_active = Column(Boolean, default=True)
-    last_used = Column(DateTime(timezone=True), nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-    
-    # Relationships
-    user = relationship("User", back_populates="api_keys") 
+ 
