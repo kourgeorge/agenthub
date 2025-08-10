@@ -6,18 +6,25 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 import jwt
 from datetime import datetime, timedelta, timezone
+import sys
+import os
 
-from ...config import (
+# Add the project root to Python path for absolute imports
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+from config import (
     JWT_SECRET_KEY,
     JWT_REFRESH_SECRET_KEY,
     JWT_ALGORITHM,
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES,
     JWT_REFRESH_TOKEN_EXPIRE_DAYS
 )
-from ..database.config import get_session_dependency
-from ..models.user import User
-from ..services.auth_service import AuthService
-from ..services.token_service import TokenService
+from server.database.config import get_session_dependency
+from server.models.user import User
+from server.services.auth_service import AuthService
+from server.services.token_service import TokenService
 
 security = HTTPBearer()
 

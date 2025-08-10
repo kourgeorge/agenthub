@@ -6,25 +6,32 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr
 from typing import Optional
 from datetime import datetime, timezone
+import sys
+import os
 
-from ...config import (
+# Add the project root to Python path for absolute imports
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+from config import (
     JWT_TOKEN_TYPE,
     ALLOWED_PROFILE_FIELDS,
     AUTH_VERIFY_EMAIL_PATH,
     AUTH_RESET_PASSWORD_PATH
 )
-from ..database.config import get_session_dependency
-from ..models.user import User
-from ..middleware.auth import (
+from server.database.config import get_session_dependency
+from server.models.user import User
+from server.middleware.auth import (
     create_access_token, 
     create_refresh_token,
     get_current_user,
     get_current_active_user,
     require_verified_user
 )
-from ..services.auth_service import AuthService
-from ..services.email_service import EmailService
-from ..services.token_service import TokenService
+from server.services.auth_service import AuthService
+from server.services.email_service import EmailService
+from server.services.token_service import TokenService
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
@@ -168,7 +175,7 @@ def refresh_token(
     db: Session = Depends(get_session_dependency)
 ):
     """Refresh access token using refresh token."""
-    from ..middleware.auth import verify_refresh_token
+    from server.middleware.auth import verify_refresh_token
     
     payload = verify_refresh_token(refresh_data.refresh_token)
     if payload is None:

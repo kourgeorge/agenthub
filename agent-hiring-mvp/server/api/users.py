@@ -103,7 +103,12 @@ def create_user(
         "id": new_user.id,
         "username": new_user.username,
         "email": new_user.email,
+        "full_name": new_user.full_name,
+        "bio": new_user.bio,
+        "website": new_user.website,
+        "avatar_url": new_user.avatar_url,
         "is_active": new_user.is_active,
+        "is_verified": new_user.is_verified,
         "created_at": new_user.created_at.isoformat(),
         "updated_at": new_user.updated_at.isoformat(),
         "preferences": new_user.preferences,
@@ -123,7 +128,12 @@ def get_users(
             "id": user.id,
             "username": user.username,
             "email": user.email,
+            "full_name": user.full_name,
+            "bio": user.bio,
+            "website": user.website,
+            "avatar_url": user.avatar_url,
             "is_active": user.is_active,
+            "is_verified": user.is_verified,
             "created_at": user.created_at.isoformat(),
             "updated_at": user.updated_at.isoformat(),
             "preferences": user.preferences,
@@ -149,7 +159,41 @@ def get_user(
         "id": user.id,
         "username": user.username,
         "email": user.email,
+        "full_name": user.full_name,
+        "bio": user.bio,
+        "website": user.website,
+        "avatar_url": user.avatar_url,
         "is_active": user.is_active,
+        "is_verified": user.is_verified,
+        "created_at": user.created_at.isoformat(),
+        "updated_at": user.updated_at.isoformat(),
+        "preferences": user.preferences,
+    }
+
+
+@router.get("/users/email/{email}", response_model=UserResponse)
+def get_user_by_email(
+    email: str,
+    db: Session = Depends(get_session_dependency)
+):
+    """Get a user by email."""
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    return {
+        "id": user.id,
+        "username": user.username,
+        "email": user.email,
+        "full_name": user.full_name,
+        "bio": user.bio,
+        "website": user.website,
+        "avatar_url": user.avatar_url,
+        "is_active": user.is_active,
+        "is_verified": user.is_verified,
         "created_at": user.created_at.isoformat(),
         "updated_at": user.updated_at.isoformat(),
         "preferences": user.preferences,
@@ -173,7 +217,12 @@ def get_user_by_username(
         "id": user.id,
         "username": user.username,
         "email": user.email,
+        "full_name": user.full_name,
+        "bio": user.bio,
+        "website": user.website,
+        "avatar_url": user.avatar_url,
         "is_active": user.is_active,
+        "is_verified": user.is_verified,
         "created_at": user.created_at.isoformat(),
         "updated_at": user.updated_at.isoformat(),
         "preferences": user.preferences,
