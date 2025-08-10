@@ -42,12 +42,12 @@ class ApiKeyResponse(BaseModel):
     class Config:
         from_attributes = True
     
-    @field_validator('created_at', 'updated_at', mode='before')
+    @field_validator('created_at', 'updated_at', 'last_used_at', 'expires_at', mode='before')
     @classmethod
     def parse_datetime(cls, v):
         if v is None:
-            # For updated_at, return empty string when None (newly created)
-            return ""
+            # For optional fields, return None when None
+            return None
         if isinstance(v, str):
             return v
         if hasattr(v, 'isoformat'):
