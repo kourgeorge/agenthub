@@ -25,9 +25,12 @@ class AuthService:
         return pwd_context.hash(password)
     
     @staticmethod
-    def authenticate_user(db: Session, username: str, password: str) -> Optional[User]:
-        """Authenticate a user with username and password."""
-        user = db.query(User).filter(User.username == username).first()
+    def authenticate_user(db: Session, username_or_email: str, password: str) -> Optional[User]:
+        """Authenticate a user with username/email and password."""
+        # Try to find user by username or email
+        user = db.query(User).filter(
+            (User.username == username_or_email) | (User.email == username_or_email)
+        ).first()
         if not user:
             return None
         if not AuthService.verify_password(password, user.password):
@@ -37,12 +40,26 @@ class AuthService:
     @staticmethod
     def create_user(
         db: Session, 
-        username: str, 
         email: str, 
         password: str, 
+        username: Optional[str] = None,
         full_name: Optional[str] = None
     ) -> User:
         """Create a new user with hashed password."""
+        # Auto-generate username from email if not provided
+        if not username:
+            # Extract username part from email (before @)
+            email_username = email.split('@')[0]
+            # Ensure uniqueness by adding random suffix if needed
+            base_username = email_username
+            counter = 1
+            while db.query(User).filter(User.username == username).first():
+                username = f"{base_username}{counter}"
+                counter += 1
+                if counter > 100:  # Prevent infinite loop
+                    raise ValueError("Unable to generate unique username")
+            username = base_username if counter == 1 else username
+        
         # Check if user already exists
         existing_user = db.query(User).filter(
             (User.username == username) | (User.email == email)

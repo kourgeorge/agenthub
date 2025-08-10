@@ -16,7 +16,7 @@ router = APIRouter(tags=["users"])
 
 # Pydantic models for request/response
 class UserCreate(BaseModel):
-    username: str
+    username: Optional[str] = None  # Optional, will be auto-generated from email if not provided
     email: str
     password: Optional[str] = None
     is_active: bool = True
@@ -65,8 +65,26 @@ def create_user(
     db: Session = Depends(get_session_dependency)
 ):
     """Create a new user."""
+    # Auto-generate username from email if not provided
+    username = user_data.username
+    if not username:
+        # Extract username part from email (before @)
+        email_username = user_data.email.split('@')[0]
+        # Ensure uniqueness by adding random suffix if needed
+        base_username = email_username
+        counter = 1
+        while db.query(User).filter(User.username == username).first():
+            username = f"{base_username}{counter}"
+            counter += 1
+            if counter > 100:  # Prevent infinite loop
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Unable to generate unique username"
+                )
+        username = base_username if counter == 1 else username
+    
     # Check if username already exists
-    existing_user = db.query(User).filter(User.username == user_data.username).first()
+    existing_user = db.query(User).filter(User.username == username).first()
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -88,11 +106,14 @@ def create_user(
     
     # Create new user
     new_user = User(
-        username=user_data.username,
+        username=username,
         email=user_data.email,
-        password=hashed_password,  # Fixed: changed from hashed_password to password
+        password=hashed_password,
         is_active=user_data.is_active,
-        preferences=user_data.preferences
+        is_verified=False,  # New users start as unverified
+        preferences=user_data.preferences,
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc)
     )
     
     db.add(new_user)

@@ -15,7 +15,7 @@ class User(Base):
     __tablename__ = "users"
     
     # Basic Information
-    username = Column(String(50), unique=True, nullable=False, index=True)
+    username = Column(String(50), unique=True, nullable=True, index=True)  # Auto-generated from email if not provided
     email = Column(String(255), unique=True, nullable=False, index=True)
     full_name = Column(String(255), nullable=True)
     
@@ -36,7 +36,7 @@ class User(Base):
     last_login_at = Column(DateTime, nullable=True)
     email_verified_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.now, nullable=False)
-    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     
     # Relationships
     hirings = relationship("Hiring", back_populates="user")

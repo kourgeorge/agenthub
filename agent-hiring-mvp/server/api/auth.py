@@ -37,7 +37,7 @@ router = APIRouter(prefix="/auth", tags=["authentication"])
 
 # Request/Response Models
 class LoginRequest(BaseModel):
-    username: str
+    username_or_email: str  # Can be either username or email
     password: str
 
 class LoginResponse(BaseModel):
@@ -50,10 +50,8 @@ class LoginResponse(BaseModel):
     is_verified: bool
 
 class RegisterRequest(BaseModel):
-    username: str
     email: EmailStr
     password: str
-    full_name: Optional[str] = None
 
 class RegisterResponse(BaseModel):
     user_id: int
@@ -100,10 +98,8 @@ def register(
     try:
         user = AuthService.create_user(
             db=db,
-            username=register_data.username,
             email=register_data.email,
-            password=register_data.password,
-            full_name=register_data.full_name
+            password=register_data.password
         )
         
         # Generate verification token and send verification email
@@ -136,14 +132,14 @@ def login(
     login_data: LoginRequest,
     db: Session = Depends(get_session_dependency)
 ):
-    """Login with username and password to get JWT tokens."""
+    """Login with username/email and password to get JWT tokens."""
     # Authenticate user
-    user = AuthService.authenticate_user(db, login_data.username, login_data.password)
+    user = AuthService.authenticate_user(db, login_data.username_or_email, login_data.password)
     
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid username or password"
+            detail="Invalid username/email or password"
         )
     
     if not user.is_active:
