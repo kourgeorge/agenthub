@@ -2,6 +2,7 @@
 fastapi
 uvicorn[standard]
 pydantic
+pydantic[email]
 pydantic-settings
 python-multipart
 cryptography
