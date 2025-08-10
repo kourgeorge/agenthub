@@ -2,7 +2,9 @@
 
 import logging
 import argparse
+import asyncio
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,11 +13,19 @@ from fastapi.responses import JSONResponse
 # SessionMiddleware removed - not needed for server-side only API
 
 from .database.init_db import init_database
-from .api import agents_router, hiring_router, execution_router, acp_router, users_router, billing_router
-
-from .api.deployment import router as deployment_router
-from .api.agent_proxy import router as agent_proxy_router
-from .api.resources import router as resources_router
+from .services.token_service import TokenService
+from .api import (
+    agents_router, 
+    hiring_router, 
+    execution_router, 
+    acp_router, 
+    users_router, 
+    billing_router,
+    deployment_router,
+    agent_proxy_router,
+    resources_router,
+    auth_router
+)
 
 # Configure logging
 logging.basicConfig(
@@ -25,6 +35,17 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+async def cleanup_tokens():
+    """Background task to clean up expired tokens and blacklist."""
+    while True:
+        try:
+            await asyncio.sleep(3600)  # Run every hour
+            TokenService.cleanup_expired_tokens()
+            TokenService.cleanup_blacklist()
+            logger.info("Token cleanup completed")
+        except Exception as e:
+            logger.error(f"Error during token cleanup: {e}")
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager."""
@@ -33,6 +54,11 @@ async def lifespan(app: FastAPI):
     try:
         init_database()
         logger.info("Database initialized successfully")
+        
+        # Start background cleanup task
+        cleanup_task = asyncio.create_task(cleanup_tokens())
+        logger.info("Token cleanup task started")
+        
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}")
         raise
@@ -41,6 +67,12 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     logger.info("Shutting down Agent Hiring System...")
+    try:
+        cleanup_task.cancel()
+        await cleanup_task
+        logger.info("Token cleanup task stopped")
+    except Exception as e:
+        logger.error(f"Error stopping cleanup task: {e}")
 
 
 # Create FastAPI app
@@ -72,7 +104,7 @@ app.include_router(billing_router, prefix="/api/v1")
 app.include_router(deployment_router, prefix="/api/v1")
 app.include_router(agent_proxy_router, prefix="/api/v1")
 app.include_router(resources_router, prefix="/api/v1")
-
+app.include_router(auth_router, prefix="/api/v1")
 
 
 
@@ -178,6 +210,7 @@ def main():
         port=args.port,
         reload=args.reload,
         log_level="debug" if args.dev else "info",
+        workers=4,  # Add this line
     )
 
 
