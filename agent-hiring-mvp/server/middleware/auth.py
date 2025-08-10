@@ -173,6 +173,84 @@ def get_current_user(
     
     return user
 
+
+def get_current_user_optional(
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_session_dependency)
+) -> User:
+    """Get the current authenticated user from either JWT token or API key, with optional credentials."""
+    
+    # Try API key authentication first
+    if x_api_key:
+        user = ApiKeyService.validate_api_key(db, x_api_key)
+        if user:
+            return user
+    
+    # Try JWT authentication if Authorization header is present
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization[7:]  # Remove "Bearer " prefix
+        
+        # Check if token is blacklisted (invalidated after logout)
+        if TokenService.is_token_blacklisted(token):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token has been invalidated",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        try:
+            payload = verify_token(token)
+        except HTTPException:
+            # Re-raise HTTP exceptions from verify_token
+            raise
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Could not validate credentials",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        # Check token type
+        if payload.get("type") != "access":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token type",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        user_id: int = payload.get("sub")
+        if user_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Could not validate credentials",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        user = db.query(User).filter(User.id == user_id).first()
+        if user is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        if not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User account is deactivated",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        return user
+    
+    # If neither API key nor valid JWT token is provided
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials. Please provide either a valid JWT token or API key.",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
 def get_current_active_user(current_user: User = Depends(get_current_user)) -> User:
     """Get the current active user."""
     if not current_user.is_active:

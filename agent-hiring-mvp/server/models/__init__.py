@@ -6,7 +6,8 @@ from .agent_file import AgentFile
 from .hiring import Hiring, HiringStatus
 from .execution import Execution, ExecutionStatus
 from .user import User
-from .resource_usage import UserBudget, ApiKey
+from .resource_usage import UserBudget
+from .user_api_key import UserApiKey
 
 __all__ = [
     "Base",
@@ -19,5 +20,5 @@ __all__ = [
     "ExecutionStatus",
     "User",
     "UserBudget",
-    "ApiKey",
+    "UserApiKey",
 ] 

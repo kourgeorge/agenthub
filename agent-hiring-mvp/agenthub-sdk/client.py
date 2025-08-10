@@ -29,13 +29,23 @@ logger = logging.getLogger(__name__)
 class AgentHubClient:
     """Complete client for AgentHub platform interactions."""
     
-    def __init__(self, base_url: str = "http://localhost:8002"):
+    def __init__(self, base_url: str = "http://localhost:8002", api_key: Optional[str] = None):
         self.base_url = base_url.rstrip("/")
         self.api_base = f"{self.base_url}/api/v1"
         self.session: Optional[aiohttp.ClientSession] = None
+        self.api_key = api_key
         
         # Determine if we need to disable SSL verification
         self.disable_ssl_verify = self.base_url.startswith("https://localhost") or self.base_url.startswith("https://127.0.0.1")
+    
+    def _get_headers(self, additional_headers: Optional[Dict[str, str]] = None) -> Dict[str, str]:
+        """Get headers with authentication if API key is available."""
+        headers = {}
+        if self.api_key:
+            headers["X-API-Key"] = self.api_key
+        if additional_headers:
+            headers.update(additional_headers)
+        return headers
     
     async def __aenter__(self):
         """Async context manager entry."""
@@ -63,7 +73,6 @@ class AgentHubClient:
         self,
         agent: Agent,
         code_directory: str,
-        api_key: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Submit an agent to the hiring platform."""
         if not self.session:
@@ -134,9 +143,7 @@ class AgentHubClient:
                 )
             
             # Submit agent
-            headers = {}
-            if api_key:
-                headers["Authorization"] = f"Bearer {api_key}"
+            headers = self._get_headers()
             
             async with self.session.post(
                 f"{self.api_base}/agents/submit",
@@ -317,6 +324,7 @@ class AgentHubClient:
         async with self.session.get(
             f"{self.api_base}/agents",
             params=params,
+            headers=self._get_headers(),
         ) as response:
             if response.status == 200:
                 return await response.json()
@@ -331,6 +339,7 @@ class AgentHubClient:
         
         async with self.session.get(
             f"{self.api_base}/agents/{agent_id}",
+            headers=self._get_headers(),
         ) as response:
             if response.status == 200:
                 return await response.json()
@@ -345,6 +354,7 @@ class AgentHubClient:
         
         async with self.session.put(
             f"{self.api_base}/agents/{agent_id}/approve",
+            headers=self._get_headers(),
         ) as response:
             if response.status == 200:
                 return await response.json()
@@ -360,6 +370,7 @@ class AgentHubClient:
         async with self.session.put(
             f"{self.api_base}/agents/{agent_id}/reject",
             params={"reason": reason},
+            headers=self._get_headers(),
         ) as response:
             if response.status == 200:
                 return await response.json()
@@ -397,6 +408,7 @@ class AgentHubClient:
         async with self.session.post(
             f"{self.api_base}/hiring/",
             json=data,
+            headers=self._get_headers(),
         ) as response:
             if response.status == 200:
                 result = await response.json()
@@ -432,6 +444,7 @@ class AgentHubClient:
         async with self.session.get(
             f"{self.api_base}/hiring/user/{user_id}",
             params=params,
+            headers=self._get_headers(),
         ) as response:
             if response.status == 200:
                 hired_agents = await response.json()
@@ -463,6 +476,7 @@ class AgentHubClient:
         
         async with self.session.get(
             f"{self.api_base}/hiring/{hiring_id}",
+            headers=self._get_headers(),
         ) as response:
             if response.status == 200:
                 return await response.json()
@@ -475,15 +489,10 @@ class AgentHubClient:
         if not self.session:
             raise RuntimeError("Client not initialized. Use async context manager.")
         
-        data = {}
-        if notes:
-            data["notes"] = notes
-        if timeout:
-            data["timeout"] = timeout
-        
-        async with self.session.put(
-            f"{self.api_base}/hiring/{hiring_id}/cancel",
-            json=data,
+        async with self.session.delete(
+            f"{self.api_base}/hiring/{hiring_id}",
+            json={"notes": notes, "timeout": timeout},
+            headers=self._get_headers(),
         ) as response:
             if response.status == 200:
                 return await response.json()
@@ -502,7 +511,8 @@ class AgentHubClient:
         
         async with self.session.put(
             f"{self.api_base}/hiring/{hiring_id}/suspend",
-            json=data,
+            json={"notes": notes},
+            headers=self._get_headers(),
         ) as response:
             if response.status == 200:
                 return await response.json()
@@ -522,6 +532,7 @@ class AgentHubClient:
         async with self.session.put(
             f"{self.api_base}/hiring/{hiring_id}/activate",
             json=data,
+            headers=self._get_headers(),
         ) as response:
             if response.status == 200:
                 return await response.json()
@@ -550,6 +561,7 @@ class AgentHubClient:
         
         async with self.session.get(
             f"{self.api_base}/execution/{execution_id}",
+            headers=self._get_headers(),
         ) as response:
             if response.status == 200:
                 return await response.json()
@@ -624,6 +636,7 @@ class AgentHubClient:
         async with self.session.post(
             f"{self.api_base}/execution",
             json=data,
+            headers=self._get_headers(),
         ) as response:
             if response.status == 200:
                 result = await response.json()
@@ -638,6 +651,7 @@ class AgentHubClient:
         
         async with self.session.post(
             f"{self.api_base}/execution/{execution_id}/run",
+            headers=self._get_headers(),
         ) as response:
             if response.status == 200:
                 # Return the execution result for immediate executions
@@ -706,6 +720,7 @@ class AgentHubClient:
         
         async with self.session.post(
             f"{self.api_base}/deployment/create/{hiring_id}",
+            headers=self._get_headers(),
         ) as response:
             if response.status == 200:
                 return await response.json()
@@ -722,7 +737,8 @@ class AgentHubClient:
             raise RuntimeError("Client not initialized. Use async context manager.")
         
         async with self.session.post(
-            f"{self.api_base}/deployment/stop/{deployment_id}",
+            f"{self.api_base}/deployment/{deployment_id}/stop",
+            headers=self._get_headers(),
         ) as response:
             if response.status == 200:
                 return await response.json()
@@ -736,7 +752,8 @@ class AgentHubClient:
             raise RuntimeError("Client not initialized. Use async context manager.")
         
         async with self.session.post(
-            f"{self.api_base}/deployment/restart/{deployment_id}",
+            f"{self.api_base}/deployment/{deployment_id}/restart",
+            headers=self._get_headers(),
         ) as response:
             if response.status == 200:
                 return await response.json()
@@ -751,6 +768,7 @@ class AgentHubClient:
         
         async with self.session.get(
             f"{self.api_base}/deployment/status/{agent_id}",
+            headers=self._get_headers(),
         ) as response:
             if response.status == 200:
                 return await response.json()
@@ -764,7 +782,8 @@ class AgentHubClient:
             raise RuntimeError("Client not initialized. Use async context manager.")
         
         async with self.session.get(
-            f"{self.api_base}/deployment/status/{deployment_id}",
+            f"{self.api_base}/deployment/{deployment_id}",
+            headers=self._get_headers(),
         ) as response:
             if response.status == 200:
                 return await response.json()
@@ -787,6 +806,7 @@ class AgentHubClient:
         async with self.session.get(
             f"{self.api_base}/deployment/list",
             params=params,
+            headers=self._get_headers(),
         ) as response:
             if response.status == 200:
                 return await response.json()
@@ -800,8 +820,9 @@ class AgentHubClient:
             raise RuntimeError("Client not initialized. Use async context manager.")
         
         async with self.session.get(
-            f"{self.api_base}/deployment/logs/{agent_id}",
+            f"{self.api_base}/deployment/{agent_id}/logs",
             params={"tail": tail},
+            headers=self._get_headers(),
         ) as response:
             if response.status == 200:
                 return await response.json()
@@ -844,32 +865,36 @@ class AgentHubClient:
 
     async def get_agent_files(self, agent_id: int) -> Dict[str, Any]:
         """Get all files for an agent."""
-        url = f"{self.base_url}/api/v1/agents/{agent_id}/files"
+        if not self.session:
+            raise RuntimeError("Client not initialized. Use async context manager.")
         
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    return {"status": "success", "data": data}
-                else:
-                    error_text = await response.text()
-                    return {"status": "error", "message": f"HTTP {response.status}: {error_text}"}
+        url = f"{self.api_base}/agents/{agent_id}/files"
+        
+        async with self.session.get(url, headers=self._get_headers()) as response:
+            if response.status == 200:
+                data = await response.json()
+                return {"status": "success", "data": data}
+            else:
+                error_text = await response.text()
+                return {"status": "error", "message": f"HTTP {response.status}: {error_text}"}
     
     async def get_agent_file_content(self, agent_id: int, file_path: str) -> Dict[str, Any]:
         """Get content of a specific file for an agent."""
+        if not self.session:
+            raise RuntimeError("Client not initialized. Use async context manager.")
+        
         # URL encode the file path for the API
         import urllib.parse
         encoded_path = urllib.parse.quote(file_path, safe='')
-        url = f"{self.base_url}/api/v1/agents/{agent_id}/files/{encoded_path}"
+        url = f"{self.api_base}/agents/{agent_id}/files/{encoded_path}"
         
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    return {"status": "success", "data": data}
-                else:
-                    error_text = await response.text()
-                    return {"status": "error", "message": f"HTTP {response.status}: {error_text}"}
+        async with self.session.get(url, headers=self._get_headers()) as response:
+            if response.status == 200:
+                data = await response.json()
+                return {"status": "success", "data": data}
+            else:
+                error_text = await response.text()
+                return {"status": "error", "message": f"HTTP {response.status}: {error_text}"}
     
     # =============================================================================
     # PERSISTENT AGENT METHODS
@@ -880,7 +905,7 @@ class AgentHubClient:
         if not self.session:
             raise RuntimeError("Client not initialized. Use async context manager.")
         
-        headers = {}
+        headers = self._get_headers()
         if user_id:
             headers["X-User-ID"] = str(user_id)
         
@@ -906,7 +931,8 @@ class AgentHubClient:
             raise RuntimeError("Client not initialized. Use async context manager.")
         
         async with self.session.post(
-            f"{self.api_base}/execution/{execution_id}/run"
+            f"{self.api_base}/execution/{execution_id}/run",
+            headers=self._get_headers()
         ) as response:
             if response.status == 200:
                 return await response.json()
@@ -939,14 +965,15 @@ def submit_agent_sync(
 ) -> Dict[str, Any]:
     """Submit an agent synchronously."""
     async def _submit():
-        async with AgentHubClient(base_url) as client:
-            return await client.submit_agent(agent, code_directory, api_key)
+        async with AgentHubClient(base_url, api_key=api_key) as client:
+            return await client.submit_agent(agent, code_directory)
     
     return asyncio.run(_submit())
 
 
 def list_agents_sync(
     base_url: str = "http://localhost:8002",
+    api_key: Optional[str] = None,
     skip: int = 0,
     limit: int = 100,
     query: Optional[str] = None,
@@ -954,7 +981,7 @@ def list_agents_sync(
 ) -> Dict[str, Any]:
     """List agents synchronously."""
     async def _list():
-        async with AgentHubClient(base_url) as client:
+        async with AgentHubClient(base_url, api_key=api_key) as client:
             return await client.list_agents(skip, limit, query, category)
     
     return asyncio.run(_list())
@@ -963,13 +990,14 @@ def list_agents_sync(
 def hire_agent_sync(
     agent_id: int,
     base_url: str = "http://localhost:8002",
+    api_key: Optional[str] = None,
     config: Optional[Dict[str, Any]] = None,
     billing_cycle: Optional[str] = None,
     user_id: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Hire an agent synchronously."""
     async def _hire():
-        async with AgentHubClient(base_url) as client:
+        async with AgentHubClient(base_url, api_key=api_key) as client:
             return await client.hire_agent(agent_id, config, billing_cycle, user_id)
     
     return asyncio.run(_hire())
@@ -979,6 +1007,7 @@ def run_agent_sync(
     agent_id: int,
     input_data: Dict[str, Any],
     base_url: str = "http://localhost:8002",
+    api_key: Optional[str] = None,
     hiring_id: Optional[int] = None,
     user_id: Optional[int] = None,
     wait_for_completion: bool = True,
@@ -986,7 +1015,7 @@ def run_agent_sync(
 ) -> Dict[str, Any]:
     """Run an agent synchronously."""
     async def _run():
-        async with AgentHubClient(base_url) as client:
+        async with AgentHubClient(base_url, api_key=api_key) as client:
             return await client.run_agent(
                 agent_id, input_data, hiring_id, user_id, wait_for_completion, timeout
             )
@@ -997,10 +1026,11 @@ def run_agent_sync(
 def approve_agent_sync(
     agent_id: int,
     base_url: str = "http://localhost:8002",
+    api_key: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Approve an agent synchronously."""
     async def _approve():
-        async with AgentHubClient(base_url) as client:
+        async with AgentHubClient(base_url, api_key=api_key) as client:
             return await client.approve_agent(agent_id)
     
     return asyncio.run(_approve())
@@ -1010,10 +1040,11 @@ def reject_agent_sync(
     agent_id: int,
     reason: str,
     base_url: str = "http://localhost:8002",
+    api_key: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Reject an agent synchronously."""
     async def _reject():
-        async with AgentHubClient(base_url) as client:
+        async with AgentHubClient(base_url, api_key=api_key) as client:
             return await client.reject_agent(agent_id, reason)
     
     return asyncio.run(_reject())
@@ -1022,10 +1053,11 @@ def reject_agent_sync(
 def create_deployment_sync(
     hiring_id: int,
     base_url: str = "http://localhost:8002",
+    api_key: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Create a deployment synchronously."""
     async def _create():
-        async with AgentHubClient(base_url) as client:
+        async with AgentHubClient(base_url, api_key=api_key) as client:
             return await client.create_deployment(hiring_id)
     
     return asyncio.run(_create())

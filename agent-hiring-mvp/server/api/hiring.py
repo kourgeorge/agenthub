@@ -8,7 +8,7 @@ from ..database.config import get_session_dependency
 from ..services.hiring_service import HiringService, HiringCreateRequest
 from ..models.hiring import Hiring, HiringStatus
 from ..models.deployment import AgentDeployment
-from ..middleware.auth import get_current_user, require_same_user
+from ..middleware.auth import get_current_user, get_current_user_optional, require_same_user
 
 router = APIRouter(prefix="/hiring", tags=["hiring"])
 
@@ -16,7 +16,7 @@ router = APIRouter(prefix="/hiring", tags=["hiring"])
 @router.post("/", response_model=dict)
 def create_hiring(
     hiring_data: HiringCreateRequest,
-    current_user = Depends(get_current_user),
+    current_user = Depends(get_current_user_optional),
     db: Session = Depends(get_session_dependency)
 ):
     """Create a new hiring request."""
@@ -80,7 +80,7 @@ def create_hiring(
 @router.get("/user", response_model=List[dict])
 def get_current_user_hirings(
     status: Optional[str] = None,
-    current_user = Depends(get_current_user),
+    current_user = Depends(get_current_user_optional),
     db: Session = Depends(get_session_dependency)
 ):
     """Get all hirings for the current authenticated user."""
@@ -159,7 +159,7 @@ def get_current_user_hirings(
 def get_user_hirings(
     user_id: int,
     status: Optional[str] = None,
-    current_user = Depends(get_current_user),
+    current_user = Depends(get_current_user_optional),
     db: Session = Depends(get_session_dependency)
 ):
     """Get all hirings for a user."""
@@ -241,7 +241,7 @@ def get_user_hirings(
 @router.get("/{hiring_id}", response_model=dict)
 def get_hiring(
     hiring_id: int, 
-    current_user = Depends(get_current_user),
+    current_user = Depends(get_current_user_optional),
     db: Session = Depends(get_session_dependency)
 ):
     """Get a hiring by ID."""
@@ -309,7 +309,7 @@ def get_hiring(
 def get_agent_hirings(
     agent_id: int,
     status: Optional[str] = None,
-    current_user = Depends(get_current_user),
+    current_user = Depends(get_current_user_optional),
     db: Session = Depends(get_session_dependency)
 ):
     """Get all hirings for an agent that belong to the current user."""
@@ -346,7 +346,7 @@ def get_agent_hirings(
 def activate_hiring(
     hiring_id: int,
     notes: Optional[str] = None,
-    current_user = Depends(get_current_user),
+    current_user = Depends(get_current_user_optional),
     db: Session = Depends(get_session_dependency)
 ):
     """Activate a hiring."""
@@ -395,7 +395,7 @@ def activate_hiring(
 def suspend_hiring(
     hiring_id: int,
     notes: Optional[str] = None,
-    current_user = Depends(get_current_user),
+    current_user = Depends(get_current_user_optional),
     db: Session = Depends(get_session_dependency)
 ):
     """Suspend a hiring and automatically stop associated deployments."""
@@ -435,7 +435,7 @@ def cancel_hiring(
     hiring_id: int,
     notes: Optional[str] = None,
     timeout: Optional[int] = 60,
-    current_user = Depends(get_current_user),
+    current_user = Depends(get_current_user_optional),
     db: Session = Depends(get_session_dependency)
 ):
     """Cancel a hiring and automatically stop associated deployments."""
@@ -486,7 +486,7 @@ def cancel_hiring(
 @router.get("/stats/user/{user_id}")
 def get_user_hiring_stats(
     user_id: int, 
-    current_user = Depends(get_current_user),
+    current_user = Depends(get_current_user_optional),
     db: Session = Depends(get_session_dependency)
 ):
     """Get hiring statistics for a specific user."""

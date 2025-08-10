@@ -161,11 +161,13 @@ cli_config = CLIConfig()
 @click.group()
 @click.version_option(version="1.0.0")
 @click.option('--verbose', '-v', is_flag=True, help='Enable verbose output')
+@click.option('--api-key', help='API key for authentication')
 @click.pass_context
-def cli(ctx, verbose):
+def cli(ctx, verbose, api_key):
     """AgentHub CLI - Tools for creating and publishing AI agents."""
     ctx.ensure_object(dict)
     ctx.obj['verbose'] = verbose
+    ctx.obj['api_key'] = api_key
     
     if verbose:
         echo(style("AgentHub CLI v1.0.0", fg='green', bold=True))
@@ -541,11 +543,10 @@ def test(ctx, directory, input, config):
 
 @agent.command()
 @click.option('--directory', '-dir', default='.', help='Agent directory to publish')
-@click.option('--api-key', help='API key for authentication')
 @click.option('--base-url', help='Base URL of the AgentHub server')
 @click.option('--dry-run', is_flag=True, help='Validate without publishing')
 @click.pass_context
-def publish(ctx, directory, api_key, base_url, dry_run):
+def publish(ctx, directory, base_url, dry_run):
     """Publish agent to the AgentHub platform."""
     verbose = ctx.obj.get('verbose', False)
     
@@ -557,7 +558,7 @@ def publish(ctx, directory, api_key, base_url, dry_run):
         sys.exit(1)
     
     # Use config defaults if not provided
-    api_key = api_key or cli_config.get('api_key')
+    api_key = ctx.obj.get('api_key') or cli_config.get('api_key')
     base_url = base_url or cli_config.get('base_url', 'http://localhost:8002')
     
     if dry_run:
@@ -622,8 +623,8 @@ def publish(ctx, directory, api_key, base_url, dry_run):
         echo(style("📤 Publishing agent...", fg='blue'))
         
         async def publish_agent():
-            async with AgentHubClient(base_url) as client:
-                result = await client.submit_agent(agent, str(agent_dir), api_key)
+            async with AgentHubClient(base_url, api_key=api_key) as client:
+                result = await client.submit_agent(agent, str(agent_dir))
                 return result
         
         result = asyncio.run(publish_agent())
@@ -658,7 +659,8 @@ def list_agents(ctx, query, category, limit, base_url):
         echo(style("🔍 Fetching agents...", fg='blue'))
         
         async def list_agents():
-            async with AgentHubClient(base_url) as client:
+            api_key = ctx.obj.get('api_key') or cli_config.get('api_key')
+            async with AgentHubClient(base_url, api_key=api_key) as client:
                 result = await client.list_agents(
                     query=query,
                     category=category,
@@ -713,7 +715,8 @@ def info(ctx, agent_id, base_url):
         echo(style(f"🔍 Fetching agent {agent_id}...", fg='blue'))
         
         async def get_agent():
-            async with AgentHubClient(base_url) as client:
+            api_key = ctx.obj.get('api_key') or cli_config.get('api_key')
+            async with AgentHubClient(base_url, api_key=api_key) as client:
                 result = await client.get_agent(agent_id)
                 return result
         
@@ -769,7 +772,8 @@ def files(ctx, agent_id, file_path, base_url):
     
     try:
         async def get_files():
-            async with AgentHubClient(base_url) as client:
+            api_key = ctx.obj.get('api_key') or cli_config.get('api_key')
+            async with AgentHubClient(base_url, api_key=api_key) as client:
                 if file_path:
                     # Show specific file content
                     result = await client.get_agent_file_content(agent_id, file_path)
@@ -828,7 +832,8 @@ def approve(ctx, agent_id, base_url):
         echo(style(f"✅ Approving agent {agent_id}...", fg='blue'))
         
         async def approve_agent():
-            async with AgentHubClient(base_url) as client:
+            api_key = ctx.obj.get('api_key') or cli_config.get('api_key')
+            async with AgentHubClient(base_url, api_key=api_key) as client:
                 result = await client.approve_agent(agent_id)
                 return result
         
@@ -865,7 +870,8 @@ def reject(ctx, agent_id, reason, base_url):
         echo(style("  🧹 Removing all deployments and containers...", fg='yellow'))
         
         async def reject_agent():
-            async with AgentHubClient(base_url) as client:
+            api_key = ctx.obj.get('api_key') or cli_config.get('api_key')
+            async with AgentHubClient(base_url, api_key=api_key) as client:
                 result = await client.reject_agent(agent_id, reason)
                 return result
         
@@ -1007,7 +1013,8 @@ def search(ctx, query, category, pricing, limit, base_url):
         echo(style("🔍 Searching marketplace...", fg='blue'))
         
         async def search_agents():
-            async with AgentHubClient(base_url) as client:
+            api_key = ctx.obj.get('api_key') or cli_config.get('api_key')
+            async with AgentHubClient(base_url, api_key=api_key) as client:
                 result = await client.list_agents(
                     query=query,
                     category=category,
@@ -1056,7 +1063,8 @@ def categories(ctx, base_url):
         echo(style("📋 Fetching categories...", fg='blue'))
         
         async def get_categories():
-            async with AgentHubClient(base_url) as client:
+            api_key = ctx.obj.get('api_key') or cli_config.get('api_key')
+            async with AgentHubClient(base_url, api_key=api_key) as client:
                 result = await client.list_agents(limit=1000)  # Get all to extract categories
                 agents = result.get('agents', [])
                 categories = set(agent.get('category', 'general') for agent in agents)
@@ -1101,7 +1109,8 @@ def hire_agent_cmd(ctx, agent_id, config, billing_cycle, user_id, wait, timeout,
         echo(style(f"🤝 Hiring agent {agent_id}...", fg='blue'))
         
         async def hire_agent():
-            async with AgentHubClient(base_url) as client:
+            api_key = ctx.obj.get('api_key') or cli_config.get('api_key')
+            async with AgentHubClient(base_url, api_key=api_key) as client:
                 result = await client.hire_agent(
                     agent_id=agent_id,
                     config=agent_config,
@@ -1220,7 +1229,8 @@ def execute_hiring_cmd(ctx, hiring_id, input, config, user_id, wait, timeout, ba
             echo(f"Config: {json.dumps(agent_config, indent=2)}")
         
         async def execute_agent():
-            async with AgentHubClient(base_url) as client:
+            api_key = ctx.obj.get('api_key') or cli_config.get('api_key')
+            async with AgentHubClient(base_url, api_key=api_key) as client:
                 if wait:
                     result = await client.run_hired_agent(
                         hiring_id=hiring_id,
@@ -1339,7 +1349,8 @@ def status(ctx, execution_id, base_url):
         echo(style(f"🔍 Checking status of execution {execution_id}...", fg='blue'))
         
         async def get_execution_status():
-            async with AgentHubClient(base_url) as client:
+            api_key = ctx.obj.get('api_key') or cli_config.get('api_key')
+            async with AgentHubClient(base_url, api_key=api_key) as client:
                 result = await client.get_execution_status(execution_id)
                 return result
         
@@ -1395,7 +1406,8 @@ def list_hired(ctx, user_id, hiring_status, show_all, base_url):
         echo(style("📋 Fetching hired agents...", fg='blue'))
         
         async def get_hired_agents():
-            async with AgentHubClient(base_url) as client:
+            api_key = ctx.obj.get('api_key') or cli_config.get('api_key')
+            async with AgentHubClient(base_url, api_key=api_key) as client:
                 result = await client.list_hired_agents(
                     user_id=user_id,
                     status=hiring_status if not show_all else None
@@ -1462,7 +1474,8 @@ def info_hired(ctx, hiring_id, base_url):
         echo(style(f"🔍 Fetching hiring details for {hiring_id}...", fg='blue'))
         
         async def get_hiring_details():
-            async with AgentHubClient(base_url) as client:
+            api_key = ctx.obj.get('api_key') or cli_config.get('api_key')
+            async with AgentHubClient(base_url, api_key=api_key) as client:
                 result = await client.get_hiring_details(hiring_id)
                 return result
         
@@ -1570,7 +1583,8 @@ def cancel_hired(ctx, hiring_id, notes, timeout, base_url):
         echo(f"   ⏱️  Timeout: {timeout} seconds for resource termination")
         
         async def cancel_hiring():
-            async with AgentHubClient(base_url) as client:
+            api_key = ctx.obj.get('api_key') or cli_config.get('api_key')
+            async with AgentHubClient(base_url, api_key=api_key) as client:
                 result = await client.cancel_hiring(hiring_id, notes, timeout)
                 return result
         
@@ -1614,7 +1628,8 @@ def suspend_hired(ctx, hiring_id, notes, base_url):
         echo(style(f"⏸️  Suspending hiring {hiring_id}...", fg='yellow'))
         
         async def suspend_hiring():
-            async with AgentHubClient(base_url) as client:
+            api_key = ctx.obj.get('api_key') or cli_config.get('api_key')
+            async with AgentHubClient(base_url, api_key=api_key) as client:
                 result = await client.suspend_hiring(hiring_id, notes)
                 return result
         
@@ -1649,7 +1664,8 @@ def activate_hired(ctx, hiring_id, notes, base_url):
         echo(style(f"▶️  Activating hiring {hiring_id}...", fg='blue'))
         
         async def activate_hiring():
-            async with AgentHubClient(base_url) as client:
+            api_key = ctx.obj.get('api_key') or cli_config.get('api_key')
+            async with AgentHubClient(base_url, api_key=api_key) as client:
                 result = await client.activate_hiring(hiring_id, notes)
                 return result
         
@@ -1708,7 +1724,8 @@ def initialize_hired(ctx, hiring_id, config, base_url):
             echo(f"Config: {json.dumps(config_data, indent=2)}")
         
         async def initialize_agent():
-            async with AgentHubClient(base_url) as client:
+            api_key = ctx.obj.get('api_key') or cli_config.get('api_key')
+            async with AgentHubClient(base_url, api_key=api_key) as client:
                 # Initialize the hired agent
                 result = await client.initialize_hired_agent(hiring_id, config_data)
                 return result
@@ -1744,7 +1761,8 @@ def history_hired(ctx, user_id, base_url):
         echo(style("📋 Fetching complete hiring history...", fg='blue'))
         
         async def get_hired_agents():
-            async with AgentHubClient(base_url) as client:
+            api_key = ctx.obj.get('api_key') or cli_config.get('api_key')
+            async with AgentHubClient(base_url, api_key=api_key) as client:
                 result = await client.list_hired_agents(user_id=user_id, status=None)
                 return result
         
@@ -1851,7 +1869,8 @@ def create(ctx, hiring_id, base_url, no_wait, timeout):
         echo(style(f"🚀 Creating deployment for hiring {hiring_id}...", fg='blue'))
         
         async def create_deployment():
-            async with AgentHubClient(base_url) as client:
+            api_key = ctx.obj.get('api_key') or cli_config.get('api_key')
+            async with AgentHubClient(base_url, api_key=api_key) as client:
                 result = await client.create_deployment(hiring_id)
                 return result
         
@@ -1928,7 +1947,8 @@ def stop(ctx, deployment_id, base_url):
         echo(style(f"🛑 Stopping deployment {deployment_id}...", fg='blue'))
         
         async def stop_agent():
-            async with AgentHubClient(base_url) as client:
+            api_key = ctx.obj.get('api_key') or cli_config.get('api_key')
+            async with AgentHubClient(base_url, api_key=api_key) as client:
                 result = await client.stop_deployment(deployment_id)
                 return result
         
@@ -1972,7 +1992,8 @@ def list_deployments(ctx, deployment_status, show_all, agent_id, base_url):
             echo(style("📋 Fetching all deployments...", fg='blue'))
         
         async def get_deployments():
-            async with AgentHubClient(base_url) as client:
+            api_key = ctx.obj.get('api_key') or cli_config.get('api_key')
+            async with AgentHubClient(base_url, api_key=api_key) as client:
                 result = await client.list_deployments(agent_id=agent_id, status=deployment_status)
                 return result
         
@@ -2057,7 +2078,8 @@ def status(ctx, deployment_id, base_url):
         echo(style(f"📊 Checking deployment status for {deployment_id}...", fg='blue'))
         
         async def check_status():
-            async with AgentHubClient(base_url) as client:
+            api_key = ctx.obj.get('api_key') or cli_config.get('api_key')
+            async with AgentHubClient(base_url, api_key=api_key) as client:
                 result = await client.get_deployment_status_by_id(deployment_id)
                 return result
         
@@ -2114,7 +2136,8 @@ def history_deployments(ctx, agent_id, base_url):
         echo(style("📋 Fetching complete deployment history...", fg='blue'))
         
         async def get_deployments():
-            async with AgentHubClient(base_url) as client:
+            api_key = ctx.obj.get('api_key') or cli_config.get('api_key')
+            async with AgentHubClient(base_url, api_key=api_key) as client:
                 result = await client.list_deployments(agent_id=agent_id, status=None)
                 return result
         
@@ -2194,7 +2217,8 @@ def restart(ctx, deployment_id, base_url):
         echo(style(f"🔄 Restarting deployment {deployment_id}...", fg='blue'))
         
         async def restart_deployment():
-            async with AgentHubClient(base_url) as client:
+            api_key = ctx.obj.get('api_key') or cli_config.get('api_key')
+            async with AgentHubClient(base_url, api_key=api_key) as client:
                 result = await client.restart_deployment(deployment_id)
                 return result
         
