@@ -54,10 +54,34 @@ class AgentHubClient:
             ssl_context = ssl.create_default_context()
             ssl_context.check_hostname = False
             ssl_context.verify_mode = ssl.CERT_NONE
-            connector = aiohttp.TCPConnector(ssl=ssl_context)
-            self.session = aiohttp.ClientSession(connector=connector)
+            connector = aiohttp.TCPConnector(
+                ssl=ssl_context,
+                limit=100,  # Connection pool size
+                limit_per_host=30,  # Connections per host
+                keepalive_timeout=30,  # Keep connections alive
+                enable_cleanup_closed=True,  # Clean up closed connections
+            )
         else:
-            self.session = aiohttp.ClientSession()
+            connector = aiohttp.TCPConnector(
+                limit=100,  # Connection pool size
+                limit_per_host=30,  # Connections per host
+                keepalive_timeout=30,  # Keep connections alive
+                enable_cleanup_closed=True,  # Clean up closed connections
+            )
+        
+        # Create session with timeout and connection settings
+        timeout = aiohttp.ClientTimeout(
+            total=300,  # 5 minutes total timeout
+            connect=30,  # 30 seconds to establish connection
+            sock_read=60,  # 60 seconds to read from socket
+            sock_connect=30,  # 30 seconds to connect socket
+        )
+        
+        self.session = aiohttp.ClientSession(
+            connector=connector,
+            timeout=timeout,
+            headers={"Connection": "keep-alive"}
+        )
         return self
     
     async def __aexit__(self, exc_type, exc_val, exc_tb):
@@ -640,6 +664,7 @@ class AgentHubClient:
         ) as response:
             if response.status == 200:
                 result = await response.json()
+                logger.debug(f"Execution created successfully")
             else:
                 error_text = await response.text()
                 raise Exception(f"Failed to create execution: {error_text}")
@@ -649,6 +674,10 @@ class AgentHubClient:
         if not execution_id:
             raise Exception("No execution ID returned")
         
+        # Small delay to ensure execution is ready
+        await asyncio.sleep(0.5)
+        
+        logger.debug(f"Triggering execution {execution_id}")
         async with self.session.post(
             f"{self.api_base}/execution/{execution_id}/run",
             headers=self._get_headers(),
@@ -656,6 +685,7 @@ class AgentHubClient:
             if response.status == 200:
                 # Return the execution result for immediate executions
                 execution_result = await response.json()
+                logger.debug(f"Execution triggered successfully")
                 return {
                     "execution_id": execution_id,
                     "status": "running",
