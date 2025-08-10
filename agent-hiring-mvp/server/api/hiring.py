@@ -8,6 +8,7 @@ from ..database.config import get_session_dependency
 from ..services.hiring_service import HiringService, HiringCreateRequest
 from ..models.hiring import Hiring, HiringStatus
 from ..models.deployment import AgentDeployment
+from ..middleware.auth import get_current_user, require_same_user
 
 router = APIRouter(prefix="/hiring", tags=["hiring"])
 
@@ -15,9 +16,13 @@ router = APIRouter(prefix="/hiring", tags=["hiring"])
 @router.post("/", response_model=dict)
 def create_hiring(
     hiring_data: HiringCreateRequest,
+    current_user = Depends(get_current_user),
     db: Session = Depends(get_session_dependency)
 ):
     """Create a new hiring request."""
+    # Ensure the hiring is created for the authenticated user
+    hiring_data.user_id = current_user.id
+    
     hiring_service = HiringService(db)
     
     try:
@@ -72,69 +77,99 @@ def create_hiring(
     return response
 
 
-@router.get("/{hiring_id}", response_model=dict)
-def get_hiring(hiring_id: int, db: Session = Depends(get_session_dependency)):
-    """Get a hiring by ID."""
+@router.get("/user", response_model=List[dict])
+def get_current_user_hirings(
+    status: Optional[str] = None,
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_session_dependency)
+):
+    """Get all hirings for the current authenticated user."""
     hiring_service = HiringService(db)
-    hiring = hiring_service.get_hiring(hiring_id)
     
-    if not hiring:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Hiring not found"
-        )
+    if status:
+        try:
+            hiring_status = HiringStatus(status)
+            hirings = hiring_service.get_user_hirings(current_user.id, hiring_status)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid status: {status}"
+            )
+    else:
+        hirings = hiring_service.get_user_hirings(current_user.id)
     
-    # Get deployment information
-    deployment = db.query(AgentDeployment).filter(
-        AgentDeployment.hiring_id == hiring_id
-    ).first()
-    
-    response = {
-        "id": hiring.id,
-        "agent_id": hiring.agent_id,
-        "user_id": hiring.user_id,
-        "status": hiring.status,
-        "hired_at": hiring.hired_at.isoformat(),
-        "expires_at": hiring.expires_at.isoformat() if hiring.expires_at else None,
-        "config": hiring.config,
-        "state": hiring.state,
-        "total_executions": hiring.total_executions,
-        "last_executed_at": hiring.last_executed_at.isoformat() if hiring.last_executed_at else None,
-    }
-    
-    # Add agent information including agent_type
-    if hiring.agent:
-        response.update({
-            "agent_name": hiring.agent.name,
-            "agent_type": hiring.agent.agent_type,
-            "agent_description": hiring.agent.description,
-        })
-    
-    # Add deployment information if available
-    if deployment:
-        response["deployment"] = {
-            "deployment_id": deployment.deployment_id,
-            "status": deployment.status,
-            "container_id": deployment.container_id,
-            "container_name": deployment.container_name,
-            "deployment_type": deployment.deployment_type,
-            "started_at": deployment.started_at.isoformat() if deployment.started_at else None,
-            "stopped_at": deployment.stopped_at.isoformat() if deployment.stopped_at else None,
-            "is_healthy": deployment.is_healthy,
-            "internal_port": deployment.internal_port,
-            "external_port": deployment.external_port
+    result = []
+    for hiring in hirings:
+        hiring_data = {
+            "id": hiring.id,
+            "agent_id": hiring.agent_id,
+            "status": hiring.status,
+            "billing_cycle": hiring.billing_cycle,
+            "hired_at": hiring.hired_at.isoformat(),
+            "created_at": hiring.hired_at.isoformat(),  # Alias for frontend compatibility
+            "total_executions": hiring.total_executions,
+            "total_cost": 0.0,  # Placeholder for future billing integration
         }
+        
+        # Add agent information
+        if hiring.agent:
+            hiring_data.update({
+                "agent_name": hiring.agent.name,
+                "agent_type": hiring.agent.agent_type,
+                "agent_description": hiring.agent.description,
+            })
+        
+        # Add deployment information for ACP agents
+        if hiring.agent and hiring.agent.agent_type == "acp_server":
+            deployment = db.query(AgentDeployment).filter(
+                AgentDeployment.hiring_id == hiring.id
+            ).first()
+            
+            if deployment:
+                hiring_data["deployment"] = {
+                    "deployment_id": deployment.deployment_id,
+                    "status": deployment.status,
+                    "proxy_endpoint": deployment.proxy_endpoint,
+                    "external_port": deployment.external_port,
+                    "container_id": deployment.container_id,
+                    "started_at": deployment.started_at.isoformat() if deployment.started_at else None
+                }
+        
+        # Add deployment information for function agents
+        elif hiring.agent and hiring.agent.agent_type == "function":
+            deployment = db.query(AgentDeployment).filter(
+                AgentDeployment.hiring_id == hiring.id
+            ).first()
+            
+            if deployment:
+                hiring_data["deployment"] = {
+                    "deployment_id": deployment.deployment_id,
+                    "status": deployment.status,
+                    "container_id": deployment.container_id,
+                    "container_name": deployment.container_name,
+                    "started_at": deployment.started_at.isoformat() if deployment.started_at else None
+                }
+        
+        result.append(hiring_data)
     
-    return response
+    return result
 
 
 @router.get("/user/{user_id}", response_model=List[dict])
 def get_user_hirings(
     user_id: int,
     status: Optional[str] = None,
+    current_user = Depends(get_current_user),
     db: Session = Depends(get_session_dependency)
 ):
     """Get all hirings for a user."""
+    # Ensure the user can only access their own hirings
+    if current_user.id != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: You can only view your own hirings"
+        )
+    
     hiring_service = HiringService(db)
     
     if status:
@@ -203,13 +238,81 @@ def get_user_hirings(
     return result
 
 
+@router.get("/{hiring_id}", response_model=dict)
+def get_hiring(
+    hiring_id: int, 
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_session_dependency)
+):
+    """Get a hiring by ID."""
+    hiring_service = HiringService(db)
+    hiring = hiring_service.get_hiring(hiring_id)
+    
+    if not hiring:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Hiring not found"
+        )
+    
+    # Ensure the user can only access their own hirings
+    if hiring.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: You can only view your own hirings"
+        )
+    
+    # Get deployment information
+    deployment = db.query(AgentDeployment).filter(
+        AgentDeployment.hiring_id == hiring_id
+    ).first()
+    
+    response = {
+        "id": hiring.id,
+        "agent_id": hiring.agent_id,
+        "user_id": hiring.user_id,
+        "status": hiring.status,
+        "hired_at": hiring.hired_at.isoformat(),
+        "expires_at": hiring.expires_at.isoformat() if hiring.expires_at else None,
+        "config": hiring.config,
+        "state": hiring.state,
+        "total_executions": hiring.total_executions,
+        "last_executed_at": hiring.last_executed_at.isoformat() if hiring.last_executed_at else None,
+    }
+    
+    # Add agent information including agent_type
+    if hiring.agent:
+        response.update({
+            "agent_name": hiring.agent.name,
+            "agent_type": hiring.agent.agent_type,
+            "agent_description": hiring.agent.description,
+        })
+    
+    # Add deployment information if available
+    if deployment:
+        response["deployment"] = {
+            "deployment_id": deployment.deployment_id,
+            "status": deployment.status,
+            "container_id": deployment.container_id,
+            "container_name": deployment.container_name,
+            "deployment_type": deployment.deployment_type,
+            "started_at": deployment.started_at.isoformat() if deployment.started_at else None,
+            "stopped_at": deployment.stopped_at.isoformat() if deployment.stopped_at else None,
+            "is_healthy": deployment.is_healthy,
+            "internal_port": deployment.internal_port,
+            "external_port": deployment.external_port
+        }
+    
+    return response
+
+
 @router.get("/agent/{agent_id}", response_model=List[dict])
 def get_agent_hirings(
     agent_id: int,
     status: Optional[str] = None,
+    current_user = Depends(get_current_user),
     db: Session = Depends(get_session_dependency)
 ):
-    """Get all hirings for an agent."""
+    """Get all hirings for an agent that belong to the current user."""
     hiring_service = HiringService(db)
     
     if status:
@@ -224,6 +327,9 @@ def get_agent_hirings(
     else:
         hirings = hiring_service.get_agent_hirings(agent_id)
     
+    # Filter hirings to only show those belonging to the current user
+    user_hirings = [hiring for hiring in hirings if hiring.user_id == current_user.id]
+    
     return [
         {
             "id": hiring.id,
@@ -232,7 +338,7 @@ def get_agent_hirings(
             "hired_at": hiring.hired_at.isoformat(),
             "total_executions": hiring.total_executions,
         }
-        for hiring in hirings
+        for hiring in user_hirings
     ]
 
 
@@ -240,10 +346,26 @@ def get_agent_hirings(
 def activate_hiring(
     hiring_id: int,
     notes: Optional[str] = None,
+    current_user = Depends(get_current_user),
     db: Session = Depends(get_session_dependency)
 ):
     """Activate a hiring."""
     hiring_service = HiringService(db)
+    
+    # First check if the hiring exists and belongs to the current user
+    hiring = hiring_service.get_hiring(hiring_id)
+    if not hiring:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Hiring not found"
+        )
+    
+    if hiring.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: You can only modify your own hirings"
+        )
+    
     result = hiring_service.activate_hiring(hiring_id, notes)
     
     if not result:
@@ -273,10 +395,26 @@ def activate_hiring(
 def suspend_hiring(
     hiring_id: int,
     notes: Optional[str] = None,
+    current_user = Depends(get_current_user),
     db: Session = Depends(get_session_dependency)
 ):
     """Suspend a hiring and automatically stop associated deployments."""
     hiring_service = HiringService(db)
+    
+    # First check if the hiring exists and belongs to the current user
+    hiring = hiring_service.get_hiring(hiring_id)
+    if not hiring:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Hiring not found"
+        )
+    
+    if hiring.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: You can only modify your own hirings"
+        )
+    
     hiring = hiring_service.suspend_hiring(hiring_id, notes)
     
     if not hiring:
@@ -297,17 +435,24 @@ def cancel_hiring(
     hiring_id: int,
     notes: Optional[str] = None,
     timeout: Optional[int] = 60,
+    current_user = Depends(get_current_user),
     db: Session = Depends(get_session_dependency)
 ):
     """Cancel a hiring and automatically stop associated deployments."""
     hiring_service = HiringService(db)
     
-    # First check the current status
+    # First check the current status and ownership
     current_hiring = hiring_service.get_hiring(hiring_id)
     if not current_hiring:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Hiring not found"
+        )
+    
+    if current_hiring.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: You can only modify your own hirings"
         )
     
     # Always perform the cancellation (this will clean up containers even if already cancelled)
@@ -339,12 +484,21 @@ def cancel_hiring(
 
 
 @router.get("/stats/user/{user_id}")
-def get_user_hiring_stats(user_id: int, db: Session = Depends(get_session_dependency)):
-    """Get hiring statistics for a user."""
-    hiring_service = HiringService(db)
-    stats = hiring_service.get_hiring_stats(user_id=user_id)
+def get_user_hiring_stats(
+    user_id: int, 
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_session_dependency)
+):
+    """Get hiring statistics for a specific user."""
+    # Ensure the user can only access their own stats
+    if current_user.id != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: You can only view your own stats"
+        )
     
-    return stats
+    hiring_service = HiringService(db)
+    return hiring_service.get_user_hiring_stats(user_id)
 
 
 @router.get("/stats/agent/{agent_id}")

@@ -167,7 +167,7 @@ class FunctionDeploymentService:
             deployment.container_id = container.id
             deployment.container_name = container.name
             deployment.status = DeploymentStatus.RUNNING.value
-            deployment.started_at = datetime.utcnow()
+            deployment.started_at = datetime.now()
             self.db.commit()
             
             logger.info(f"Successfully deployed function agent {agent.id} in container {container.name}")
@@ -399,7 +399,7 @@ with open('/tmp/agent_stderr.txt', 'w') as f:
             
             # Update deployment status
             deployment.status = DeploymentStatus.STOPPED.value
-            deployment.stopped_at = datetime.utcnow()
+            deployment.stopped_at = datetime.now()
             self.db.commit()
             
             return {"status": "success", "message": "Deployment suspended"}
@@ -435,7 +435,7 @@ with open('/tmp/agent_stderr.txt', 'w') as f:
             
             # Update deployment status
             deployment.status = DeploymentStatus.RUNNING.value
-            deployment.started_at = datetime.utcnow()
+            deployment.started_at = datetime.now()
             deployment.stopped_at = None
             self.db.commit()
             
@@ -470,7 +470,7 @@ with open('/tmp/agent_stderr.txt', 'w') as f:
             
             # Update deployment status
             deployment.status = DeploymentStatus.STOPPED.value
-            deployment.stopped_at = datetime.utcnow()
+            deployment.stopped_at = datetime.now()
             self.db.commit()
             
             return {"status": "success", "message": "Deployment stopped"}

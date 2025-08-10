@@ -6,7 +6,11 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..services.deployment_service import DeploymentService
+from ..services.function_deployment_service import FunctionDeploymentService
 from ..models.deployment import AgentDeployment
+from ..models.agent import Agent
+from ..models.hiring import Hiring
+from ..middleware.auth import get_current_user
 
 router = APIRouter(prefix="/deployment", tags=["deployment"])
 
@@ -162,9 +166,26 @@ def list_deployments(
 @router.get("/hiring/{hiring_id}")
 def get_deployment_by_hiring(
     hiring_id: int,
+    current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Get deployment for a specific hiring."""
+    # Get the hiring to check user ownership
+    hiring = db.query(Hiring).filter(Hiring.id == hiring_id).first()
+    
+    if not hiring:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Hiring not found"
+        )
+    
+    # Ensure the user can only access their own hirings
+    if hiring.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: You can only access your own hirings"
+        )
+    
     deployment = db.query(AgentDeployment).filter(
         AgentDeployment.hiring_id == hiring_id
     ).first()
@@ -176,12 +197,10 @@ def get_deployment_by_hiring(
         )
     
     # Get agent type to determine which service to use
-    from ..models.agent import Agent
     agent = db.query(Agent).filter(Agent.id == deployment.agent_id).first()
     
     if agent and agent.agent_type == "function":
         # Use function deployment service for function agents
-        from ..services.function_deployment_service import FunctionDeploymentService
         deployment_service = FunctionDeploymentService(db)
         return deployment_service.get_function_deployment_status(deployment.deployment_id)
     else:

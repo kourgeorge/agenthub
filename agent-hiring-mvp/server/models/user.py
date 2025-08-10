@@ -20,7 +20,7 @@ class User(Base):
     full_name = Column(String(255), nullable=True)
     
     # Authentication
-    hashed_password = Column(String(255), nullable=True)  # None for OAuth users
+    password = Column(String(255), nullable=False)  # Hashed password
     is_active = Column(Boolean, default=True, nullable=False)
     is_verified = Column(Boolean, default=False, nullable=False)
     
@@ -35,6 +35,8 @@ class User(Base):
     # Timestamps
     last_login_at = Column(DateTime, nullable=True)
     email_verified_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.utcnow, nullable=False)
     
     # Relationships
     hirings = relationship("Hiring", back_populates="user")

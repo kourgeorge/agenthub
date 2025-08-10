@@ -49,7 +49,7 @@ class HiringService:
             status=HiringStatus.ACTIVE.value,
             config=hiring_data.requirements or {},
             billing_cycle=hiring_data.billing_cycle,
-            hired_at=datetime.utcnow(),
+            hired_at=datetime.now(),
         )
         
         self.db.add(hiring)
@@ -189,7 +189,7 @@ class HiringService:
         hiring.status = status.value
         
         if status == HiringStatus.ACTIVE:
-            hiring.hired_at = datetime.utcnow()
+            hiring.hired_at = datetime.now()
             # If reactivating a suspended agent, restart deployment
             if old_status == HiringStatus.SUSPENDED.value:
                 self._handle_acp_agent_activation(hiring)
@@ -198,7 +198,7 @@ class HiringService:
                 # Also handle persistent agent activation
                 self._handle_persistent_agent_activation(hiring)
         elif status == HiringStatus.SUSPENDED:
-            hiring.last_executed_at = datetime.utcnow()
+            hiring.last_executed_at = datetime.now()
             # For ACP agents, suspend the deployment (keep container but stop processing)
             self._handle_acp_agent_suspension(hiring)
             # For function agents, also suspend the deployment
@@ -206,7 +206,7 @@ class HiringService:
             # For persistent agents, also suspend the deployment
             self._handle_persistent_agent_suspension(hiring)
         elif status == HiringStatus.CANCELLED:
-            hiring.last_executed_at = datetime.utcnow()
+            hiring.last_executed_at = datetime.now()
             # For ACP agents, stop and remove the deployment
             acp_cancellation_success = self._handle_acp_agent_cancellation(hiring, timeout=60)
             # For function agents, stop and remove the deployment

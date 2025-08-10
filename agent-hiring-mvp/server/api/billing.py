@@ -19,10 +19,11 @@ router = APIRouter(prefix="/billing", tags=["billing"])
 
 @router.get("/summary")
 async def get_billing_summary(
-    db: Session = Depends(get_db),
-    months: int = Query(12, description="Number of months to fetch")
+    user_id: int = Query(..., description="User ID to get billing for"),
+    months: int = Query(12, description="Number of months to fetch"),
+    db: Session = Depends(get_db)
 ):
-    """Get billing summary for the last N months."""
+    """Get billing summary for the last N months for a specific user."""
     try:
         # Calculate date range
         end_date = datetime.now()
@@ -31,11 +32,12 @@ async def get_billing_summary(
         # Initialize monthly data structure
         monthly_data = {}
         
-        # Get executions
+        # Get executions for this specific user only
         executions = db.query(Execution).filter(
             and_(
                 Execution.created_at >= start_date,
-                Execution.created_at <= end_date
+                Execution.created_at <= end_date,
+                Execution.user_id == user_id  # Filter by user
             )
         ).all()
         
@@ -75,11 +77,12 @@ async def get_billing_summary(
                 "resource_usage": []
             })
         
-        # Get hiring data
+        # Get hiring data for this specific user only
         hirings = db.query(Hiring).filter(
             and_(
                 Hiring.created_at >= start_date,
-                Hiring.created_at <= end_date
+                Hiring.created_at <= end_date,
+                Hiring.user_id == user_id  # Filter by user
             )
         ).all()
         
@@ -117,33 +120,36 @@ async def get_billing_summary(
                 "charges": 0.0  # Will be calculated from resource usage
             })
         
-        # Get resource usage data and calculate charges
-        resource_usage = db.query(ExecutionResourceUsage).filter(
-            and_(
-                ExecutionResourceUsage.created_at >= start_date,
-                ExecutionResourceUsage.created_at <= end_date
-            )
-        ).all()
-        
-        # Calculate charges from resource usage
-        for usage in resource_usage:
-            # Find the execution this usage belongs to
-            for month_data in monthly_data.values():
-                for execution in month_data["executions"]:
-                    if str(execution["id"]) == str(usage.execution_id):
-                        execution["charges"] += usage.cost
-                        execution["resource_usage"].append({
-                            "resource_type": usage.resource_type,
-                            "provider": usage.resource_provider,
-                            "model": usage.resource_model,
-                            "operation_type": usage.operation_type,
-                            "cost": usage.cost,
-                            "input_tokens": usage.input_tokens,
-                            "output_tokens": usage.output_tokens,
-                            "duration_ms": usage.duration_ms,
-                            "created_at": usage.created_at.isoformat() if usage.created_at else None
-                        })
-                        break
+        # Get resource usage data for this user's executions and calculate charges
+        if executions:
+            execution_ids = [execution.id for execution in executions]
+            resource_usage = db.query(ExecutionResourceUsage).filter(
+                and_(
+                    ExecutionResourceUsage.created_at >= start_date,
+                    ExecutionResourceUsage.created_at <= end_date,
+                    ExecutionResourceUsage.execution_id.in_(execution_ids)  # Filter by user's executions
+                )
+            ).all()
+            
+            # Calculate charges from resource usage
+            for usage in resource_usage:
+                # Find the execution this usage belongs to
+                for month_data in monthly_data.values():
+                    for execution in month_data["executions"]:
+                        if str(execution["id"]) == str(usage.execution_id):
+                            execution["charges"] += usage.cost
+                            execution["resource_usage"].append({
+                                "resource_type": usage.resource_type,
+                                "provider": usage.resource_provider,
+                                "model": usage.resource_model,
+                                "operation_type": usage.operation_type,
+                                "cost": usage.cost,
+                                "input_tokens": usage.input_tokens,
+                                "output_tokens": usage.output_tokens,
+                                "duration_ms": usage.duration_ms,
+                                "created_at": usage.created_at.isoformat() if usage.created_at else None
+                            })
+                            break
         
         # Calculate total charges for each month
         for month_data in monthly_data.values():
@@ -176,6 +182,7 @@ async def get_billing_summary(
 @router.get("/execution/{execution_id}/resources")
 async def get_execution_resources(
     execution_id: str,
+    user_id: int = Query(..., description="User ID to verify access"),
     db: Session = Depends(get_db)
 ):
     """Get detailed resource usage for a specific execution."""
@@ -195,6 +202,13 @@ async def get_execution_resources(
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Execution not found"
+            )
+        
+        # Verify that the execution belongs to the requesting user
+        if execution.user_id != user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: You can only view your own executions"
             )
         
         # Get resource usage for this execution (using the integer id)
@@ -258,13 +272,66 @@ async def get_execution_resources(
 @router.get("/invoice/{month}")
 async def download_invoice(
     month: str,
+    user_id: int = Query(..., description="User ID to verify access"),
     db: Session = Depends(get_db)
 ):
-    """Download invoice for a specific month (placeholder)."""
-    # This would generate a PDF invoice in production
-    # For now, return a simple JSON response
-    return {
-        "message": f"Invoice for {month}",
-        "status": "not_implemented",
-        "note": "PDF generation not implemented yet"
-    } 
+    """Download invoice for a specific month for a specific user."""
+    try:
+        # Verify that the user has data for this month
+        # Calculate date range for the month
+        try:
+            year, month_num = month.split('-')
+            start_date = datetime(int(year), int(month_num), 1)
+            if int(month_num) == 12:
+                end_date = datetime(int(year) + 1, 1, 1)
+            else:
+                end_date = datetime(int(year), int(month_num) + 1, 1)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid month format. Use YYYY-MM"
+            )
+        
+        # Check if user has any executions or hirings in this month
+        executions_count = db.query(Execution).filter(
+            and_(
+                Execution.created_at >= start_date,
+                Execution.created_at < end_date,
+                Execution.user_id == user_id
+            )
+        ).count()
+        
+        hirings_count = db.query(Hiring).filter(
+            and_(
+                Hiring.created_at >= start_date,
+                Hiring.created_at < end_date,
+                Hiring.user_id == user_id
+            )
+        ).count()
+        
+        if executions_count == 0 and hirings_count == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No billing data found for {month}"
+            )
+        
+        # This would generate a PDF invoice in production
+        # For now, return a simple JSON response
+        return {
+            "message": f"Invoice for {month}",
+            "user_id": user_id,
+            "month": month,
+            "executions_count": executions_count,
+            "hirings_count": hirings_count,
+            "status": "not_implemented",
+            "note": "PDF generation not implemented yet"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error generating invoice: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate invoice: {str(e)}"
+        ) 

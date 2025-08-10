@@ -3,10 +3,13 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
+from datetime import datetime, timezone
 
 from ..database.config import get_session_dependency
 from ..models.user import User
+from ..services.auth_service import AuthService
+from ..middleware.auth import get_current_user
 
 router = APIRouter(tags=["users"])
 
@@ -20,11 +23,37 @@ class UserCreate(BaseModel):
     preferences: Optional[dict] = None
 
 
+class UserUpdate(BaseModel):
+    full_name: Optional[str] = None
+    email: Optional[str] = None
+    bio: Optional[str] = None
+    website: Optional[str] = None
+    avatar_url: Optional[str] = None
+    preferences: Optional[dict] = None
+
+
+class PasswordUpdate(BaseModel):
+    current_password: str
+    new_password: str
+    
+    @field_validator('new_password')
+    @classmethod
+    def validate_new_password(cls, v):
+        if len(v) < 6:
+            raise ValueError('Password must be at least 6 characters long')
+        return v
+
+
 class UserResponse(BaseModel):
     id: int
     username: str
     email: str
+    full_name: Optional[str] = None
+    bio: Optional[str] = None
+    website: Optional[str] = None
+    avatar_url: Optional[str] = None
     is_active: bool
+    is_verified: bool
     created_at: str
     updated_at: str
     preferences: Optional[dict] = None
@@ -45,18 +74,23 @@ def create_user(
         )
     
     # Check if email already exists
-    existing_email = db.query(User).filter(User.email == user_data.email).first()
-    if existing_email:
+    existing_user = db.query(User).filter(User.email == user_data.email).first()
+    if existing_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already exists"
         )
     
+    # Hash the password if provided
+    hashed_password = None
+    if user_data.password:
+        hashed_password = AuthService.get_password_hash(user_data.password)
+    
     # Create new user
     new_user = User(
         username=user_data.username,
         email=user_data.email,
-        hashed_password=user_data.password,  # In production, hash this password
+        password=hashed_password,  # Fixed: changed from hashed_password to password
         is_active=user_data.is_active,
         preferences=user_data.preferences
     )
@@ -151,9 +185,147 @@ def get_user_stats(db: Session = Depends(get_session_dependency)):
     """Get user statistics."""
     total_users = db.query(User).count()
     active_users = db.query(User).filter(User.is_active == True).count()
+    verified_users = db.query(User).filter(User.is_verified == True).count()
     
     return {
         "total_users": total_users,
         "active_users": active_users,
-        "inactive_users": total_users - active_users,
+        "verified_users": verified_users
+    }
+
+
+@router.put("/users/profile", response_model=UserResponse)
+def update_user_profile(
+    user_update: UserUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session_dependency)
+):
+    """Update current user's profile information."""
+    try:
+        # Update user fields if provided
+        if user_update.full_name is not None:
+            current_user.full_name = user_update.full_name
+        if user_update.email is not None:
+            # Check if email is already taken by another user
+            existing_user = db.query(User).filter(
+                User.email == user_update.email,
+                User.id != current_user.id
+            ).first()
+            if existing_user:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Email already taken by another user"
+                )
+            current_user.email = user_update.email
+        if user_update.bio is not None:
+            current_user.bio = user_update.bio
+        if user_update.website is not None:
+            current_user.website = user_update.website
+        if user_update.avatar_url is not None:
+            current_user.avatar_url = user_update.avatar_url
+        if user_update.preferences is not None:
+            current_user.preferences = user_update.preferences
+        
+        current_user.updated_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(current_user)
+        
+        return {
+            "id": current_user.id,
+            "username": current_user.username,
+            "email": current_user.email,
+            "full_name": current_user.full_name,
+            "bio": current_user.bio,
+            "website": current_user.website,
+            "avatar_url": current_user.avatar_url,
+            "is_active": current_user.is_active,
+            "is_verified": current_user.is_verified,
+            "created_at": current_user.created_at.isoformat(),
+            "updated_at": current_user.updated_at.isoformat(),
+            "preferences": current_user.preferences,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update profile: {str(e)}"
+        )
+
+
+@router.put("/users/password")
+def update_user_password(
+    password_update: PasswordUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session_dependency)
+):
+    """Update current user's password."""
+    try:
+        # Additional validation
+        if not password_update.current_password:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Current password is required"
+            )
+        
+        if not password_update.new_password:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="New password is required"
+            )
+        
+        if password_update.current_password == password_update.new_password:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="New password must be different from current password"
+            )
+        
+        # Verify current password
+        if not AuthService.verify_password(password_update.current_password, current_user.password):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Current password is incorrect"
+            )
+        
+        # Update password
+        current_user.password = AuthService.get_password_hash(password_update.new_password)
+        current_user.updated_at = datetime.now(timezone.utc)
+        db.commit()
+        
+        return {"message": "Password updated successfully"}
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update password: {str(e)}"
+        )
+
+
+@router.get("/users/profile", response_model=UserResponse)
+def get_current_user_profile(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session_dependency)
+):
+    """Get current user's profile information."""
+    return {
+        "id": current_user.id,
+        "username": current_user.username,
+        "email": current_user.email,
+        "full_name": current_user.full_name,
+        "bio": current_user.bio,
+        "website": current_user.website,
+        "avatar_url": current_user.avatar_url,
+        "is_active": current_user.is_active,
+        "is_verified": current_user.is_verified,
+        "created_at": current_user.created_at.isoformat(),
+        "updated_at": current_user.updated_at.isoformat(),
+        "preferences": current_user.preferences,
     } 

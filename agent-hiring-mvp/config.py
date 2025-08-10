@@ -42,12 +42,48 @@ MAX_EXECUTION_TIME = int(os.getenv("MAX_EXECUTION_TIME", 30))  # seconds
 MAX_OUTPUT_SIZE = int(os.getenv("MAX_OUTPUT_SIZE", 1024 * 1024))  # 1MB
 MAX_CODE_SIZE = int(os.getenv("MAX_CODE_SIZE", 10 * 1024 * 1024))  # 10MB
 
+# =============================================================================
+# SECURITY SETTINGS
+# =============================================================================
+
 # Security settings
 ALLOWED_FILE_EXTENSIONS = {'.py', '.js', '.sh', '.txt', '.json', '.yaml', '.yml'}
 FORBIDDEN_COMMANDS = {
     'rm', 'del', 'format', 'mkfs', 'dd', 'shutdown', 'reboot',
     'sudo', 'su', 'chmod', 'chown', 'mount', 'umount'
 }
+
+# =============================================================================
+# AUTHENTICATION CONFIGURATION
+# =============================================================================
+
+# JWT Configuration
+JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key-here-change-in-production")
+JWT_REFRESH_SECRET_KEY = os.getenv("JWT_REFRESH_SECRET_KEY", "your-refresh-secret-key-here-change-in-production")
+JWT_ALGORITHM = "HS256"
+
+# Token Expiration Settings
+JWT_ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+JWT_REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("JWT_REFRESH_TOKEN_EXPIRE_DAYS", "7"))
+
+# Password Security
+MIN_PASSWORD_LENGTH = int(os.getenv("MIN_PASSWORD_LENGTH", "6"))
+MAX_LOGIN_ATTEMPTS = int(os.getenv("MAX_LOGIN_ATTEMPTS", "5"))
+LOGIN_LOCKOUT_DURATION = int(os.getenv("LOGIN_LOCKOUT_DURATION", "15"))  # minutes
+
+# Email Verification
+EMAIL_VERIFICATION_TOKEN_EXPIRE_HOURS = int(os.getenv("EMAIL_VERIFICATION_TOKEN_EXPIRE_HOURS", "24"))
+PASSWORD_RESET_TOKEN_EXPIRE_HOURS = int(os.getenv("PASSWORD_RESET_TOKEN_EXPIRE_HOURS", "1"))
+
+# Token Configuration
+JWT_TOKEN_TYPE = "bearer"
+
+# Profile Management
+ALLOWED_PROFILE_FIELDS = ["full_name", "bio", "website", "avatar_url"]
+
+# Authentication URLs
+AUTH_VERIFY_EMAIL_PATH = "/verify-email"
+AUTH_RESET_PASSWORD_PATH = "/reset-password"
 
 # =============================================================================
 # API ENDPOINTS

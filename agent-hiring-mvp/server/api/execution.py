@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from ..database.config import get_session_dependency
 from ..services.execution_service import ExecutionService, ExecutionCreateRequest
 from ..models.execution import Execution, ExecutionStatus
+from ..middleware.auth import get_current_user
 
 
 class ExecutionRequest(BaseModel):
@@ -219,11 +220,28 @@ def get_user_executions(
 def get_hiring_executions(
     hiring_id: int,
     limit: int = 100,
+    current_user = Depends(get_current_user),
     db: Session = Depends(get_session_dependency)
 ):
     """Get executions for a hiring."""
     execution_service = ExecutionService(db)
     executions = execution_service.get_hiring_executions(hiring_id, limit)
+    
+    # Get the hiring to check user ownership
+    from ..models.hiring import Hiring
+    hiring = db.query(Hiring).filter(Hiring.id == hiring_id).first()
+    if not hiring:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Hiring not found"
+        )
+    
+    # Ensure the user can only access their own hirings
+    if hiring.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: You can only access your own hirings"
+        )
     
     return [
         {

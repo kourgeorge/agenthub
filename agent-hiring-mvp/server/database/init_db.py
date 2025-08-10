@@ -1,40 +1,111 @@
 """Database initialization for the Agent Hiring System."""
 
 import logging
-from .config import get_engine
-from ..models import Base
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.exc import OperationalError
+from .config import get_database_url
+from ..models.base import Base
 
 logger = logging.getLogger(__name__)
 
-
-def init_database() -> None:
-    """Initialize the database with tables/schema only."""
-    engine = get_engine()
-    
-    # Create all tables
-    logger.info("Creating database tables...")
-    Base.metadata.create_all(bind=engine)
-    logger.info("Database schema initialization completed!")
-    
-    # Run migrations
+def is_database_initialized() -> bool:
+    """Check if the database is already initialized by checking if key tables exist."""
     try:
-        from .migrate_add_container_logs import migrate_add_container_logs
-        migrate_add_container_logs()
+        database_url = get_database_url()
+        engine = create_engine(database_url)
+        
+        # Check if a key table exists (users table is a good indicator)
+        with engine.connect() as connection:
+            result = connection.execute(text("""
+                SELECT name FROM sqlite_master 
+                WHERE type='table' AND name='users'
+            """))
+            return result.fetchone() is not None
     except Exception as e:
-        logger.warning(f"Migration failed (this is normal for new databases): {e}")
+        logger.warning(f"Could not check database initialization status: {e}")
+        return False
+
+
+def safe_init_database():
+    """Safely initialize the database, handling concurrent calls gracefully."""
+    try:
+        # Check if database is already initialized
+        if is_database_initialized():
+            logger.info("Database already initialized, skipping...")
+            return None, None
+        
+        database_url = get_database_url()
+        engine = create_engine(database_url)
+        
+        # Test database connection
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+            logger.info("Database connection successful")
+        
+        # Create all tables - this will handle the case where tables already exist
+        try:
+            Base.metadata.create_all(bind=engine)
+            logger.info("Database tables created/verified successfully")
+        except OperationalError as e:
+            if "already exists" in str(e):
+                logger.info("Database tables already exist, continuing...")
+            else:
+                logger.error(f"Error creating database tables: {e}")
+                raise
+        
+        # Create session factory
+        SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+        
+        logger.info("Database initialization completed successfully")
+        return engine, SessionLocal
+        
+    except Exception as e:
+        logger.error(f"Database initialization failed: {e}")
+        raise
+
+
+def init_database():
+    """Initialize the database and create all tables."""
+    return safe_init_database()
+
+
+def get_current_session():
+    """Get the current database session."""
+    try:
+        database_url = get_database_url()
+        engine = create_engine(database_url)
+        SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+        return SessionLocal()
+    except Exception as e:
+        logger.error(f"Failed to create database session: {e}")
+        raise
 
 
 def reset_database() -> None:
     """Reset the database (drop all tables and recreate schema only)."""
-    engine = get_engine()
-    
-    logger.info("Dropping all tables...")
-    Base.metadata.drop_all(bind=engine)
-    
-    logger.info("Recreating database schema...")
-    init_database()
-    
-    logger.info("Database reset completed!")
+    try:
+        database_url = get_database_url()
+        engine = create_engine(database_url)
+        
+        logger.info("Dropping all tables...")
+        try:
+            Base.metadata.drop_all(bind=engine)
+            logger.info("All tables dropped successfully")
+        except OperationalError as e:
+            if "no such table" in str(e).lower():
+                logger.info("No tables to drop, continuing...")
+            else:
+                logger.error(f"Error dropping tables: {e}")
+                raise
+        
+        logger.info("Recreating database schema...")
+        safe_init_database()
+        
+        logger.info("Database reset completed!")
+    except Exception as e:
+        logger.error(f"Database reset failed: {e}")
+        raise
 
 
 if __name__ == "__main__":

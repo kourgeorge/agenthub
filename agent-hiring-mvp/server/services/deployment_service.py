@@ -232,7 +232,7 @@ class DeploymentService:
             deployment.container_id = container.id
             deployment.container_name = container.name
             deployment.status = DeploymentStatus.RUNNING.value
-            deployment.started_at = datetime.utcnow()
+            deployment.started_at = datetime.now()
             self.db.commit()
             
             logger.info(f"Successfully deployed agent {agent.id} as {deployment_id}")

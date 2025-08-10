@@ -445,30 +445,7 @@ init_database()
 reset_database()
 ```
 
-## Migration and Schema Changes
 
-### Adding New Fields
-
-1. Update the model class in the appropriate file
-2. Create a migration script if needed
-3. Update the database initialization if sample data is affected
-
-### Example Migration
-
-```python
-# Add new field to Agent model
-class Agent(Base):
-    # ... existing fields ...
-    new_field = Column(String(100), nullable=True)
-
-# Update sample data creation
-sample_agents = [
-    Agent(
-        # ... existing fields ...
-        new_field="default_value"
-    )
-]
-```
 
 ## Performance Considerations
 
