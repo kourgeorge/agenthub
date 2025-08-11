@@ -5,6 +5,9 @@
   "entry_point": "headhunter_agent.py",
   "author": "AgentHub Team",
   "email": "team@agenthub.com",
+  "agent_type": "function",
+  "pricing_model": "per_use",
+  "price_per_use": 2,
   "requirements": [
     "openai>=1.0.0", 
     "requests>=2.28.0", 
@@ -16,18 +19,23 @@
   "config_schema": {
     "job_title": {
       "type": "string",
+      "label": "Job Title",
       "description": "The job title or position to search for",
       "required": true,
-      "default": "Software Engineer"
+      "default": "Software Engineer",
+      "placeholder": "Enter job title (e.g., Software Engineer, Data Scientist)"
     },
     "region": {
       "type": "string",
+      "label": "Region",
       "description": "Geographic region or location for the search",
       "required": true,
-      "default": "San Francisco, CA"
+      "default": "San Francisco, CA",
+      "placeholder": "Enter location (e.g., San Francisco, CA or Remote)"
     },
     "description": {
-      "type": "textarea",
+      "type": "string",
+      "label": "Job Description",
       "description": "Optional detailed job description or requirements - one per line",
       "required": false,
       "default": "",
@@ -36,6 +44,7 @@
     },
     "search_depth": {
       "type": "integer",
+      "label": "Search Depth",
       "description": "How many search variations to try (1-5)",
       "default": 3,
       "minimum": 1,
@@ -43,10 +52,17 @@
     },
     "candidates_per_search": {
       "type": "integer",
+      "label": "Candidates per Search",
       "description": "Number of candidates to find per search (5-20)",
       "default": 10,
       "minimum": 5,
       "maximum": 20
+    },
+    "include_remote": {
+      "type": "boolean",
+      "label": "Include Remote Candidates",
+      "description": "Whether to include remote work candidates in the search",
+      "default": true
     }
   }
 } 
