@@ -87,7 +87,7 @@ async def submit_agent(
                 )
             
             # Create agent
-            agent = agent_service.create_agent(agent_data, temp_file_path)
+            agent = agent_service.create_agent(agent_data, temp_file_path, current_user.id)
             
             return {
                 "message": "Agent submitted successfully",

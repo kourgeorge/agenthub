@@ -43,7 +43,7 @@ class AgentService:
     def __init__(self, db: Session):
         self.db = db
     
-    def create_agent(self, agent_data: AgentCreateRequest, code_file_path: str) -> Agent:
+    def create_agent(self, agent_data: AgentCreateRequest, code_file_path: str, owner_id: int) -> Agent:
         """Create a new agent with multiple files."""
         # Calculate code hash
         code_hash = self._calculate_file_hash(code_file_path)
@@ -62,6 +62,7 @@ class AgentService:
             version=agent_data.version,
             author=agent_data.author,
             email=agent_data.email,
+            owner_id=owner_id,  # Set the owner ID
             entry_point=agent_data.entry_point,
             requirements=agent_data.requirements or [],
             config_schema=agent_data.config_schema,
@@ -86,7 +87,7 @@ class AgentService:
         # Create agent file records
         self._create_agent_file_records(agent.id, agent_files)
         
-        logger.info(f"Created agent: {agent.name} (ID: {agent.id}) with {len(agent_files.get('files', []))} files")
+        logger.info(f"Created agent: {agent.name} (ID: {agent.id}) with {len(agent_files.get('files', []))} files for owner {owner_id}")
         return agent
     
     def _generate_unique_agent_id(self, name: str, category: str = "general") -> str:

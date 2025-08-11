@@ -39,6 +39,7 @@ class User(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     
     # Relationships
+    owned_agents = relationship("Agent", back_populates="owner")
     hirings = relationship("Hiring", back_populates="user")
     executions = relationship("Execution", back_populates="user")
     budget = relationship("UserBudget", back_populates="user", uselist=False)

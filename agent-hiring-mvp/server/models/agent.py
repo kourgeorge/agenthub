@@ -3,7 +3,7 @@
 from enum import Enum
 from typing import Optional
 
-from sqlalchemy import Column, String, Text, Boolean, JSON, Float, Integer
+from sqlalchemy import Column, String, Text, Boolean, JSON, Float, Integer, ForeignKey
 from sqlalchemy.orm import relationship
 
 from .base import Base
@@ -40,6 +40,9 @@ class Agent(Base):
     version = Column(String(50), nullable=False, default="1.0.0")
     author = Column(String(255), nullable=False)
     email = Column(String(255), nullable=False)
+    
+    # Owner Information
+    owner_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     
     # Agent Type and Configuration
     agent_type = Column(String(20), nullable=False, default=AgentType.FUNCTION.value)
@@ -78,12 +81,13 @@ class Agent(Base):
     average_rating = Column(Float, default=0.0, nullable=False)
     
     # Relationships
+    owner = relationship("User", back_populates="owned_agents")
     hirings = relationship("Hiring", back_populates="agent")
     executions = relationship("Execution", back_populates="agent")
     files = relationship("AgentFile", back_populates="agent", cascade="all, delete-orphan")
     
     def __repr__(self) -> str:
-        return f"<Agent(id='{self.id}', name='{self.name}', status='{self.status}')>"
+        return f"<Agent(id='{self.id}', name='{self.name}', status='{self.status}', owner_id={self.owner_id})>"
     
     @classmethod
     def generate_id(cls, name: str, category: str = "general") -> str:
