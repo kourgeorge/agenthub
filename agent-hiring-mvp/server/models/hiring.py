@@ -24,7 +24,7 @@ class Hiring(Base):
     __tablename__ = "hirings"
     
     # Relationships
-    agent_id = Column(Integer, ForeignKey("agents.id"), nullable=False)
+    agent_id = Column(String(20), ForeignKey("agents.id"), nullable=False)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # Optional for anonymous hiring
     
     # Hiring Details

@@ -851,7 +851,7 @@ class PersistentAgent(ABC):
         else:
             return {"error": "No proxy endpoint configured for ACP agent"}
     
-    def list_deployments(self, agent_id: Optional[int] = None, status: Optional[str] = None) -> List[Dict[str, Any]]:
+    def list_deployments(self, agent_id: Optional[str] = None, status: Optional[str] = None) -> List[Dict[str, Any]]:
         """List deployments with optional filtering and real-time health checks."""
         query = self.db.query(AgentDeployment)
         
@@ -936,7 +936,7 @@ class PersistentAgent(ABC):
     # PERSISTENT AGENT OPERATIONS
     # =============================================================================
 
-    def _get_agent_config_from_files(self, agent_id: int) -> Dict[str, Any]:
+    def _get_agent_config_from_files(self, agent_id: str) -> Dict[str, Any]:
         """Get agent configuration from config.json file."""
         from ..models.agent_file import AgentFile
         

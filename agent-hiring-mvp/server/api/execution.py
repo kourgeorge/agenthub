@@ -173,7 +173,7 @@ async def run_execution(execution_id: str, db: Session = Depends(get_session_dep
 
 @router.get("/agent/{agent_id}", response_model=List[dict])
 def get_agent_executions(
-    agent_id: int,
+    agent_id: str,
     limit: int = 100,
     db: Session = Depends(get_session_dependency)
 ):
@@ -263,7 +263,7 @@ def get_hiring_executions(
 
 
 @router.get("/stats/agent/{agent_id}")
-def get_agent_execution_stats(agent_id: int, db: Session = Depends(get_session_dependency)):
+def get_agent_execution_stats(agent_id: str, db: Session = Depends(get_session_dependency)):
     """Get execution statistics for an agent."""
     execution_service = ExecutionService(db)
     stats = execution_service.get_execution_stats(agent_id=agent_id)

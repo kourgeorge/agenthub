@@ -356,7 +356,7 @@ class AgentHubClient:
                 error_text = await response.text()
                 raise Exception(f"Failed to list agents: {error_text}")
     
-    async def get_agent(self, agent_id: int) -> Dict[str, Any]:
+    async def get_agent(self, agent_id: str) -> Dict[str, Any]:
         """Get agent details."""
         if not self.session:
             raise RuntimeError("Client not initialized. Use async context manager.")
@@ -371,7 +371,7 @@ class AgentHubClient:
                 error_text = await response.text()
                 raise Exception(f"Failed to get agent: {error_text}")
 
-    async def approve_agent(self, agent_id: int) -> Dict[str, Any]:
+    async def approve_agent(self, agent_id: str) -> Dict[str, Any]:
         """Approve an agent (admin only)."""
         if not self.session:
             raise RuntimeError("Client not initialized. Use async context manager.")
@@ -386,7 +386,7 @@ class AgentHubClient:
                 error_text = await response.text()
                 raise Exception(f"Failed to approve agent: {error_text}")
 
-    async def reject_agent(self, agent_id: int, reason: str) -> Dict[str, Any]:
+    async def reject_agent(self, agent_id: str, reason: str) -> Dict[str, Any]:
         """Reject an agent (admin only)."""
         if not self.session:
             raise RuntimeError("Client not initialized. Use async context manager.")
@@ -408,7 +408,7 @@ class AgentHubClient:
     
     async def hire_agent(
         self,
-        agent_id: int,
+        agent_id: str,
         config: Optional[Dict[str, Any]] = None,
         billing_cycle: Optional[str] = None,
         user_id: Optional[int] = None,
@@ -570,7 +570,7 @@ class AgentHubClient:
     
     async def execute_agent(
         self,
-        agent_id: int,
+        agent_id: str,
         input_data: Dict[str, Any],
         hiring_id: Optional[int] = None,
         user_id: Optional[int] = None,
@@ -595,7 +595,7 @@ class AgentHubClient:
     
     async def run_agent(
         self,
-        agent_id: int,
+        agent_id: str,
         input_data: Dict[str, Any],
         hiring_id: Optional[int] = None,
         user_id: Optional[int] = None,
@@ -791,7 +791,7 @@ class AgentHubClient:
                 error_text = await response.text()
                 raise Exception(f"Failed to restart deployment: {error_text}")
     
-    async def get_deployment_status(self, agent_id: int) -> Dict[str, Any]:
+    async def get_deployment_status(self, agent_id: str) -> Dict[str, Any]:
         """Get deployment status for an agent."""
         if not self.session:
             raise RuntimeError("Client not initialized. Use async context manager.")
@@ -821,7 +821,7 @@ class AgentHubClient:
                 error_text = await response.text()
                 raise Exception(f"Failed to get deployment status: {error_text}")
     
-    async def list_deployments(self, agent_id: Optional[int] = None, status: Optional[str] = None) -> Dict[str, Any]:
+    async def list_deployments(self, agent_id: Optional[str] = None, status: Optional[str] = None) -> Dict[str, Any]:
         """List deployments with optional filtering."""
         if not self.session:
             raise RuntimeError("Client not initialized. Use async context manager.")
@@ -844,7 +844,7 @@ class AgentHubClient:
                 error_text = await response.text()
                 raise Exception(f"Failed to list deployments: {error_text}")
     
-    async def get_deployment_logs(self, agent_id: int, tail: int = 50) -> Dict[str, Any]:
+    async def get_deployment_logs(self, agent_id: str, tail: int = 50) -> Dict[str, Any]:
         """Get logs for a deployed agent."""
         if not self.session:
             raise RuntimeError("Client not initialized. Use async context manager.")
@@ -893,7 +893,7 @@ class AgentHubClient:
         except:
             return False
 
-    async def get_agent_files(self, agent_id: int) -> Dict[str, Any]:
+    async def get_agent_files(self, agent_id: str) -> Dict[str, Any]:
         """Get all files for an agent."""
         if not self.session:
             raise RuntimeError("Client not initialized. Use async context manager.")
@@ -908,7 +908,7 @@ class AgentHubClient:
                 error_text = await response.text()
                 return {"status": "error", "message": f"HTTP {response.status}: {error_text}"}
     
-    async def get_agent_file_content(self, agent_id: int, file_path: str) -> Dict[str, Any]:
+    async def get_agent_file_content(self, agent_id: str, file_path: str) -> Dict[str, Any]:
         """Get content of a specific file for an agent."""
         if not self.session:
             raise RuntimeError("Client not initialized. Use async context manager.")
@@ -1018,7 +1018,7 @@ def list_agents_sync(
 
 
 def hire_agent_sync(
-    agent_id: int,
+    agent_id: str,
     base_url: str = "http://localhost:8002",
     api_key: Optional[str] = None,
     config: Optional[Dict[str, Any]] = None,
@@ -1034,7 +1034,7 @@ def hire_agent_sync(
 
 
 def run_agent_sync(
-    agent_id: int,
+    agent_id: str,
     input_data: Dict[str, Any],
     base_url: str = "http://localhost:8002",
     api_key: Optional[str] = None,
@@ -1054,7 +1054,7 @@ def run_agent_sync(
 
 
 def approve_agent_sync(
-    agent_id: int,
+    agent_id: str,
     base_url: str = "http://localhost:8002",
     api_key: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -1067,7 +1067,7 @@ def approve_agent_sync(
 
 
 def reject_agent_sync(
-    agent_id: int,
+    agent_id: str,
     reason: str,
     base_url: str = "http://localhost:8002",
     api_key: Optional[str] = None,

@@ -142,7 +142,7 @@ async def health_check(
 
 @router.get("/list")
 def list_deployments(
-    agent_id: Optional[int] = None,
+    agent_id: Optional[str] = None,
     deployment_status: Optional[str] = None,
     db: Session = Depends(get_db)
 ):

@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 class HiringCreateRequest(BaseModel):
     """Request model for creating a hiring."""
-    agent_id: int
+    agent_id: str
     user_id: int
     requirements: Optional[Dict[str, Any]] = None
     budget: Optional[float] = None
@@ -506,7 +506,7 @@ class HiringService:
         
         return query.order_by(Hiring.created_at.desc()).all()
     
-    def get_agent_hirings(self, agent_id: int, status: Optional[HiringStatus] = None) -> List[Hiring]:
+    def get_agent_hirings(self, agent_id: str, status: Optional[HiringStatus] = None) -> List[Hiring]:
         """Get hirings for an agent."""
         query = self.db.query(Hiring).filter(Hiring.agent_id == agent_id)
         
@@ -555,7 +555,7 @@ class HiringService:
         """Cancel a hiring."""
         return self.update_hiring_status(hiring_id, HiringStatus.CANCELLED, notes)
     
-    def get_hiring_stats(self, user_id: Optional[int] = None, agent_id: Optional[int] = None) -> Dict[str, Any]:
+    def get_hiring_stats(self, user_id: Optional[int] = None, agent_id: Optional[str] = None) -> Dict[str, Any]:
         """Get hiring statistics."""
         query = self.db.query(Hiring)
         

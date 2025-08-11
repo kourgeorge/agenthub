@@ -80,7 +80,7 @@ agenthub agent publish
 agenthub agent list
 
 # 7. Get agent information
-agenthub agent info 123
+agenthub agent info STOCK123
 ```
 
 See the [CLI Guide](CLI_GUIDE.md) for comprehensive documentation.
@@ -371,20 +371,20 @@ async def use_agents():
         
         # Get details of a specific agent
         if agents['agents']:
-            agent_id = agents['agents'][0]['id']
+            agent_id = agents['agents'][0]['id']  # e.g., "STOCK123", "CHAT456"
             agent_details = await client.get_agent(agent_id)
             print(f"Agent details: {agent_details}")
         
         # Hire an agent
         hire_result = await client.hire_agent(
-            agent_id=agent_id,
+            agent_id=agent_id,  # String ID like "STOCK123"
             config={"api_key": "your_key"},
             billing_cycle="per_use"
         )
         
         # Execute the agent
         execution_result = await client.run_agent(
-            agent_id=agent_id,
+            agent_id=agent_id,  # String ID like "STOCK123"
             input_data={"name": "Alice"},
             wait_for_completion=True
         )
@@ -495,10 +495,10 @@ result = submit_agent_sync(agent, "my_agent/")
 agents = list_agents_sync()
 
 # Hire agent
-hire_result = hire_agent_sync(agent_id=1, config={"key": "value"})
+hire_result = hire_agent_sync(agent_id="STOCK123", config={"key": "value"})
 
 # Run agent
-execution_result = run_agent_sync(agent_id=1, input_data={"test": "data"})
+execution_result = run_agent_sync(agent_id="STOCK123", input_data={"test": "data"})
 ```
 
 ## Examples

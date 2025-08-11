@@ -702,7 +702,7 @@ def list_agents(ctx, query, category, limit, base_url):
 
 
 @agent.command()
-@click.argument('agent_id', type=int)
+@click.argument('agent_id', type=str)
 @click.option('--base-url', help='Base URL of the AgentHub server')
 @click.pass_context
 def info(ctx, agent_id, base_url):
@@ -760,7 +760,7 @@ def info(ctx, agent_id, base_url):
 
 
 @agent.command()
-@click.argument("agent_id", type=int)
+@click.argument("agent_id", type=str)
 @click.option("--file-path", help="Specific file path to show content")
 @click.option('--base-url', help='Base URL of the AgentHub server')
 @click.pass_context
@@ -819,7 +819,7 @@ def files(ctx, agent_id, file_path, base_url):
 
 
 @agent.command()
-@click.argument('agent_id', type=int)
+@click.argument('agent_id', type=str)
 @click.option('--base-url', help='Base URL of the AgentHub server')
 @click.pass_context
 def approve(ctx, agent_id, base_url):
@@ -855,7 +855,7 @@ def approve(ctx, agent_id, base_url):
 
 
 @agent.command()
-@click.argument('agent_id', type=int)
+@click.argument('agent_id', type=str)
 @click.option('--reason', '-r', required=True, help='Reason for rejection')
 @click.option('--base-url', help='Base URL of the AgentHub server')
 @click.pass_context
@@ -1082,7 +1082,7 @@ def categories(ctx, base_url):
 
 
 @hire.command(name='agent')
-@click.argument('agent_id', type=int)
+@click.argument('agent_id', type=str)
 @click.option('--config', '-c', help='JSON configuration for the agent')
 @click.option('--billing-cycle', '-b', help='Billing cycle (per_use, monthly)')
 @click.option('--user-id', '-u', type=int, help='User ID (for multi-user scenarios)')
@@ -1972,7 +1972,7 @@ def stop(ctx, deployment_id, base_url):
               default='running',
               help='Filter by status (default: running)')
 @click.option('--all', '-a', 'show_all', is_flag=True, help='Show all deployments regardless of status')
-@click.option('--agent-id', type=int, help='Filter by agent ID')
+@click.option('--agent-id', type=str, help='Filter by agent ID')
 @click.option('--base-url', help='Base URL of the AgentHub server')
 @click.pass_context
 def list_deployments(ctx, deployment_status, show_all, agent_id, base_url):
@@ -2123,7 +2123,7 @@ def status(ctx, deployment_id, base_url):
 
 
 @deploy.command(name='history')
-@click.option('--agent-id', type=int, help='Filter by agent ID')
+@click.option('--agent-id', type=str, help='Filter by agent ID')
 @click.option('--base-url', help='Base URL of the AgentHub server')
 @click.pass_context
 def history_deployments(ctx, agent_id, base_url):

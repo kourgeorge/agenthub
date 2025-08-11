@@ -115,7 +115,7 @@ class ExecutionService:
         self.db.commit()
         return execution
     
-    def get_agent_executions(self, agent_id: int, limit: int = 100) -> list[Execution]:
+    def get_agent_executions(self, agent_id: str, limit: int = 100) -> list[Execution]:
         """Get executions for an agent."""
         return (
             self.db.query(Execution)
@@ -267,7 +267,7 @@ class ExecutionService:
                 "error": error_msg
             }
     
-    def _get_agent_files(self, agent_id: int) -> Optional[List[Dict[str, Any]]]:
+    def _get_agent_files(self, agent_id: str) -> Optional[List[Dict[str, Any]]]:
         """Get all files for an agent."""
         agent_files = self.db.query(AgentFile).filter(AgentFile.agent_id == agent_id).all()
         if agent_files:
@@ -456,7 +456,7 @@ class ExecutionService:
 
 
     
-    def get_execution_stats(self, agent_id: Optional[int] = None, user_id: Optional[int] = None) -> Dict[str, Any]:
+    def get_execution_stats(self, agent_id: Optional[str] = None, user_id: Optional[int] = None) -> Dict[str, Any]:
         """Get execution statistics."""
         query = self.db.query(Execution)
         
@@ -481,7 +481,7 @@ class ExecutionService:
     # PERSISTENT AGENT METHODS
     # =============================================================================
     
-    def initialize_persistent_agent(self, agent_id: int, init_config: Dict[str, Any], hiring_id: Optional[int] = None) -> Dict[str, Any]:
+    def initialize_persistent_agent(self, agent_id: str, init_config: Dict[str, Any], hiring_id: Optional[int] = None) -> Dict[str, Any]:
         """Initialize a persistent agent."""
         try:
             # Get agent details
@@ -596,7 +596,7 @@ class ExecutionService:
                 "error": error_msg
             }
     
-    def execute_persistent_agent(self, agent_id: int, input_data: Dict[str, Any]) -> Dict[str, Any]:
+    def execute_persistent_agent(self, agent_id: str, input_data: Dict[str, Any]) -> Dict[str, Any]:
         """Execute a persistent agent."""
         try:
             # Get agent details
@@ -636,7 +636,7 @@ class ExecutionService:
             logger.error(f"Error executing persistent agent {agent_id}: {e}")
             return {"error": str(e)}
     
-    def cleanup_persistent_agent(self, agent_id: int) -> Dict[str, Any]:
+    def cleanup_persistent_agent(self, agent_id: str) -> Dict[str, Any]:
         """Clean up a persistent agent."""
         try:
             # Get agent details
@@ -680,7 +680,7 @@ class ExecutionService:
             logger.error(f"Error cleaning up persistent agent {agent_id}: {e}")
             return {"error": str(e)}
     
-    def get_persistent_agent_status(self, agent_id: int) -> Dict[str, Any]:
+    def get_persistent_agent_status(self, agent_id: str) -> Dict[str, Any]:
         """Get the status of a persistent agent."""
         try:
             status = self.persistent_runtime.get_agent_status(agent_id)
@@ -726,7 +726,7 @@ class ExecutionService:
             logger.error(f"Traceback: {traceback.format_exc()}")
             return {}
     
-    def _get_active_deployment_for_agent(self, agent_id: int):
+    def _get_active_deployment_for_agent(self, agent_id: str):
         """Get active deployment for an agent."""
         try:
             from ..models.deployment import AgentDeployment, DeploymentStatus

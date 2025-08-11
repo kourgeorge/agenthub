@@ -148,7 +148,7 @@ async def list_agents(
 
 @router.get("/{agent_id}")
 async def get_agent(
-    agent_id: int,
+    agent_id: str,
     db: Session = Depends(get_session_dependency),
 ):
     """Get agent details."""
@@ -188,7 +188,7 @@ async def get_agent(
 
 @router.put("/{agent_id}/approve")
 async def approve_agent(
-    agent_id: int,
+    agent_id: str,
     db: Session = Depends(get_session_dependency),
 ):
     """Approve an agent (admin only)."""
@@ -207,7 +207,7 @@ async def approve_agent(
 
 @router.put("/{agent_id}/reject")
 async def reject_agent(
-    agent_id: int,
+    agent_id: str,
     reason: str,
     db: Session = Depends(get_session_dependency),
 ):
@@ -228,7 +228,7 @@ async def reject_agent(
 
 @router.delete("/{agent_id}")
 async def delete_agent(
-    agent_id: int,
+    agent_id: str,
     db: Session = Depends(get_session_dependency),
 ):
     """Delete an agent (admin only)."""
@@ -255,7 +255,7 @@ async def delete_agent(
 
 @router.get("/{agent_id}/files")
 async def get_agent_files(
-    agent_id: int,
+    agent_id: str,
     db: Session = Depends(get_session_dependency),
 ):
     """Get all files for an agent."""
@@ -281,7 +281,7 @@ async def get_agent_files(
 
 @router.get("/{agent_id}/files/{file_path:path}")
 async def get_agent_file_content(
-    agent_id: int,
+    agent_id: str,
     file_path: str,
     db: Session = Depends(get_session_dependency),
 ):

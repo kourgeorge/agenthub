@@ -15,7 +15,7 @@ class AgentFile(Base):
     __tablename__ = "agent_files"
     
     # Relationships
-    agent_id = Column(Integer, ForeignKey("agents.id"), nullable=False)
+    agent_id = Column(String(20), ForeignKey("agents.id"), nullable=False)
     
     # File Information
     file_path = Column(String(500), nullable=False)  # Relative path within agent directory

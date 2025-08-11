@@ -51,8 +51,12 @@ class AgentService:
         # Extract all agent files
         agent_files = self._extract_all_agent_files(code_file_path, agent_data.entry_point)
         
+        # Generate unique abbreviated ID
+        agent_id = self._generate_unique_agent_id(agent_data.name, agent_data.category)
+        
         # Create agent record
         agent = Agent(
+            id=agent_id,  # Use the generated abbreviated ID
             name=agent_data.name,
             description=agent_data.description,
             version=agent_data.version,
@@ -85,7 +89,27 @@ class AgentService:
         logger.info(f"Created agent: {agent.name} (ID: {agent.id}) with {len(agent_files.get('files', []))} files")
         return agent
     
-    def get_agent(self, agent_id: int) -> Optional[Agent]:
+    def _generate_unique_agent_id(self, name: str, category: str = "general") -> str:
+        """Generate a unique abbreviated ID for the agent."""
+        max_attempts = 10
+        for attempt in range(max_attempts):
+            agent_id = Agent.generate_id(name, category)
+            
+            # Check if this ID already exists
+            existing_agent = self.db.query(Agent).filter(Agent.id == agent_id).first()
+            if not existing_agent:
+                return agent_id
+            
+            # If ID exists, try again with a different random suffix
+            logger.warning(f"Agent ID {agent_id} already exists, retrying...")
+        
+        # If we still can't generate a unique ID after max attempts, add timestamp
+        import time
+        timestamp = int(time.time() % 10000)  # Last 4 digits of timestamp
+        base_id = Agent.generate_id(name, category)
+        return f"{base_id}{timestamp}"
+    
+    def get_agent(self, agent_id: str) -> Optional[Agent]:
         """Get an agent by ID."""
         return self.db.query(Agent).filter(Agent.id == agent_id).first()
     
@@ -117,7 +141,7 @@ class AgentService:
         
         return agents_query.all()
     
-    def approve_agent(self, agent_id: int) -> Optional[Agent]:
+    def approve_agent(self, agent_id: str) -> Optional[Agent]:
         """Approve an agent."""
         agent = self.get_agent(agent_id)
         if not agent:
@@ -133,7 +157,7 @@ class AgentService:
         logger.info(f"Approved agent: {agent.name} (ID: {agent.id})")
         return agent
     
-    def reject_agent(self, agent_id: int, reason: str) -> Optional[Agent]:
+    def reject_agent(self, agent_id: str, reason: str) -> Optional[Agent]:
         """Reject an agent and handle existing hirings and deployments."""
         agent = self.get_agent(agent_id)
         if not agent:
@@ -227,7 +251,7 @@ class AgentService:
         except Exception as e:
             logger.error(f"Exception stopping function deployment: {e}")
     
-    def _cleanup_all_agent_deployments(self, agent_id: int):
+    def _cleanup_all_agent_deployments(self, agent_id: str):
         """Clean up all deployments for an agent (direct approach)."""
         try:
             from ..models.deployment import AgentDeployment
@@ -287,7 +311,7 @@ class AgentService:
         except Exception as e:
             logger.error(f"Exception in _cleanup_all_agent_deployments: {e}")
     
-    def update_agent_stats(self, agent_id: int, execution_count: int = 0, rating: Optional[float] = None) -> None:
+    def update_agent_stats(self, agent_id: str, execution_count: int = 0, rating: Optional[float] = None) -> None:
         """Update agent statistics."""
         agent = self.get_agent(agent_id)
         if not agent:
@@ -377,7 +401,7 @@ class AgentService:
         
         return files_data
     
-    def _create_agent_file_records(self, agent_id: int, files_data: Dict[str, Any]) -> None:
+    def _create_agent_file_records(self, agent_id: str, files_data: Dict[str, Any]) -> None:
         """Create database records for all agent files."""
         for file_data in files_data.get('files', []):
             agent_file = AgentFile(
@@ -394,12 +418,12 @@ class AgentService:
         
         self.db.commit()
     
-    def get_agent_files(self, agent_id: int) -> List[Dict[str, Any]]:
+    def get_agent_files(self, agent_id: str) -> List[Dict[str, Any]]:
         """Get all files for an agent."""
         agent_files = self.db.query(AgentFile).filter(AgentFile.agent_id == agent_id).all()
         return [file.to_dict() for file in agent_files]
     
-    def get_agent_file_content(self, agent_id: int, file_path: str) -> Optional[str]:
+    def get_agent_file_content(self, agent_id: str, file_path: str) -> Optional[str]:
         """Get content of a specific file for an agent."""
         agent_file = self.db.query(AgentFile).filter(
             AgentFile.agent_id == agent_id,

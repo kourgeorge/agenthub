@@ -139,7 +139,7 @@ def test_database_models():
         
         # Test hiring model
         hiring = Hiring(
-            agent_id=1,
+            agent_id="TEST123",
             status=HiringStatus.ACTIVE.value,
         )
         

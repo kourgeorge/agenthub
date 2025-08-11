@@ -100,7 +100,7 @@ class PersistentAgentRuntimeService:
                     hiring = session.query(Hiring).filter(Hiring.id == hiring_id).first()
                 else:
                     hiring = session.query(Hiring).filter(
-                        Hiring.agent_id == int(agent_state.agent_id)
+                        Hiring.agent_id == agent_state.agent_id
                     ).first()
                 
                 if hiring:
@@ -131,7 +131,7 @@ class PersistentAgentRuntimeService:
             Session = sessionmaker(bind=engine)
             with Session() as session:
                 hiring = session.query(Hiring).filter(
-                    Hiring.agent_id == int(agent_id)
+                    Hiring.agent_id == agent_id
                 ).first()
                 
                 if hiring and hiring.state:
@@ -214,7 +214,7 @@ class PersistentAgentRuntimeService:
             os.remove(state_file)
             logger.info(f"Deleted agent state for {agent_id}")
     
-    def _get_agent_config(self, agent_id: int, agent_files: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def _get_agent_config(self, agent_id: str, agent_files: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Extract agent configuration from agent files."""
         for file_data in agent_files:
             if file_data.get('file_path') == 'config.json':
@@ -267,7 +267,7 @@ class PersistentAgentRuntimeService:
             logger.error(f"Error loading agent class: {e}")
             return None
     
-    def _create_agent_instance(self, agent_id: int, agent_files: List[Dict[str, Any]], 
+    def _create_agent_instance(self, agent_id: str, agent_files: List[Dict[str, Any]], 
                               entry_point: str, agent_class: str) -> Optional[Any]:
         """Create an instance of the agent class."""
         try:
@@ -281,7 +281,7 @@ class PersistentAgentRuntimeService:
             logger.error(f"Error creating agent instance: {e}")
             return None
     
-    def initialize_agent(self, agent_id: int, init_config: Dict[str, Any], 
+    def initialize_agent(self, agent_id: str, init_config: Dict[str, Any], 
                         agent_files: List[Dict[str, Any]], entry_point: Optional[str] = None, 
                         hiring_id: Optional[int] = None) -> RuntimeResult:
         """Initialize a persistent agent using the new inheritance-based design."""
@@ -431,7 +431,7 @@ class PersistentAgentRuntimeService:
                 error=f"Initialization error: {e}"
             )
     
-    def execute_agent(self, agent_id: int, input_data: Dict[str, Any],
+    def execute_agent(self, agent_id: str, input_data: Dict[str, Any],
                      agent_files: List[Dict[str, Any]], entry_point: Optional[str] = None) -> RuntimeResult:
         """Execute a persistent agent using the new inheritance-based design."""
         agent_id_str = str(agent_id)
@@ -518,7 +518,7 @@ class PersistentAgentRuntimeService:
                 error=f"Execution error: {e}"
             )
     
-    def cleanup_agent(self, agent_id: int, agent_files: List[Dict[str, Any]], 
+    def cleanup_agent(self, agent_id: str, agent_files: List[Dict[str, Any]], 
                      entry_point: Optional[str] = None) -> RuntimeResult:
         """Clean up a persistent agent using the new inheritance-based design."""
         agent_id_str = str(agent_id)
@@ -584,7 +584,7 @@ class PersistentAgentRuntimeService:
                 error=f"Cleanup error: {e}"
             )
     
-    def get_agent_status(self, agent_id: int) -> Optional[Dict[str, Any]]:
+    def get_agent_status(self, agent_id: str) -> Optional[Dict[str, Any]]:
         """Get the status of a persistent agent."""
         agent_id_str = str(agent_id)
         

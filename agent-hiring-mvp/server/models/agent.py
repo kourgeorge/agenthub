@@ -31,6 +31,9 @@ class Agent(Base):
     
     __tablename__ = "agents"
     
+    # Override the base id field to use string-based abbreviated IDs
+    id = Column(String(20), primary_key=True, index=True)
+    
     # Basic Information
     name = Column(String(255), nullable=False, index=True)
     description = Column(Text, nullable=False)
@@ -80,7 +83,12 @@ class Agent(Base):
     files = relationship("AgentFile", back_populates="agent", cascade="all, delete-orphan")
     
     def __repr__(self) -> str:
-        return f"<Agent(id={self.id}, name='{self.name}', status='{self.status}')>"
+        return f"<Agent(id='{self.id}', name='{self.name}', status='{self.status}')>"
+    
+    @classmethod
+    def generate_id(cls, name: str, category: str = "general") -> str:
+        """Generate a unique abbreviated ID for this agent."""
+        return cls.generate_abbreviated_id(name, category)
     
     def get_main_file(self):
         """Get the main entry point file."""
@@ -98,4 +106,4 @@ class Agent(Base):
     
     def get_all_files(self):
         """Get all files associated with this agent."""
-        return [file.to_dict() for file in self.files] 
+        return [file for file in self.files] 

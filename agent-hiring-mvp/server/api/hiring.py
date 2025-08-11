@@ -307,7 +307,7 @@ def get_hiring(
 
 @router.get("/agent/{agent_id}", response_model=List[dict])
 def get_agent_hirings(
-    agent_id: int,
+    agent_id: str,
     status: Optional[str] = None,
     current_user = Depends(get_current_user_optional),
     db: Session = Depends(get_session_dependency)
@@ -502,7 +502,7 @@ def get_user_hiring_stats(
 
 
 @router.get("/stats/agent/{agent_id}")
-def get_agent_hiring_stats(agent_id: int, db: Session = Depends(get_session_dependency)):
+def get_agent_hiring_stats(agent_id: str, db: Session = Depends(get_session_dependency)):
     """Get hiring statistics for an agent."""
     hiring_service = HiringService(db)
     stats = hiring_service.get_hiring_stats(agent_id=agent_id)

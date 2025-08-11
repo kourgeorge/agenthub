@@ -56,7 +56,7 @@ class AgentRuntimeService:
         # Create runtime directory
         os.makedirs(self.base_dir, exist_ok=True)
     
-    def execute_agent(self, agent_id: int, input_data: Dict[str, Any], 
+    def execute_agent(self, agent_id: str, input_data: Dict[str, Any], 
                      agent_code: Optional[str] = None, agent_file_path: Optional[str] = None,
                      agent_files: Optional[List[Dict[str, Any]]] = None, 
                      entry_point: Optional[str] = None) -> RuntimeResult:

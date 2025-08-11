@@ -32,7 +32,7 @@ class Execution(Base):
     __tablename__ = "executions"
     
     # Relationships
-    agent_id = Column(Integer, ForeignKey("agents.id"), nullable=False)
+    agent_id = Column(String(20), ForeignKey("agents.id"), nullable=False)
     hiring_id = Column(Integer, ForeignKey("hirings.id"), nullable=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     

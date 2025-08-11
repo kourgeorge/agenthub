@@ -27,7 +27,7 @@ class AgentDeployment(Base):
     __tablename__ = "agent_deployments"
     
     # Deployment Information
-    agent_id = Column(Integer, ForeignKey("agents.id"), nullable=False)
+    agent_id = Column(String(20), ForeignKey("agents.id"), nullable=False)
     hiring_id = Column(Integer, ForeignKey("hirings.id"), nullable=False)
     deployment_id = Column(String(50), nullable=False, unique=True, index=True)
     deployment_type = Column(String(20), nullable=True, default="acp")  # acp, function, persistent
