@@ -528,4 +528,10 @@ def get_active_hirings(db: Session = Depends(get_session_dependency)):
     ]
 
 
- 
+@router.get("/stats/global")
+def get_global_hiring_stats(db: Session = Depends(get_session_dependency)):
+    """Get global hiring statistics for the entire system."""
+    hiring_service = HiringService(db)
+    stats = hiring_service.get_hiring_stats()  # No filters = global stats
+    
+    return stats

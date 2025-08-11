@@ -280,6 +280,15 @@ def get_user_execution_stats(user_id: int, db: Session = Depends(get_session_dep
     return stats
 
 
+@router.get("/stats/global")
+def get_global_execution_stats(db: Session = Depends(get_session_dependency)):
+    """Get global execution statistics for the entire system."""
+    execution_service = ExecutionService(db)
+    stats = execution_service.get_execution_stats()  # No filters = global stats
+    
+    return stats
+
+
 @router.put("/{execution_id}/status")
 def update_execution_status(
     execution_id: str,

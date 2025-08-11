@@ -27,7 +27,8 @@ from .api import (
     agent_proxy_router,
     resources_router,
     auth_router,
-    api_keys_router
+    api_keys_router,
+    stats_router
 )
 
 # Configure logging
@@ -109,6 +110,7 @@ app.include_router(agent_proxy_router, prefix="/api/v1")
 app.include_router(resources_router, prefix="/api/v1")
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(api_keys_router, prefix="/api/v1")
+app.include_router(stats_router, prefix="/api/v1")
 
 
 

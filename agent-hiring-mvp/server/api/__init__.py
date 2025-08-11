@@ -11,6 +11,7 @@ from .agent_proxy import router as agent_proxy_router
 from .resources import router as resources_router
 from .auth import router as auth_router
 from .api_keys import router as api_keys_router
+from .stats import router as stats_router
 
 __all__ = [
     "agents_router",
@@ -24,4 +25,5 @@ __all__ = [
     "resources_router",
     "auth_router",
     "api_keys_router",
+    "stats_router",
 ] 
