@@ -1,0 +1,54 @@
+"""Container naming utilities for deployment services."""
+
+from typing import Optional
+from ..models.deployment import AgentDeployment
+
+
+def generate_container_name(deployment: AgentDeployment, agent_type: Optional[str] = None) -> str:
+    """
+    Generate consistent container name for a deployment.
+    
+    Args:
+        deployment: The deployment object
+        agent_type: Optional override for agent type (if None, uses deployment.deployment_type)
+    
+    Returns:
+        Container name in format: {agent_type}-{agent_id}-{hiring_id}-{deployment_uuid[:8]}
+    """
+    if agent_type is None:
+        agent_type = deployment.deployment_type or "function"
+    
+    # Generate base container name
+    container_name = f"{agent_type}-{deployment.agent_id}-{deployment.hiring_id}-{deployment.deployment_id[:8]}"
+    
+    # Ensure container name doesn't exceed Docker's 64 character limit
+    if len(container_name) > 64:
+        container_name = f"{agent_type}-{deployment.agent_id}-{deployment.deployment_id[:8]}"
+    
+    return container_name
+
+
+def generate_docker_image_name(agent_type: str, user_id: int, agent_id: str, hiring_id: int, deployment_uuid: str) -> str:
+    """
+    Generate consistent Docker image name for a deployment.
+    
+    Args:
+        agent_type: Type of agent (function, acp, persistent)
+        user_id: User ID
+        agent_id: Agent ID
+        hiring_id: Hiring ID
+        deployment_uuid: Deployment UUID
+    
+    Returns:
+        Docker image name in format: {agent_type}_{user_id}_{agent_id}:{hiring_id}_{deployment_uuid}
+    """
+    # Convert to lowercase and replace hyphens with underscores for Docker compliance
+    safe_agent_id = str(agent_id).lower().replace('-', '_')
+    safe_deployment_uuid = deployment_uuid.replace('-', '_').lower()
+    
+    # Format: repository:tag
+    # Repository: {agent_type}_{user_id}_{agent_id}
+    # Tag: {hiring_id}_{deployment_uuid}
+    image_name = f"{agent_type}_{user_id}_{safe_agent_id}:{hiring_id}_{safe_deployment_uuid}"
+    
+    return image_name

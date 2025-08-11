@@ -19,6 +19,7 @@ from .env_service import EnvironmentService
 from ..models.agent import Agent, AgentType
 from ..models.hiring import Hiring
 from ..models.deployment import AgentDeployment, DeploymentStatus
+from .container_utils import generate_container_name, generate_docker_image_name
 
 logger = logging.getLogger(__name__)
 
@@ -89,9 +90,11 @@ class FunctionDeploymentService:
             if existing_deployment:
                 return {"error": "Deployment already exists", "deployment_id": existing_deployment.deployment_id}
             
-            # Generate deployment ID
+            # Generate deployment ID - use Docker-compliant format
             user_id = hiring.user_id or "anon"
-            deployment_id = f"func-user-{user_id}-agent-{agent.id}-hire-{hiring_id}-{uuid.uuid4().hex[:8]}"
+            # Use underscores and lowercase for better Docker compatibility
+            safe_agent_id = str(agent.id).lower().replace('-', '_')
+            deployment_id = f"func_{safe_agent_id}_{hiring_id}_{uuid.uuid4().hex[:8]}"
             
             # Create deployment record
             deployment = AgentDeployment(
@@ -150,9 +153,11 @@ class FunctionDeploymentService:
             # Extract agent code
             self._extract_function_agent_code(agent, deploy_dir)
             
-            # Build Docker image
+            # Build Docker image using centralized utility
             user_id = deployment.hiring.user_id or "anon"
-            image_name = f"func-user-{user_id}-agent-{agent.id}-hire-{deployment.hiring_id}:{deployment_id}"
+            hiring_id = deployment.hiring_id
+            deployment_uuid = deployment_id.split('_')[-1]  # Get the UUID part
+            image_name = generate_docker_image_name("func", user_id, agent.id, hiring_id, deployment_uuid)
             image = self._build_function_docker_image(deploy_dir, image_name)
             
             # Update deployment with image info
@@ -562,15 +567,14 @@ with open('/tmp/agent_stderr.txt', 'w') as f:
             logger.error(f"Failed to build Docker image: {e}")
             raise
     
+
+
     def _deploy_function_container(self, deployment: AgentDeployment, image_name: str):
         """Deploy Docker container for the function agent."""
         user_id = deployment.hiring.user_id or "anon"
-        # Use shorter container name to avoid Docker name length limits
-        container_name = f"func-{user_id}-{deployment.agent_id}-{deployment.hiring_id}-{deployment.deployment_id[:8]}"
         
-        # Ensure container name doesn't exceed Docker's 64 character limit
-        if len(container_name) > 64:
-            container_name = f"func-{deployment.agent_id}-{deployment.hiring_id}-{deployment.deployment_id[:8]}"
+        # Use centralized container naming
+        container_name = generate_container_name(deployment, "func")
         
         logger.info(f"Deploying function container {container_name}")
         

@@ -22,6 +22,7 @@ from ..models.agent import Agent, AgentType
 from ..models.hiring import Hiring
 from ..models.deployment import AgentDeployment, DeploymentStatus
 from .env_service import EnvironmentService
+from .container_utils import generate_container_name, generate_docker_image_name
 
 logger = logging.getLogger(__name__)
 
@@ -138,10 +139,12 @@ class DeploymentService:
             if existing_deployment:
                 return {"error": "Deployment already exists", "deployment_id": existing_deployment.deployment_id}
             
-            # Generate deployment ID with agent type
+            # Generate deployment ID with agent type - use Docker-compliant format
             user_id = hiring.user_id or "anon"
             agent_type = agent.agent_type
-            deployment_id = f"{agent_type}-user-{user_id}-agent-{agent.id}-hire-{hiring_id}-{uuid.uuid4().hex[:8]}"
+            # Use underscores and lowercase for better Docker compatibility
+            safe_agent_id = str(agent.id).lower().replace('-', '_')
+            deployment_id = f"{agent_type}_{safe_agent_id}_{hiring_id}_{uuid.uuid4().hex[:8]}"
             
             # Create deployment record
             deployment_config = {
@@ -214,10 +217,12 @@ class DeploymentService:
             # Extract agent code
             self._extract_agent_code(agent, deploy_dir)
             
-            # Build Docker image
+            # Build Docker image using centralized utility
             user_id = deployment.hiring.user_id or "anon"
             agent_type = agent.agent_type
-            image_name = f"{agent_type}-user-{user_id}-agent-{agent.id}-hire-{deployment.hiring_id}:{deployment_id}"
+            hiring_id = deployment.hiring_id
+            deployment_uuid = deployment_id.split('_')[-1]  # Get the UUID part
+            image_name = generate_docker_image_name(agent_type, user_id, agent.id, hiring_id, deployment_uuid)
             image = self._build_docker_image(deploy_dir, image_name)
             
             # Update deployment with image info
@@ -527,11 +532,15 @@ class PersistentAgent(ABC):
         
         return image
     
+
+
     def _deploy_container(self, deployment: AgentDeployment, image_name: str):
         """Deploy Docker container for the agent."""
         user_id = deployment.hiring.user_id or "anon"
         agent_type = deployment.deployment_type or "function"
-        container_name = f"{agent_type}-user-{user_id}-agent-{deployment.agent_id}-hire-{deployment.hiring_id}-{deployment.deployment_id}"
+        
+        # Use centralized container naming
+        container_name = generate_container_name(deployment)
         
         logger.info(f"Deploying container {container_name}")
         
@@ -985,8 +994,8 @@ class PersistentAgent(ABC):
             except Exception as e:
                 return {"error": f"Failed to get agent configuration: {str(e)}"}
             
-            # Execute in container
-            container_name = f"{deployment.deployment_type}-user-{deployment.hiring.user_id or 'anon'}-agent-{deployment.agent_id}-hire-{deployment.hiring_id}-{deployment.deployment_id}"
+            # Execute in container - use centralized container naming
+            container_name = generate_container_name(deployment)
             exec_input = {
                 "operation": "execute",
                 "input": input_data,
@@ -1045,8 +1054,8 @@ class PersistentAgent(ABC):
             except Exception as e:
                 return {"error": f"Failed to get agent configuration: {str(e)}"}
             
-            # Execute in container
-            container_name = f"{deployment.deployment_type}-user-{deployment.hiring.user_id or 'anon'}-agent-{deployment.agent_id}-hire-{deployment.hiring_id}-{deployment.deployment_id}"
+            # Execute in container - use centralized container naming
+            container_name = generate_container_name(deployment)
             exec_input = {
                 "operation": "initialize",
                 "input": init_config,
@@ -1116,8 +1125,8 @@ class PersistentAgent(ABC):
             except Exception as e:
                 return {"error": f"Failed to get agent configuration: {str(e)}"}
             
-            # Execute in container
-            container_name = f"{deployment.deployment_type}-user-{deployment.hiring.user_id or 'anon'}-agent-{deployment.agent_id}-hire-{deployment.hiring_id}-{deployment.deployment_id}"
+            # Execute in container - use centralized container naming
+            container_name = generate_container_name(deployment)
             exec_input = {
                 "operation": "cleanup",
                 "entry_point": entry_point,
