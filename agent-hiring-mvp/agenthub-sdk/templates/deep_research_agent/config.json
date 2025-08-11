@@ -7,7 +7,7 @@
   "entry_point": "deep_research_agent.py",
   "agent_type": "function",
   "pricing_model": "per_use",
-  "price_per_use": 0.01,
+  "price_per_use": 0.1,
   "requirements": [],
   "config_schema": {
     "research_query": {
