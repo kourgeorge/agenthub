@@ -12,6 +12,8 @@ from sqlalchemy.orm import Session
 from ..database.config import get_session_dependency
 from ..services.agent_service import AgentService, AgentCreateRequest
 from ..models.agent import Agent, AgentStatus
+from ..models.user import User
+from ..middleware.auth import get_current_user
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +38,7 @@ async def submit_agent(
     agent_type: Optional[str] = Form("function"),  # New field
     acp_manifest: Optional[str] = Form(None),  # JSON string - New field
     code_file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_session_dependency),
 ):
     """Submit a new agent."""

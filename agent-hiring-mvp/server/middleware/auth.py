@@ -1,13 +1,13 @@
 """Authentication middleware for FastAPI."""
 
 from typing import Optional
-from fastapi import Depends, HTTPException, status, Header
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import Depends, HTTPException, status, Header, Request
 from sqlalchemy.orm import Session
 import jwt
 from datetime import datetime, timedelta, timezone
 import sys
 import os
+import logging
 
 # Add the project root to Python path for absolute imports
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -26,8 +26,6 @@ from server.models.user import User
 from server.services.auth_service import AuthService
 from server.services.token_service import TokenService
 from server.services.api_key_service import ApiKeyService
-
-security = HTTPBearer()
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
@@ -97,28 +95,38 @@ def verify_refresh_token(token: str) -> Optional[dict]:
         return None
 
 def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    request: Request,
+    authorization: Optional[str] = Header(None),
     x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
     db: Session = Depends(get_session_dependency)
 ) -> User:
-    """Get the current authenticated user from either JWT token or API key."""
+    """Get the current authenticated user from either API key or JWT Bearer token."""
     
     # Try API key authentication first
-    if x_api_key:
-        user = ApiKeyService.validate_api_key(db, x_api_key)
+    api_key = x_api_key or request.headers.get('X-API-Key') or request.headers.get('x-api-key')
+    
+    if api_key:
+        user = ApiKeyService.validate_api_key(db, api_key)
         if user:
             return user
-        # If API key is invalid, continue to JWT authentication
     
-    # Fall back to JWT authentication
-    if not credentials:
+    # Fall back to JWT Bearer token authentication
+    if not authorization:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials. Please provide either a valid JWT token or API key.",
+            detail="Could not validate credentials. Please provide either a valid API key or JWT Bearer token.",
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    token = credentials.credentials
+    # Check if it's a Bearer token
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authorization header format",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    token = authorization[7:]  # Remove "Bearer " prefix
     
     # Check if token is blacklisted (invalidated after logout)
     if TokenService.is_token_blacklisted(token):
@@ -175,11 +183,11 @@ def get_current_user(
 
 
 def get_current_user_optional(
-    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
     authorization: Optional[str] = Header(None),
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
     db: Session = Depends(get_session_dependency)
 ) -> User:
-    """Get the current authenticated user from either JWT token or API key, with optional credentials."""
+    """Get the current authenticated user from either API key or JWT Bearer token, with optional credentials."""
     
     # Try API key authentication first
     if x_api_key:

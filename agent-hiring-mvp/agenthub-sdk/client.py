@@ -169,6 +169,10 @@ class AgentHubClient:
             # Submit agent
             headers = self._get_headers()
             
+            # Ensure API key is in headers for form data requests
+            if self.api_key:
+                headers["X-API-Key"] = self.api_key
+            
             async with self.session.post(
                 f"{self.api_base}/agents/submit",
                 data=form_data,
