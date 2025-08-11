@@ -34,13 +34,12 @@
       "placeholder": "Enter location (e.g., San Francisco, CA or Remote)"
     },
     "description": {
-      "type": "string",
+      "type": "textarea",
       "label": "Job Description",
-      "description": "Optional detailed job description or requirements - one per line",
+      "description": "Optional detailed job description or requirements",
       "required": false,
       "default": "",
-      "multiline": true,
-      "placeholder": "Enter job requirements, one per line..."
+      "placeholder": "Enter job description or requirements (optional)"
     },
     "search_depth": {
       "type": "integer",
