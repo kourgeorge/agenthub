@@ -14,7 +14,7 @@
       "type": "string",
       "description": "Research query or topic to investigate",
       "required": true,
-      "default": "Latest developments in AI"
+      "placeholder": "Latest developments in AI"
     },
     "depth": {
       "type": "integer",
