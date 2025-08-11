@@ -22,7 +22,7 @@ agent-hiring-mvp/
 ├── web-ui/                # React frontend
 │   ├── components/        # UI components
 │   └── pages/             # Page components
-└── database/              # Database setup and migrations
+└── database/              # Database setup
 ```
 
 ## 🚀 Quick Start

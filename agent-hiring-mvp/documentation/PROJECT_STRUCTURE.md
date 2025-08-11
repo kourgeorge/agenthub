@@ -157,7 +157,6 @@ agent-hiring-mvp/
                        │                 │
                        │  - SQLAlchemy   │
                        │  - Models       │
-                       │  - Migrations   │
                        └─────────────────┘
 ```
 
