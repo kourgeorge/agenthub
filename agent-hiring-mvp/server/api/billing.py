@@ -2,7 +2,7 @@
 
 import logging
 from typing import Dict, Any, List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
@@ -26,7 +26,7 @@ async def get_billing_summary(
     """Get billing summary for the last N months for a specific user."""
     try:
         # Calculate date range
-        end_date = datetime.now()
+        end_date = datetime.now(timezone.utc)
         start_date = end_date - timedelta(days=months * 30)
         
         # Initialize monthly data structure

@@ -1,7 +1,7 @@
 """Hiring model for tracking agent hiring records."""
 
 from enum import Enum
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import Column, String, Text, Boolean, JSON, Float, Integer, ForeignKey, DateTime
@@ -29,7 +29,7 @@ class Hiring(Base):
     
     # Hiring Details
     status = Column(String(20), nullable=False, default=HiringStatus.ACTIVE.value)
-    hired_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    hired_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     expires_at = Column(DateTime, nullable=True)  # None for permanent hiring
     
     # Configuration

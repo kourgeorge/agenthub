@@ -12,7 +12,7 @@ import aiohttp
 import requests
 import time
 from typing import Dict, Any, Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 import tempfile
 import socket
@@ -238,7 +238,7 @@ class DeploymentService:
             deployment.container_id = container.id
             deployment.container_name = container.name
             deployment.status = DeploymentStatus.RUNNING.value
-            deployment.started_at = datetime.now()
+            deployment.started_at = datetime.now(timezone.utc)
             self.db.commit()
             
             logger.info(f"Successfully deployed agent {agent.id} as {deployment_id}")
@@ -626,7 +626,7 @@ class PersistentAgent(ABC):
             
             # Update deployment status
             deployment.status = DeploymentStatus.STOPPED.value
-            deployment.stopped_at = datetime.utcnow()
+            deployment.stopped_at = datetime.now(timezone.utc)
             self.db.commit()
             
             return {"deployment_id": deployment_id, "status": "suspended"}
@@ -665,7 +665,7 @@ class PersistentAgent(ABC):
             
             # Update deployment status
             deployment.status = DeploymentStatus.RUNNING.value
-            deployment.started_at = datetime.utcnow()
+            deployment.started_at = datetime.now(timezone.utc)
             deployment.stopped_at = None
             self.db.commit()
             
@@ -721,7 +721,7 @@ class PersistentAgent(ABC):
             
             # Update deployment status
             deployment.status = DeploymentStatus.STOPPED.value
-            deployment.stopped_at = datetime.utcnow()
+            deployment.stopped_at = datetime.now(timezone.utc)
             self.db.commit()
             
             return {"deployment_id": deployment_id, "status": "stopped"}

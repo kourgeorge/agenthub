@@ -1,6 +1,6 @@
 """User API Key model for authentication."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -44,7 +44,7 @@ class UserApiKey(Base):
         """Check if the API key has expired."""
         if self.expires_at is None:
             return False
-        return datetime.now().replace(tzinfo=datetime.timezone.utc) > self.expires_at
+        return datetime.now(timezone.utc) > self.expires_at
     
     @property
     def is_valid(self) -> bool:

@@ -3,7 +3,7 @@ Billing service for managing user budgets and cost tracking.
 """
 
 from typing import Dict, Any, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 
@@ -117,7 +117,7 @@ class BillingService:
         
         if budget:
             budget['current_usage'] = 0.0
-            budget['reset_date'] = datetime.now() + timedelta(days=30)
+            budget['reset_date'] = datetime.now(timezone.utc) + timedelta(days=30)
             
             # In production, implement proper database update
             print(f"Reset monthly usage for user {user_id}")
@@ -131,7 +131,7 @@ class BillingService:
             'monthly_budget': 100.0,
             'current_usage': 25.50,
             'max_per_request': 10.0,
-            'reset_date': datetime.now() + timedelta(days=15)
+            'reset_date': datetime.now(timezone.utc) + timedelta(days=15)
         }
     
     async def _create_default_budget(self, user_id: int) -> Dict[str, Any]:
@@ -141,7 +141,7 @@ class BillingService:
             'monthly_budget': 100.0,
             'current_usage': 0.0,
             'max_per_request': 10.0,
-            'reset_date': datetime.now() + timedelta(days=30)
+            'reset_date': datetime.now(timezone.utc) + timedelta(days=30)
         }
         
         # In production, implement proper database insertion
@@ -167,11 +167,11 @@ class BillingService:
             {
                 'execution_id': 1,
                 'total_cost': 5.25,
-                'created_at': datetime.now() - timedelta(days=5)
+                'created_at': datetime.now(timezone.utc) - timedelta(days=5)
             },
             {
                 'execution_id': 2,
                 'total_cost': 3.75,
-                'created_at': datetime.now() - timedelta(days=10)
+                'created_at': datetime.now(timezone.utc) - timedelta(days=10)
             }
         ] 
