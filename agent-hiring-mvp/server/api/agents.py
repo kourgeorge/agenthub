@@ -210,7 +210,8 @@ async def list_agents(
                 "agent_type": agent.agent_type,
                 "status": agent.status,
                 "is_public": agent.is_public,
-                **calculate_agent_metrics(db, agent.id),
+                "total_hires": db.query(Hiring).filter(Hiring.agent_id == agent.id).count(),
+                "total_executions": db.query(Execution).filter(Execution.agent_id == agent.id).count(),
                 "average_rating": agent.average_rating,
                 "created_at": agent.created_at,
                 "updated_at": agent.updated_at,
@@ -219,6 +220,8 @@ async def list_agents(
             for agent in agents
         ],
         "total": len(agents),
+        "query": query,
+        "category": category,
         "user_authenticated": current_user is not None,
     }
 
@@ -256,12 +259,11 @@ async def search_agents(
                 "agent_type": agent.agent_type,
                 "status": agent.status,
                 "is_public": agent.is_public,
-                "total_hires": db.query(Hiring).filter(Hiring.agent_id == agent.id).count(),
-                "total_executions": db.query(Execution).filter(Execution.agent_id == agent.id).count(),
+                **calculate_agent_metrics(db, agent.id),
                 "average_rating": agent.average_rating,
                 "created_at": agent.created_at,
                 "updated_at": agent.updated_at,
-                "is_owner": current_user and agent.owner_id == current_user.id if current_user else False,
+                "is_owner": current_user and agent.owner_id == agent.id if current_user else False,
             }
             for agent in agents
         ],
@@ -309,10 +311,12 @@ async def get_my_agents(
                 "average_rating": agent.average_rating,
                 "created_at": agent.created_at,
                 "updated_at": agent.updated_at,
+                "is_owner": current_user and agent.owner_id == agent.id if current_user else False,
             }
             for agent in agents
         ],
         "total": len(agents),
+        "user_authenticated": current_user is not None,
     }
 
 
