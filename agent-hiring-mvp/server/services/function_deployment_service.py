@@ -20,6 +20,7 @@ from ..models.agent import Agent, AgentType
 from ..models.hiring import Hiring
 from ..models.deployment import AgentDeployment, DeploymentStatus
 from .container_utils import generate_container_name, generate_docker_image_name
+from .resource_limits import get_agent_resource_limits, to_docker_config
 
 logger = logging.getLogger(__name__)
 
@@ -587,6 +588,29 @@ with open('/tmp/agent_stderr.txt', 'w') as f:
             "restart_policy": {"Name": "unless-stopped"},
             "working_dir": "/app"
         }
+        
+        # Add resource limits
+        try:
+            # Get agent configuration for resource limits
+            agent_config = {}
+            if deployment.agent and hasattr(deployment.agent, 'config_schema'):
+                agent_config = deployment.agent.config_schema or {}
+            
+            # Get resource limits (defaults + agent overrides)
+            resource_limits = get_agent_resource_limits(
+                agent_config, 
+                "function"  # Function agents are always function type
+            )
+            
+            # Convert to Docker configuration
+            docker_resource_config = to_docker_config(resource_limits)
+            container_config.update(docker_resource_config)
+            
+            logger.info(f"Applied resource limits: {resource_limits}")
+            
+        except Exception as e:
+            logger.warning(f"Failed to apply resource limits, using defaults: {e}")
+            # Continue without resource limits if there's an error
         
         # Create and start container
         container = self.docker_client.containers.run(**container_config)

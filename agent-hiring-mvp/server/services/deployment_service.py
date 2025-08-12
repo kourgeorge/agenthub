@@ -23,6 +23,7 @@ from ..models.hiring import Hiring
 from ..models.deployment import AgentDeployment, DeploymentStatus
 from .env_service import EnvironmentService
 from .container_utils import generate_container_name, generate_docker_image_name
+from .resource_limits import get_agent_resource_limits, to_docker_config
 
 logger = logging.getLogger(__name__)
 
@@ -551,6 +552,29 @@ class PersistentAgent(ABC):
             "environment": deployment.environment_vars,
             "detach": True
         }
+        
+        # Add resource limits
+        try:
+            # Get agent configuration for resource limits
+            agent_config = {}
+            if deployment.agent and hasattr(deployment.agent, 'config_schema'):
+                agent_config = deployment.agent.config_schema or {}
+            
+            # Get resource limits (defaults + agent overrides)
+            resource_limits = get_agent_resource_limits(
+                agent_config, 
+                deployment.deployment_type or "acp"
+            )
+            
+            # Convert to Docker configuration
+            docker_resource_config = to_docker_config(resource_limits)
+            container_config.update(docker_resource_config)
+            
+            logger.info(f"Applied resource limits: {resource_limits}")
+            
+        except Exception as e:
+            logger.warning(f"Failed to apply resource limits, using defaults: {e}")
+            # Continue without resource limits if there's an error
         
         # Add port mapping for server-based agents (acp only)
         if agent_type == "acp" and deployment.external_port:
