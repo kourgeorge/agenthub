@@ -13,7 +13,7 @@ from ..database.config import get_session_dependency
 from ..services.agent_service import AgentService, AgentCreateRequest
 from ..models.agent import Agent, AgentStatus
 from ..models.user import User
-from ..middleware.auth import get_current_user
+from ..middleware.auth import get_current_user, get_current_user_optional
 
 logger = logging.getLogger(__name__)
 
@@ -113,15 +113,24 @@ async def list_agents(
     limit: int = 100,
     query: Optional[str] = None,
     category: Optional[str] = None,
+    current_user: Optional[User] = Depends(get_current_user_optional),
     db: Session = Depends(get_session_dependency),
 ):
-    """List available agents."""
+    """List available agents based on user authentication and ownership."""
     agent_service = AgentService(db)
     
-    if query or category:
-        agents = agent_service.search_agents(query or "", category)
+    if current_user:
+        # Logged-in user: get public agents + their own agents
+        if query or category:
+            agents = agent_service.search_agents_for_user(current_user.id, query or "", category)
+        else:
+            agents = agent_service.get_agents_for_user(current_user.id, skip, limit)
     else:
-        agents = agent_service.get_public_agents(skip, limit)
+        # Non-logged-in user: get only public, approved agents
+        if query or category:
+            agents = agent_service.search_agents(query or "", category)
+        else:
+            agents = agent_service.get_public_agents(skip, limit)
     
     return {
         "agents": [
@@ -138,10 +147,108 @@ async def list_agents(
                 "monthly_price": agent.monthly_price,
                 "agent_type": agent.agent_type,
                 "status": agent.status,
+                "is_public": agent.is_public,
                 "total_hires": agent.total_hires,
                 "total_executions": agent.total_executions,
                 "average_rating": agent.average_rating,
                 "created_at": agent.created_at,
+                "updated_at": agent.updated_at,
+                "is_owner": current_user and agent.owner_id == current_user.id if current_user else False,
+            }
+            for agent in agents
+        ],
+        "total": len(agents),
+        "user_authenticated": current_user is not None,
+    }
+
+
+@router.get("/search")
+async def search_agents(
+    query: str,
+    category: Optional[str] = None,
+    current_user: Optional[User] = Depends(get_current_user_optional),
+    db: Session = Depends(get_session_dependency),
+):
+    """Search agents based on user authentication and ownership."""
+    agent_service = AgentService(db)
+    
+    if current_user:
+        # Logged-in user: search public agents + their own agents
+        agents = agent_service.search_agents_for_user(current_user.id, query, category)
+    else:
+        # Non-logged-in user: search only public, approved agents
+        agents = agent_service.search_agents(query, category)
+    
+    return {
+        "agents": [
+            {
+                "id": agent.id,
+                "name": agent.name,
+                "description": agent.description,
+                "version": agent.version,
+                "author": agent.author,
+                "tags": agent.tags,
+                "category": agent.category,
+                "pricing_model": agent.pricing_model,
+                "price_per_use": agent.price_per_use,
+                "monthly_price": agent.monthly_price,
+                "agent_type": agent.agent_type,
+                "status": agent.status,
+                "is_public": agent.is_public,
+                "total_hires": agent.total_hires,
+                "total_executions": agent.total_executions,
+                "average_rating": agent.average_rating,
+                "created_at": agent.created_at,
+                "updated_at": agent.updated_at,
+                "is_owner": current_user and agent.owner_id == current_user.id if current_user else False,
+            }
+            for agent in agents
+        ],
+        "total": len(agents),
+        "query": query,
+        "category": category,
+        "user_authenticated": current_user is not None,
+    }
+
+
+@router.get("/my-agents")
+async def get_my_agents(
+    skip: int = 0,
+    limit: int = 100,
+    query: Optional[str] = None,
+    category: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session_dependency),
+):
+    """Get agents owned by the current user."""
+    agent_service = AgentService(db)
+    
+    if query or category:
+        agents = agent_service.search_my_agents(current_user.id, query or "", category)
+    else:
+        agents = agent_service.get_my_agents(current_user.id, skip, limit)
+    
+    return {
+        "agents": [
+            {
+                "id": agent.id,
+                "name": agent.name,
+                "description": agent.description,
+                "version": agent.version,
+                "author": agent.author,
+                "tags": agent.tags,
+                "category": agent.category,
+                "pricing_model": agent.pricing_model,
+                "price_per_use": agent.price_per_use,
+                "monthly_price": agent.monthly_price,
+                "agent_type": agent.agent_type,
+                "status": agent.status,
+                "is_public": agent.is_public,
+                "total_hires": agent.total_hires,
+                "total_executions": agent.total_executions,
+                "average_rating": agent.average_rating,
+                "created_at": agent.created_at,
+                "updated_at": agent.updated_at,
             }
             for agent in agents
         ],
@@ -152,16 +259,28 @@ async def list_agents(
 @router.get("/{agent_id}")
 async def get_agent(
     agent_id: str,
+    current_user: Optional[User] = Depends(get_current_user_optional),
     db: Session = Depends(get_session_dependency),
 ):
-    """Get agent details."""
+    """Get agent details based on user authentication and ownership."""
     agent_service = AgentService(db)
     agent = agent_service.get_agent(agent_id)
     
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
     
-    if not agent.is_public or agent.status != AgentStatus.APPROVED.value:
+    # Check access permissions
+    if current_user:
+        # Logged-in user: can access public agents, approved agents, or their own agents
+        can_access = (
+            agent.is_public and agent.status == AgentStatus.APPROVED.value or
+            agent.owner_id == current_user.id
+        )
+    else:
+        # Non-logged-in user: can only access public, approved agents
+        can_access = agent.is_public and agent.status == AgentStatus.APPROVED.value
+    
+    if not can_access:
         raise HTTPException(status_code=404, detail="Agent not found")
     
     return {
@@ -181,6 +300,53 @@ async def get_agent(
         "monthly_price": agent.monthly_price,
         "agent_type": agent.agent_type,
         "acp_manifest": agent.acp_manifest,
+        "status": agent.status,
+        "is_public": agent.is_public,
+        "total_hires": agent.total_hires,
+        "total_executions": agent.total_executions,
+        "average_rating": agent.average_rating,
+        "created_at": agent.created_at,
+        "updated_at": agent.updated_at,
+        "is_owner": current_user and agent.owner_id == current_user.id if current_user else False,
+    }
+
+
+@router.get("/my-agents/{agent_id}")
+async def get_my_agent(
+    agent_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session_dependency),
+):
+    """Get agent details for an agent owned by the current user."""
+    agent_service = AgentService(db)
+    agent = agent_service.get_agent(agent_id)
+    
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    
+    # Check if the current user owns this agent
+    if agent.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied - you don't own this agent")
+    
+    return {
+        "id": agent.id,
+        "name": agent.name,
+        "description": agent.description,
+        "version": agent.version,
+        "author": agent.author,
+        "email": agent.email,
+        "entry_point": agent.entry_point,
+        "requirements": agent.requirements,
+        "config_schema": agent.config_schema,
+        "tags": agent.tags,
+        "category": agent.category,
+        "pricing_model": agent.pricing_model,
+        "price_per_use": agent.price_per_use,
+        "monthly_price": agent.monthly_price,
+        "agent_type": agent.agent_type,
+        "acp_manifest": agent.acp_manifest,
+        "status": agent.status,
+        "is_public": agent.is_public,
         "total_hires": agent.total_hires,
         "total_executions": agent.total_executions,
         "average_rating": agent.average_rating,

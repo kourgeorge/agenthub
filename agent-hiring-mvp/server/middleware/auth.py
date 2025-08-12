@@ -183,81 +183,60 @@ def get_current_user(
 
 
 def get_current_user_optional(
+    request: Request,
     authorization: Optional[str] = Header(None),
     x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
     db: Session = Depends(get_session_dependency)
-) -> User:
-    """Get the current authenticated user from either API key or JWT Bearer token, with optional credentials."""
+) -> Optional[User]:
+    """Get the current authenticated user from either API key or JWT Bearer token, or return None if no valid credentials."""
     
-    # Try API key authentication first
-    if x_api_key:
-        user = ApiKeyService.validate_api_key(db, x_api_key)
-        if user:
-            return user
-    
-    # Try JWT authentication if Authorization header is present
-    if authorization and authorization.startswith("Bearer "):
-        token = authorization[7:]  # Remove "Bearer " prefix
+    try:
+        # Try API key authentication first
+        if x_api_key:
+            try:
+                user = ApiKeyService.validate_api_key(db, x_api_key)
+                if user:
+                    return user
+            except Exception:
+                # If API key validation fails, continue to JWT or return None
+                pass
         
-        # Check if token is blacklisted (invalidated after logout)
-        if TokenService.is_token_blacklisted(token):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Token has been invalidated",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+        # Try JWT authentication if Authorization header is present
+        if authorization and authorization.startswith("Bearer "):
+            token = authorization[7:]  # Remove "Bearer " prefix
+            
+            # Check if token is blacklisted (invalidated after logout)
+            if TokenService.is_token_blacklisted(token):
+                return None  # Return None instead of throwing error
+            
+            try:
+                payload = verify_token(token)
+            except Exception:
+                # If token verification fails, return None instead of throwing error
+                return None
+            
+            # Check token type
+            if payload.get("type") != "access":
+                return None
+            
+            user_id: int = payload.get("sub")
+            if user_id is None:
+                return None
+            
+            try:
+                user = db.query(User).filter(User.id == user_id).first()
+                if user and user.is_active:
+                    return user
+            except Exception:
+                # If database query fails, return None
+                return None
         
-        try:
-            payload = verify_token(token)
-        except HTTPException:
-            # Re-raise HTTP exceptions from verify_token
-            raise
-        except Exception as e:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Could not validate credentials",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+        # If neither API key nor valid JWT token is provided, return None
+        return None
         
-        # Check token type
-        if payload.get("type") != "access":
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token type",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        
-        user_id: int = payload.get("sub")
-        if user_id is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Could not validate credentials",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        
-        user = db.query(User).filter(User.id == user_id).first()
-        if user is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="User not found",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        
-        if not user.is_active:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="User account is deactivated",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        
-        return user
-    
-    # If neither API key nor valid JWT token is provided
-    raise HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials. Please provide either a valid JWT token or API key.",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
+    except Exception:
+        # Catch any other unexpected errors and return None
+        return None
 
 def get_current_active_user(current_user: User = Depends(get_current_user)) -> User:
     """Get the current active user."""

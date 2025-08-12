@@ -142,6 +142,79 @@ class AgentService:
         
         return agents_query.all()
     
+    def get_my_agents(self, owner_id: int, skip: int = 0, limit: int = 100) -> List[Agent]:
+        """Get all agents owned by a specific user, regardless of approval status."""
+        return (
+            self.db.query(Agent)
+            .filter(Agent.owner_id == owner_id)
+            .order_by(Agent.created_at.desc())
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
+    
+    def search_my_agents(self, owner_id: int, query: str, category: Optional[str] = None) -> List[Agent]:
+        """Search agents owned by a specific user by name, description, or tags."""
+        agents_query = self.db.query(Agent).filter(Agent.owner_id == owner_id)
+        
+        if query:
+            agents_query = agents_query.filter(
+                Agent.name.ilike(f"%{query}%") |
+                Agent.description.ilike(f"%{query}%")
+            )
+        
+        if category:
+            agents_query = agents_query.filter(Agent.category == category)
+        
+        return agents_query.order_by(Agent.created_at.desc()).all()
+    
+    def get_agents_for_user(self, user_id: int, skip: int = 0, limit: int = 100) -> List[Agent]:
+        """Get all agents accessible to a user: public approved agents + their own agents."""
+        # Get public, approved agents
+        public_agents = self.get_public_agents(skip, limit)
+        
+        # Get user's own agents (regardless of approval status)
+        own_agents = self.get_my_agents(user_id, 0, 1000)  # Get all own agents
+        
+        # Combine and deduplicate (in case user's agent is also public)
+        all_agents = public_agents + own_agents
+        seen_ids = set()
+        unique_agents = []
+        
+        for agent in all_agents:
+            if agent.id not in seen_ids:
+                seen_ids.add(agent.id)
+                unique_agents.append(agent)
+        
+        # Sort by creation date (newest first)
+        unique_agents.sort(key=lambda x: x.created_at, reverse=True)
+        
+        # Apply pagination
+        return unique_agents[skip:skip + limit]
+    
+    def search_agents_for_user(self, user_id: int, query: str, category: Optional[str] = None) -> List[Agent]:
+        """Search agents accessible to a user: public approved agents + their own agents."""
+        # Search public, approved agents
+        public_agents = self.search_agents(query, category)
+        
+        # Search user's own agents
+        own_agents = self.search_my_agents(user_id, query, category)
+        
+        # Combine and deduplicate
+        all_agents = public_agents + own_agents
+        seen_ids = set()
+        unique_agents = []
+        
+        for agent in all_agents:
+            if agent.id not in seen_ids:
+                seen_ids.add(agent.id)
+                unique_agents.append(agent)
+        
+        # Sort by creation date (newest first)
+        unique_agents.sort(key=lambda x: x.created_at, reverse=True)
+        
+        return unique_agents
+    
     def approve_agent(self, agent_id: str) -> Optional[Agent]:
         """Approve an agent."""
         agent = self.get_agent(agent_id)

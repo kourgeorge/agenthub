@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
 from ..models.execution import Execution, ExecutionStatus
-from ..models.agent import Agent
+from ..models.agent import Agent, AgentStatus
 from ..models.hiring import Hiring
 from ..models.agent_file import AgentFile
 from ..database.config import get_session
@@ -61,8 +61,9 @@ class ExecutionService:
         if not agent:
             raise ValueError("Agent not found")
         
-        if agent.status != "approved":
-            raise ValueError(f"Agent is not approved (status: {agent.status})")
+        # Check if agent is approved OR if the user is executing their own agent
+        if agent.status != AgentStatus.APPROVED.value and agent.owner_id != execution_data.user_id:
+            raise ValueError(f"Agent is not approved (status: {agent.status}) and you don't own it")
         
         execution = Execution(
             agent_id=hiring.agent_id,  # Get agent_id from hiring

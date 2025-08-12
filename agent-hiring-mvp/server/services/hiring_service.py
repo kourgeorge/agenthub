@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
 from ..models.hiring import Hiring, HiringStatus
-from ..models.agent import Agent, AgentType
+from ..models.agent import Agent, AgentType, AgentStatus
 from ..models.user import User
 from ..models.deployment import AgentDeployment
 
@@ -39,9 +39,9 @@ class HiringService:
         if not agent:
             raise ValueError(f"Agent with ID {hiring_data.agent_id} does not exist")
         
-        # Check if agent is approved
-        if agent.status != "approved":
-            raise ValueError(f"Agent {agent.id} is not approved (status: {agent.status})")
+        # Check if agent is approved OR if the user is hiring their own agent
+        if agent.status != AgentStatus.APPROVED.value and agent.owner_id != hiring_data.user_id:
+            raise ValueError(f"Agent {agent.id} is not approved (status: {agent.status}) and you don't own it")
         
         hiring = Hiring(
             agent_id=hiring_data.agent_id,
