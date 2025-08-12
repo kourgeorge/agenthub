@@ -5,6 +5,8 @@
   "entry_point": "academic_research.py",
   "author": "AgentHub Team",
   "agent_type": "function",
+  "pricing_model": "per_use",
+  "price_per_use": 0.4,
   "email": "team@agenthub.com",
   "requirements": ["openai", "requests", "python-dotenv", "PyPDF2"],
   "config_schema": {

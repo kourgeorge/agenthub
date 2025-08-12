@@ -6,7 +6,8 @@
   "email": "team@agenthub.com",
   "entry_point": "trip_planner_agent.py",
   "agent_type": "function",
-  "pricing_model": "free",
+  "pricing_model": "per_use",
+  "price_per_use": 0.3,
   "requirements": [],
   "config_schema": {
     "destination": {

@@ -6,6 +6,18 @@
   "email": "team@agenthub.com",
   "entry_point": "agent.py",
   "agent_type": "function",
+  "category": "research",
+  "pricing_model": "per_use",
+  "price_per_use": 1.6,
+  "max_execution_time": 300,
+  "memory_limit": "1GB",
+  "tags": [
+    "rag",
+    "document-qa",
+    "knowledge-base",
+    "openai",
+    "llamaindex"
+  ],
   "requirements": [
     "llama-index",
     "llama-index-readers-web",
@@ -103,17 +115,5 @@
       "default": 1000,
       "description": "Maximum tokens for response"
     }
-  },
-  "tags": [
-    "rag",
-    "document-qa",
-    "knowledge-base",
-    "openai",
-    "llamaindex"
-  ],
-  "category": "research",
-  "pricing_model": "per_use",
-  "price_per_use": 0.6,
-  "max_execution_time": 300,
-  "memory_limit": "1GB"
+  }
 } 

@@ -6,7 +6,8 @@
   "email": "support@agenthub.com",
   "entry_point": "sec_edgar_agent.py",
   "agent_type": "function",
-  "pricing_model": "free",
+  "pricing_model": "per_use",
+  "price_per_use": 0.8,
   "tags": ["finance", "sec", "edgar", "financial-analysis", "xbrl", "regulatory", "data-extraction"],
   "category": "Financial Analysis",
   "config_schema": {

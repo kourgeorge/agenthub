@@ -8,7 +8,8 @@
   "requires_initialization": true,
   "author": "AgentHub Team",
   "email": "team@agenthub.com",
-  "pricing_model": "free",
+  "pricing_model": "per_use",
+  "price_per_use": 0.4,
   "requirements": [
     "langchain",
     "langchain-core",
