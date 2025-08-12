@@ -6,6 +6,15 @@
   "agent_type": "function",
   "author": "AgentHub Team",
   "email": "team@agenthub.com",
+  "tags": [
+    "research",
+    "web-search",
+    "analysis",
+    "simple",
+    "ai-analysis",
+    "topic-research",
+    "information-gathering"
+  ],
   "pricing_model": "per_use",
   "price_per_use": 0.2,
   "requirements": ["openai>=1.0.0", "requests>=2.28.0", "python-dotenv>=1.0.0"],

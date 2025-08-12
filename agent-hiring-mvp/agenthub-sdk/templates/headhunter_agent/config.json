@@ -5,6 +5,18 @@
   "entry_point": "headhunter_agent.py",
   "author": "AgentHub Team",
   "email": "team@agenthub.com",
+  "tags": [
+    "recruitment",
+    "hiring",
+    "talent-search",
+    "linkedin",
+    "job-search",
+    "hr",
+    "recruiting",
+    "candidate-sourcing",
+    "talent-acquisition",
+    "professional-networking"
+  ],
   "agent_type": "function",
   "pricing_model": "per_use",
   "price_per_use": 2,

@@ -4,6 +4,18 @@
   "version": "1.0.0",
   "author": "AgentHub",
   "email": "team@agenthub.com",
+  "tags": [
+    "travel",
+    "trip-planning",
+    "itinerary",
+    "vacation",
+    "tourism",
+    "accommodations",
+    "dining",
+    "activities",
+    "travel-recommendations",
+    "vacation-planning"
+  ],
   "entry_point": "trip_planner_agent.py",
   "agent_type": "function",
   "pricing_model": "per_use",

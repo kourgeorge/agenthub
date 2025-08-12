@@ -5,6 +5,18 @@
   "entry_point": "acl_review_agent.py",
   "author": "AgentHub Team",
   "email": "team@agenthub.com",
+  "tags": [
+    "acl",
+    "academic",
+    "review",
+    "paper-analysis",
+    "literature-review",
+    "arr",
+    "peer-review",
+    "academic-publishing",
+    "nlp",
+    "computational-linguistics"
+  ],
   "agent_type": "function",
   "pricing_model": "per_use",
   "price_per_use": 0.6,

@@ -8,6 +8,18 @@
   "pricing_model": "per_use",
   "price_per_use": 0.4,
   "email": "team@agenthub.com",
+  "tags": [
+    "academic",
+    "research",
+    "papers",
+    "scholarly",
+    "semantic-scholar",
+    "arxiv",
+    "google-scholar",
+    "literature-review",
+    "academic-analysis",
+    "grounded"
+  ],
   "requirements": ["openai", "requests", "python-dotenv", "PyPDF2"],
   "config_schema": {
     "topic": {

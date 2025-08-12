@@ -6,6 +6,15 @@
   "agent_type": "function",
   "author": "AgentHub Team",
   "email": "team@agenthub.com",
+  "tags": [
+    "echo",
+    "simple",
+    "testing",
+    "debugging",
+    "message-processing",
+    "basic",
+    "demo"
+  ],
   "pricing_model": "free",
   "requirements": [],
   "config_schema": {
