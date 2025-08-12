@@ -54,37 +54,36 @@ class ResourceManager:
             }
         }
     
-    async def start_execution(self, execution_id: int, user_id: int) -> None:
+    async def start_execution(self, execution_id: str, user_id: int) -> None:
         """Start tracking a new execution"""
+        import logging
+        logger = logging.getLogger(__name__)
         self.execution_id = execution_id
         self.user_id = user_id
         self.resources = {}  # Reset resources for new execution
         
         # Note: Execution record is already created by ExecutionService
         # We don't need to create it again here
-        print(f"Resource manager started tracking execution: {execution_id}")
-        
+
         # Verify the execution exists in the database
         try:
             from ..models.execution import Execution
             execution = self.db.query(Execution).filter(
-                Execution.execution_id == str(execution_id)
+                Execution.execution_id == execution_id
             ).first()
-            
-            if execution:
-                print(f"✅ Execution record found: {execution_id}")
-            else:
-                print(f"⚠️  Execution record not found: {execution_id}")
-                
+
         except Exception as e:
-            print(f"⚠️  Error checking execution record: {e}")
+            logger.error(f"RESOURCE MANAGER: Error checking execution record: {e}")
     
-    async def end_execution(self, execution_id: int, status: str = "completed") -> Dict[str, Any]:
+    async def end_execution(self, execution_id: str, status: str = "completed") -> Dict[str, Any]:
         """End execution and return usage summary"""
-        # Update execution record
-        await self._update_execution_record(execution_id, status)
+        import logging
+        logger = logging.getLogger(__name__)
         
+        # We only track resources and provide usage summaries
+
         # Get usage summary
+        logger.info(f"📊 RESOURCE MANAGER: Getting usage summary: {execution_id}")
         summary = await self.usage_tracker.get_execution_usage_summary(execution_id)
         
         # Reset state
@@ -260,13 +259,11 @@ class ResourceManager:
             ).first()
             
             if existing_execution:
-                print(f"Execution record already exists: {execution_id}")
                 return
             
             # Get a default agent for temporary executions
             agent = self.db.query(Agent).first()
             if not agent:
-                print(f"Warning: No agents found in database for execution {execution_id}")
                 return
             
             # Create execution record
@@ -281,37 +278,8 @@ class ResourceManager:
             
             self.db.add(execution)
             self.db.commit()
-            print(f"Created execution record: {execution_id} for user: {user_id}")
             
         except Exception as e:
-            print(f"Error creating execution record: {e}")
-            # Rollback on error to prevent session issues
-            self.db.rollback()
-    
-    async def _update_execution_record(self, execution_id: int, status: str) -> None:
-        """Update execution record with completion status"""
-        try:
-            from ..models.execution import Execution, ExecutionStatus
-            
-            # Find execution by execution_id string
-            execution = self.db.query(Execution).filter(
-                Execution.execution_id == str(execution_id)
-            ).first()
-            
-            if execution:
-                execution.status = status
-                if status in ["completed", "failed"]:
-                    execution.completed_at = datetime.utcnow()
-                    if execution.started_at:
-                        execution.duration_ms = int((execution.completed_at - execution.started_at).total_seconds() * 1000)
-                
-                self.db.commit()
-                print(f"Updated execution record: {execution_id} with status: {status}")
-            else:
-                print(f"Warning: Execution record not found for {execution_id}")
-                
-        except Exception as e:
-            print(f"Error updating execution record: {e}")
             # Rollback on error to prevent session issues
             self.db.rollback()
 

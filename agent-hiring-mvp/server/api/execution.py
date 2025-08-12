@@ -15,7 +15,6 @@ class ExecutionRequest(BaseModel):
     hiring_id: int
     execution_type: str = "run"  # "initialize", "run", "cleanup"
     input_data: Optional[Dict[str, Any]] = None
-    user_id: Optional[int] = None
 
 router = APIRouter(prefix="/execution", tags=["execution"])
 
@@ -23,12 +22,14 @@ router = APIRouter(prefix="/execution", tags=["execution"])
 @router.post("/", response_model=dict)
 def create_execution(
     execution_data: ExecutionRequest,
+    current_user=Depends(get_current_user),
     db: Session = Depends(get_session_dependency)
 ):
     """Create a new execution (initialize, run, or cleanup)."""
-    execution_service = ExecutionService(db)
-    
     try:
+        # Create execution service with its own database session
+        execution_service = ExecutionService()  # No db parameter = creates own session
+        
         # Validate execution type
         valid_types = ["initialize", "run", "cleanup"]
         if execution_data.execution_type not in valid_types:
@@ -71,10 +72,29 @@ def create_execution(
                     "agent_id": hiring.agent_id
                 }
         
+        # Get the hiring to validate ownership and get user_id if not provided
+        from ..models.hiring import Hiring
+        hiring = db.query(Hiring).filter(Hiring.id == execution_data.hiring_id).first()
+        if not hiring:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Hiring not found"
+            )
+        
+        # Ensure the user can only execute their own hirings
+        if hiring.user_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: You can only execute your own hirings"
+            )
+        
+        # Use the authenticated user's ID, with fallback to hiring user_id
+        user_id = current_user.id or hiring.user_id
+        
         # Create execution
         execution = execution_service.create_execution(ExecutionCreateRequest(
             hiring_id=execution_data.hiring_id,
-            user_id=execution_data.user_id,
+            user_id=user_id,
             input_data=execution_data.input_data,
             execution_type=execution_data.execution_type
         ))
@@ -84,7 +104,7 @@ def create_execution(
             "agent_id": execution.agent_id,
             "hiring_id": execution.hiring_id,
             "status": execution.status,
-            "execution_type": execution.execution_type,
+            "execution_type": execution_data.execution_type,
             "created_at": execution.created_at.isoformat(),
             "message": f"{execution_data.execution_type.capitalize()} execution created successfully"
         }
@@ -103,15 +123,31 @@ def create_execution(
 
 
 @router.get("/{execution_id}", response_model=dict)
-def get_execution(execution_id: str, db: Session = Depends(get_session_dependency)):
+def get_execution(
+    execution_id: str, 
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_session_dependency)
+):
     """Get an execution by ID."""
+    import logging
+    logger = logging.getLogger(__name__)
+    
     execution_service = ExecutionService(db)
     execution = execution_service.get_execution(execution_id)
     
     if not execution:
+        logger.warning(f"Execution not found: {execution_id}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Execution not found"
+        )
+    
+    # Ensure the user can only access their own executions
+    if execution.user_id != current_user.id:
+        logger.warning(f"Access denied: {execution_id} for user {current_user.id}")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: You can only access your own executions"
         )
     
     return {
@@ -132,26 +168,47 @@ def get_execution(execution_id: str, db: Session = Depends(get_session_dependenc
 
 
 @router.post("/{execution_id}/run")
-async def run_execution(execution_id: str, db: Session = Depends(get_session_dependency)):
+async def run_execution(
+    execution_id: str, 
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_session_dependency)
+):
     """Run an execution (initialize or run type)."""
+    import logging
+    logger = logging.getLogger(__name__)
+    
     try:
-        execution_service = ExecutionService(db)
+        # Create execution service with its own database session
+        # This prevents the session from being closed when the API request ends
+        execution_service = ExecutionService()  # No db parameter = creates own session
         
-        # Get execution to check its type
+        # Get execution to check its type and ownership
         execution = execution_service.get_execution(execution_id)
         if not execution:
+            logger.warning(f"Execution not found: {execution_id}")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Execution not found"
             )
         
+        # Ensure the user can only run their own executions
+        if execution.user_id != current_user.id:
+            logger.warning(f"Access denied: {execution_id} for user {current_user.id}")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: You can only run your own executions"
+            )
+        
         # Route based on execution type
         if execution.execution_type == "initialize":
-            result = await execution_service.execute_initialization(execution_id)
+            # Pass the authenticated user_id to the execution service
+            result = await execution_service.execute_initialization(execution_id, user_id=current_user.id)
         else:
-            result = await execution_service.execute_agent(execution_id)
+            # Pass the authenticated user_id to the execution service
+            result = await execution_service.execute_agent(execution_id, user_id=current_user.id)
         
         if result.get("status") == "error":
+            logger.error(f"Execution failed: {execution_id} - {result.get('error')}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=result.get("error", "Execution failed")
@@ -161,7 +218,6 @@ async def run_execution(execution_id: str, db: Session = Depends(get_session_dep
     except HTTPException:
         raise
     except Exception as e:
-        # Log the error for debugging
         import logging
         logger = logging.getLogger(__name__)
         logger.error(f"Execution failed for {execution_id}: {str(e)}")
@@ -175,11 +231,15 @@ async def run_execution(execution_id: str, db: Session = Depends(get_session_dep
 def get_agent_executions(
     agent_id: str,
     limit: int = 100,
+    current_user = Depends(get_current_user),
     db: Session = Depends(get_session_dependency)
 ):
     """Get executions for an agent."""
     execution_service = ExecutionService(db)
     executions = execution_service.get_agent_executions(agent_id, limit)
+    
+    # Filter to only show user's own executions for this agent
+    user_executions = [execution for execution in executions if execution.user_id == current_user.id]
     
     return [
         {
@@ -189,7 +249,7 @@ def get_agent_executions(
             "completed_at": execution.completed_at.isoformat() if execution.completed_at else None,
             "duration_ms": execution.duration_ms,
         }
-        for execution in executions
+        for execution in user_executions
     ]
 
 
@@ -197,9 +257,17 @@ def get_agent_executions(
 def get_user_executions(
     user_id: int,
     limit: int = 100,
+    current_user = Depends(get_current_user),
     db: Session = Depends(get_session_dependency)
 ):
     """Get executions for a user."""
+    # Ensure the user can only access their own executions
+    if user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: You can only access your own executions"
+        )
+    
     execution_service = ExecutionService(db)
     executions = execution_service.get_user_executions(user_id, limit)
     
@@ -263,17 +331,32 @@ def get_hiring_executions(
 
 
 @router.get("/stats/agent/{agent_id}")
-def get_agent_execution_stats(agent_id: str, db: Session = Depends(get_session_dependency)):
+def get_agent_execution_stats(
+    agent_id: str, 
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_session_dependency)
+):
     """Get execution statistics for an agent."""
     execution_service = ExecutionService(db)
-    stats = execution_service.get_execution_stats(agent_id=agent_id)
+    stats = execution_service.get_execution_stats(agent_id=agent_id, user_id=current_user.id)
     
     return stats
 
 
 @router.get("/stats/user/{user_id}")
-def get_user_execution_stats(user_id: int, db: Session = Depends(get_session_dependency)):
+def get_user_execution_stats(
+    user_id: int, 
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_session_dependency)
+):
     """Get execution statistics for a user."""
+    # Ensure the user can only access their own stats
+    if user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: You can only access your own statistics"
+        )
+    
     execution_service = ExecutionService(db)
     stats = execution_service.get_execution_stats(user_id=user_id)
     
@@ -281,8 +364,19 @@ def get_user_execution_stats(user_id: int, db: Session = Depends(get_session_dep
 
 
 @router.get("/stats/global")
-def get_global_execution_stats(db: Session = Depends(get_session_dependency)):
+def get_global_execution_stats(
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_session_dependency)
+):
     """Get global execution statistics for the entire system."""
+    # For now, only allow global stats for admin users
+    # In the future, this could be expanded to show system-wide metrics
+    if not current_user.is_active:  # Basic check - could add admin role check
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: Insufficient permissions for global statistics"
+        )
+    
     execution_service = ExecutionService(db)
     stats = execution_service.get_execution_stats()  # No filters = global stats
     
@@ -295,10 +389,26 @@ def update_execution_status(
     status: str,
     output_data: Optional[Dict[str, Any]] = None,
     error_message: Optional[str] = None,
+    current_user = Depends(get_current_user),
     db: Session = Depends(get_session_dependency)
 ):
     """Update execution status."""
     execution_service = ExecutionService(db)
+    
+    # Get the execution to check ownership
+    execution = execution_service.get_execution(execution_id)
+    if not execution:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Execution not found"
+        )
+    
+    # Ensure the user can only update their own executions
+    if execution.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: You can only update your own executions"
+        )
     
     try:
         execution_status = ExecutionStatus(status)
@@ -308,18 +418,18 @@ def update_execution_status(
             detail=f"Invalid status: {status}"
         )
     
-    execution = execution_service.update_execution_status(
+    updated_execution = execution_service.update_execution_status(
         execution_id, execution_status, output_data, error_message
     )
     
-    if not execution:
+    if not updated_execution:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Execution not found"
         )
     
     return {
-        "execution_id": execution.execution_id,
-        "status": execution.status,
+        "execution_id": updated_execution.execution_id,
+        "status": updated_execution.status,
         "message": "Execution status updated successfully"
     } 

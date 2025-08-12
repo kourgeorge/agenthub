@@ -24,25 +24,58 @@ logger = logging.getLogger(__name__)
 class ExecutionCreateRequest(BaseModel):
     """Request model for creating an execution."""
     hiring_id: int  # Now required
-    user_id: Optional[int] = None
+    user_id: int  # Now required - comes from authentication
     input_data: Optional[Dict[str, Any]] = None
     execution_type: str = "run"  # "initialize" or "run"
 
 
 class ExecutionService:
-    """Service for managing agent execution."""
+    """Service for managing agent execution.
+    
+    This service uses dual database sessions:
+    - self.db: User's authenticated session for API operations
+    - self.system_db: System session for background updates (bypasses auth)
+    
+    This design allows the service to:
+    1. Respect user authentication for execution initiation
+    2. Update execution status in the background without auth requirements
+    3. Maintain proper separation between user and system operations
+    """
     
     def __init__(self, db=None):
         if db is None:
+            # Create a new database session that won't be closed by FastAPI
             self.db = get_session()
+            self._owns_session = True
         else:
+            # Use the provided session (from API layer)
             self.db = db
+            self._owns_session = False
+        
+        # Create a separate system database session for background updates
+        # This bypasses user authentication requirements for database operations
+        self.system_db = get_session()
+        self._owns_system_session = True
         
         # Initialize resource manager for usage tracking
         self.resource_manager = ResourceManager(self.db)
         
         # Initialize persistent agent runtime
         self.persistent_runtime = PersistentAgentRuntimeService()
+    
+    def __del__(self):
+        """Clean up database sessions if we own them."""
+        if hasattr(self, '_owns_session') and self._owns_session and hasattr(self, 'db'):
+            try:
+                self.db.close()
+            except:
+                pass
+        
+        if hasattr(self, '_owns_system_session') and self._owns_system_session and hasattr(self, 'system_db'):
+            try:
+                self.system_db.close()
+            except:
+                pass
     
     def create_execution(self, execution_data: ExecutionCreateRequest) -> Execution:
         """Create a new execution record."""
@@ -60,6 +93,14 @@ class ExecutionService:
         agent = self.db.query(Agent).filter(Agent.id == hiring.agent_id).first()
         if not agent:
             raise ValueError("Agent not found")
+        
+        # Ensure user_id is set - it should come from the authenticated user
+        if not execution_data.user_id:
+            raise ValueError("User ID is required for execution creation")
+        
+        # Validate that the user executing is the same as the hiring user
+        if execution_data.user_id != hiring.user_id:
+            raise ValueError(f"User ID {execution_data.user_id} does not match hiring user ID {hiring.user_id}")
         
         # Check if agent is approved OR if the user is executing their own agent
         if agent.status != AgentStatus.APPROVED.value and agent.owner_id != execution_data.user_id:
@@ -79,22 +120,31 @@ class ExecutionService:
         self.db.commit()
         self.db.refresh(execution)
         
-        logger.info(f"Created execution: {execution_id}")
+        logger.info(f"Created execution: {execution_id} for user: {execution_data.user_id}")
         return execution
     
     def get_execution(self, execution_id: str) -> Optional[Execution]:
-        """Get an execution by ID."""
+        """Get an execution by ID using the user's database session."""
         return self.db.query(Execution).filter(Execution.execution_id == execution_id).first()
+    
+    def _get_execution_system(self, execution_id: str) -> Optional[Execution]:
+        """Get an execution by ID using the system database session for internal operations."""
+        return self.system_db.query(Execution).filter(Execution.execution_id == execution_id).first()
     
     def update_execution_status(self, execution_id: str, status: ExecutionStatus, 
                                output_data: Optional[Dict[str, Any]] = None,
                                error_message: Optional[str] = None,
                                container_logs: Optional[str] = None) -> Optional[Execution]:
         """Update execution status and optionally set output data or error message."""
-        execution = self.get_execution(execution_id)
+
+        # Use system database session for background updates
+        # This bypasses user authentication requirements
+        execution = self.system_db.query(Execution).filter(Execution.execution_id == execution_id).first()
         if not execution:
+            logger.error(f"❌ EXECUTION NOT FOUND: {execution_id}")
             return None
-        
+
+        old_status = execution.status
         execution.status = status.value
         
         if status == ExecutionStatus.RUNNING and not execution.started_at:
@@ -103,17 +153,24 @@ class ExecutionService:
             execution.completed_at = datetime.utcnow()
             if execution.started_at:
                 execution.duration_ms = int((execution.completed_at - execution.started_at).total_seconds() * 1000)
-        
+
         if output_data is not None:
             execution.output_data = output_data
-        
+
         if error_message is not None:
             execution.error_message = error_message
-            
+
         if container_logs is not None:
             execution.container_logs = container_logs
-        
-        self.db.commit()
+
+        try:
+            # Use system database session for the commit
+            self.system_db.commit()
+        except Exception as e:
+            logger.error(f"DATABASE COMMIT FAILED: {execution_id}")
+            logger.error(f"   Error: {str(e)}")
+            self.system_db.rollback()
+            raise
         
         return execution
     
@@ -147,16 +204,22 @@ class ExecutionService:
             .all()
         )
     
-    async def execute_agent(self, execution_id: str) -> Dict[str, Any]:
+    async def execute_agent(self, execution_id: str, user_id: Optional[int] = None) -> Dict[str, Any]:
         """Execute an agent using the unified runtime service."""
-        execution = self.get_execution(execution_id)
+
+        # Use system database session for internal operations
+        execution = self._get_execution_system(execution_id)
         if not execution:
+            logger.error(f"EXECUTION NOT FOUND FOR EXECUTION: {execution_id}")
             return {"status": "error", "message": "Execution not found"}
         
+        # Use provided user_id or fall back to execution's user_id
+        current_user_id = user_id or execution.user_id or 1
+
         # Start resource tracking for this execution
-        await self.resource_manager.start_execution(execution_id, execution.user_id or 1)
+        await self.resource_manager.start_execution(execution_id, current_user_id)
         
-        # Update status to running
+        # Update status to running using system database session
         self.update_execution_status(execution_id, ExecutionStatus.RUNNING)
         
         try:
@@ -213,9 +276,10 @@ class ExecutionService:
             
             # End resource tracking and get usage summary
             usage_summary = await self.resource_manager.end_execution(execution_id, "completed")
-            
+
             # Process runtime result
             if runtime_result.status == RuntimeStatus.COMPLETED:
+
                 # Check if the output is already a JSON object (dict)
                 if isinstance(runtime_result.output, dict):
                     # Agent returned a proper JSON object, use it directly
@@ -227,7 +291,7 @@ class ExecutionService:
                         "execution_time": runtime_result.execution_time,
                         "status": "success"
                     }
-                
+
                 self.update_execution_status(execution_id, ExecutionStatus.COMPLETED, output_data, container_logs=runtime_result.container_logs)
                 
                 return {
@@ -239,9 +303,16 @@ class ExecutionService:
                 }
             
             elif runtime_result.status == RuntimeStatus.FAILED:
+                logger.error(f"RUNTIME FAILED: {execution_id}")
+                logger.error(f"Error: {runtime_result.error}")
+                
+                # End resource tracking for failed execution
                 await self.resource_manager.end_execution(execution_id, "failed")
                 error_msg = runtime_result.error or "Execution failed"
+                
                 self.update_execution_status(execution_id, ExecutionStatus.FAILED, error_message=error_msg, container_logs=runtime_result.container_logs)
+                
+                logger.error(f"EXECUTION FAILED: {execution_id}")
                 return {
                     "status": "error",
                     "execution_id": execution_id,
@@ -249,8 +320,14 @@ class ExecutionService:
                 }
             
             else:  # FAILED or other status
+                logger.error(f"RUNTIME UNKNOWN STATUS: {execution_id}")
+                logger.error(f"Status: {runtime_result.status}")
+                logger.error(f"Error: {runtime_result.error}")
+                
+                # End resource tracking for failed execution
                 await self.resource_manager.end_execution(execution_id, "failed")
                 error_msg = runtime_result.error or "Execution failed"
+                
                 self.update_execution_status(execution_id, ExecutionStatus.FAILED, error_message=error_msg, container_logs=runtime_result.container_logs)
                 return {
                     "status": "error",
@@ -259,6 +336,11 @@ class ExecutionService:
                 }
         
         except Exception as e:
+            logger.error(f"UNEXPECTED EXCEPTION IN EXECUTION: {execution_id}")
+            logger.error(f"Exception type: {type(e).__name__}")
+            logger.error(f"Exception message: {str(e)}")
+            logger.error(f"Full traceback:", exc_info=True)
+            
             # End resource tracking on error
             await self.resource_manager.end_execution(execution_id, "failed")
             error_msg = f"Execution failed: {str(e)}"
@@ -456,8 +538,6 @@ class ExecutionService:
                 execution_time=time.time() - start_time
             )
 
-
-    
     def get_execution_stats(self, agent_id: Optional[str] = None, user_id: Optional[int] = None) -> Dict[str, Any]:
         """Get execution statistics."""
         query = self.db.query(Execution)
@@ -529,17 +609,18 @@ class ExecutionService:
             logger.error(f"Error initializing persistent agent {agent_id}: {e}")
             return {"error": str(e)}
 
-    async def execute_initialization(self, execution_id: str) -> Dict[str, Any]:
-        """Execute an initialization execution."""
-        execution = self.get_execution(execution_id)
+    async def execute_initialization(self, execution_id: str, user_id: Optional[int] = None) -> Dict[str, Any]:
+        """Execute agent initialization."""
+        # Use system database session for internal operations
+        execution = self._get_execution_system(execution_id)
         if not execution:
             return {"status": "error", "message": "Execution not found"}
         
-        if execution.execution_type != "initialize":
-            return {"status": "error", "message": "Execution is not an initialization execution"}
+        # Use provided user_id or fall back to execution's user_id
+        current_user_id = user_id or execution.user_id or 1
         
         # Start resource tracking for this execution
-        await self.resource_manager.start_execution(execution_id, execution.user_id or 1)
+        await self.resource_manager.start_execution(execution_id, current_user_id)
         
         # Update status to running
         self.update_execution_status(execution_id, ExecutionStatus.RUNNING)
@@ -578,7 +659,7 @@ class ExecutionService:
                     "usage_summary": usage_summary
                 }
             else:
-                await self.resource_manager.end_execution(execution_id, "failed")
+                # Don't call end_execution again - it was already called above for success case
                 error_msg = result.get('error', 'Initialization failed')
                 self.update_execution_status(execution_id, ExecutionStatus.FAILED, error_message=error_msg)
                 return {
