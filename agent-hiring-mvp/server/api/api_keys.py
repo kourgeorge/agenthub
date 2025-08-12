@@ -68,12 +68,8 @@ def create_api_key(
     db: Session = Depends(get_session_dependency)
 ):
     """Create a new API key for the current user."""
-    print(f"DEBUG: Creating API key for user {current_user.id} with name '{request.name}'")
-    print(f"DEBUG: Request data: {request}")
-    print(f"DEBUG: Database session: {db}")
-    
+
     try:
-        print("DEBUG: About to call ApiKeyService.create_api_key")
         api_key, full_key = ApiKeyService.create_api_key(
             db=db,
             user_id=current_user.id,
@@ -81,16 +77,13 @@ def create_api_key(
             expires_in_days=request.expires_in_days,
             permissions=request.permissions
         )
-        print(f"DEBUG: Successfully created API key with ID {api_key.id}")
-        
+
         return CreateApiKeyResponse(
             api_key=ApiKeyResponse.model_validate(api_key),
             full_key=full_key
         )
     except Exception as e:
-        print(f"DEBUG: Exception occurred: {type(e).__name__}: {str(e)}")
         import traceback
-        print(f"DEBUG: Full traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create API key: {str(e)}"
@@ -103,18 +96,12 @@ def list_api_keys(
     db: Session = Depends(get_session_dependency)
 ):
     """List all API keys for the current user."""
-    print(f"DEBUG: Listing API keys for user {current_user.id}")
-    print(f"DEBUG: Database session: {db}")
-    
+
     try:
-        print("DEBUG: About to call ApiKeyService.get_user_api_keys")
         api_keys = ApiKeyService.get_user_api_keys(db, current_user.id)
-        print(f"DEBUG: Successfully fetched {len(api_keys)} API keys")
         return [ApiKeyResponse.model_validate(key) for key in api_keys]
     except Exception as e:
-        print(f"DEBUG: Exception occurred: {type(e).__name__}: {str(e)}")
         import traceback
-        print(f"DEBUG: Full traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to list API keys: {str(e)}"

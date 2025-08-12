@@ -34,39 +34,33 @@ class ApiKeyService:
         permissions: Optional[str] = None
     ) -> tuple[UserApiKey, str]:
         """Create a new API key for a user."""
-        print(f"DEBUG: ApiKeyService.create_api_key called with user_id={user_id}, name='{name}'")
-        print(f"DEBUG: Database session: {db}")
-        
-        # Generate the API key
-        api_key = ApiKeyService.generate_api_key()
-        key_hash = ApiKeyService.hash_api_key(api_key)
+        # Generate a secure random API key
+        api_key = secrets.token_urlsafe(32)
         key_prefix = api_key[:8]
         
-        print(f"DEBUG: Generated API key with prefix: {key_prefix}")
+        # Hash the API key for secure storage
+        key_hash = ApiKeyService.hash_api_key(api_key)
         
-        # Set expiration if specified
+        # Calculate expiration date
         expires_at = None
         if expires_in_days:
             expires_at = datetime.now(timezone.utc) + timedelta(days=expires_in_days)
         
-        # Create the database record
+        # Create the API key record
         db_api_key = UserApiKey(
             user_id=user_id,
             name=name,
             key_hash=key_hash,
             key_prefix=key_prefix,
-            permissions=permissions,
+            is_active=True,
+            permissions=permissions or "",
             expires_at=expires_at
         )
         
-        print(f"DEBUG: Created UserApiKey object: {db_api_key}")
-        print(f"DEBUG: About to add to database and commit")
-        
+        # Save to database
         db.add(db_api_key)
         db.commit()
         db.refresh(db_api_key)
-        
-        print(f"DEBUG: Successfully committed to database, API key ID: {db_api_key.id}")
         
         return db_api_key, api_key
     
@@ -107,20 +101,13 @@ class ApiKeyService:
     @staticmethod
     def get_user_api_keys(db: Session, user_id: int) -> List[UserApiKey]:
         """Get all API keys for a user."""
-        print(f"DEBUG: ApiKeyService.get_user_api_keys called with user_id={user_id}")
-        print(f"DEBUG: Database session: {db}")
-        
         try:
-            print("DEBUG: About to query UserApiKey table")
             result = db.query(UserApiKey).filter(
                 UserApiKey.user_id == user_id
             ).order_by(UserApiKey.created_at.desc()).all()
-            print(f"DEBUG: Successfully queried {len(result)} API keys")
             return result
         except Exception as e:
-            print(f"DEBUG: Exception in get_user_api_keys: {type(e).__name__}: {str(e)}")
-            import traceback
-            print(f"DEBUG: Full traceback: {traceback.format_exc()}")
+            # Log error and re-raise
             raise
     
     @staticmethod
