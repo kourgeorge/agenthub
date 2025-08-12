@@ -114,6 +114,7 @@ class ExecutionService:
             execution.container_logs = container_logs
         
         self.db.commit()
+        
         return execution
     
     def get_agent_executions(self, agent_id: str, limit: int = 100) -> list[Execution]:

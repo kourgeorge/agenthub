@@ -14,8 +14,70 @@ from ..services.agent_service import AgentService, AgentCreateRequest
 from ..models.agent import Agent, AgentStatus
 from ..models.user import User
 from ..middleware.auth import get_current_user, get_current_user_optional
+from ..models.execution import Execution
+from ..models.hiring import Hiring
+from ..models.resource_usage import ExecutionResourceUsage
+from sqlalchemy import func
 
 logger = logging.getLogger(__name__)
+
+def calculate_agent_metrics(db: Session, agent_id: str) -> dict:
+    """Calculate real-time metrics for an agent from database data."""
+    # Get execution statistics
+    executions = db.query(Execution).filter(Execution.agent_id == agent_id)
+    total_executions = executions.count()
+    
+    if total_executions == 0:
+        return {
+            "total_executions": 0,
+            "total_hires": 0,
+            "success_rate": 0.0,
+            "average_execution_time": 0,
+            "average_cost": 0.0,
+            "total_cost": 0.0
+        }
+    
+    # Calculate success rate
+    completed_executions = executions.filter(Execution.status == "completed").count()
+    success_rate = (completed_executions / total_executions * 100) if total_executions > 0 else 0
+    
+    # Calculate average execution time (only for completed executions)
+    avg_time_result = db.query(func.avg(Execution.duration_ms)).filter(
+        Execution.agent_id == agent_id,
+        Execution.duration_ms.isnot(None)
+    ).scalar()
+    average_execution_time = int(avg_time_result) if avg_time_result else 0
+    
+    # Calculate cost metrics from resource usage
+    # Get all execution IDs for this agent
+    execution_ids = [e.id for e in executions.all()]
+    
+    if execution_ids:
+        # Calculate total and average cost from resource usage
+        cost_stats = db.query(
+            func.sum(ExecutionResourceUsage.cost).label('total_cost'),
+            func.avg(ExecutionResourceUsage.cost).label('avg_cost')
+        ).filter(
+            ExecutionResourceUsage.execution_id.in_(execution_ids)
+        ).first()
+        
+        total_cost = float(cost_stats.total_cost) if cost_stats.total_cost else 0.0
+        average_cost = float(cost_stats.avg_cost) if cost_stats.avg_cost else 0.0
+    else:
+        total_cost = 0.0
+        average_cost = 0.0
+    
+    # Get total hires
+    total_hires = db.query(Hiring).filter(Hiring.agent_id == agent_id).count()
+    
+    return {
+        "total_executions": total_executions,
+        "total_hires": total_hires,
+        "success_rate": round(success_rate, 1),
+        "average_execution_time": average_execution_time,
+        "average_cost": round(average_cost, 4),
+        "total_cost": round(total_cost, 4)
+    }
 
 router = APIRouter(prefix="/agents", tags=["agents"])
 
@@ -148,8 +210,7 @@ async def list_agents(
                 "agent_type": agent.agent_type,
                 "status": agent.status,
                 "is_public": agent.is_public,
-                "total_hires": agent.total_hires,
-                "total_executions": agent.total_executions,
+                **calculate_agent_metrics(db, agent.id),
                 "average_rating": agent.average_rating,
                 "created_at": agent.created_at,
                 "updated_at": agent.updated_at,
@@ -195,8 +256,8 @@ async def search_agents(
                 "agent_type": agent.agent_type,
                 "status": agent.status,
                 "is_public": agent.is_public,
-                "total_hires": agent.total_hires,
-                "total_executions": agent.total_executions,
+                "total_hires": db.query(Hiring).filter(Hiring.agent_id == agent.id).count(),
+                "total_executions": db.query(Execution).filter(Execution.agent_id == agent.id).count(),
                 "average_rating": agent.average_rating,
                 "created_at": agent.created_at,
                 "updated_at": agent.updated_at,
@@ -244,8 +305,7 @@ async def get_my_agents(
                 "agent_type": agent.agent_type,
                 "status": agent.status,
                 "is_public": agent.is_public,
-                "total_hires": agent.total_hires,
-                "total_executions": agent.total_executions,
+                **calculate_agent_metrics(db, agent.id),
                 "average_rating": agent.average_rating,
                 "created_at": agent.created_at,
                 "updated_at": agent.updated_at,
@@ -302,12 +362,10 @@ async def get_agent(
         "acp_manifest": agent.acp_manifest,
         "status": agent.status,
         "is_public": agent.is_public,
-        "total_hires": agent.total_hires,
-        "total_executions": agent.total_executions,
+        **calculate_agent_metrics(db, agent.id),
         "average_rating": agent.average_rating,
         "created_at": agent.created_at,
         "updated_at": agent.updated_at,
-        "is_owner": current_user and agent.owner_id == current_user.id if current_user else False,
     }
 
 
@@ -347,8 +405,7 @@ async def get_my_agent(
         "acp_manifest": agent.acp_manifest,
         "status": agent.status,
         "is_public": agent.is_public,
-        "total_hires": agent.total_hires,
-        "total_executions": agent.total_executions,
+        **calculate_agent_metrics(db, agent.id),
         "average_rating": agent.average_rating,
         "created_at": agent.created_at,
         "updated_at": agent.updated_at,
