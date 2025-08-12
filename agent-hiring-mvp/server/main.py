@@ -28,7 +28,8 @@ from .api import (
     resources_router,
     auth_router,
     api_keys_router,
-    stats_router
+    stats_router,
+    earnings_router
 )
 
 # Configure logging
@@ -111,6 +112,7 @@ app.include_router(resources_router, prefix="/api/v1")
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(api_keys_router, prefix="/api/v1")
 app.include_router(stats_router, prefix="/api/v1")
+app.include_router(earnings_router, prefix="/api/v1")
 
 
 
@@ -132,7 +134,8 @@ async def root():
             "deployment": "/api/v1/deployment",
             "agent_proxy": "/api/v1/agent-proxy",
             "resources": "/api/v1/resources",
-            "api_keys": "/api/v1/api-keys"
+            "api_keys": "/api/v1/api-keys",
+            "earnings": "/api/v1/earnings"
         }
     }
 
