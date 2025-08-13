@@ -406,29 +406,11 @@ class ExecutionService:
                         container_logs=container_logs
                     )
             else:
-                # Fallback to traditional runtime service
-                runtime_service = AgentRuntimeService()
-                
-                # Try to get agent files (new multi-file approach)
-                agent_files = self._get_agent_files(agent.id)
-                
-                if agent_files:
-                    # Use new multi-file approach
-                    return runtime_service.execute_agent(
-                        agent_id=agent.id,
-                        input_data=enhanced_input_data,
-                        agent_files=agent_files,
-                        entry_point=agent.entry_point
-                    )
-                else:
-                    # Fallback to legacy single-file approach
-                    return runtime_service.execute_agent(
-                        agent_id=agent.id,
-                        input_data=enhanced_input_data,
-                        agent_code=agent.code if hasattr(agent, 'code') else None,
-                        agent_file_path=agent.file_path if hasattr(agent, 'file_path') else None,
-                        entry_point=agent.entry_point
-                    )
+                # Function agents require Docker deployment - no subprocess fallback
+                return RuntimeResult(
+                    status=RuntimeStatus.FAILED,
+                    error=f"Function agent {agent.id} requires Docker deployment. No deployment found for hiring {execution.hiring_id}."
+                )
                 
         except Exception as e:
             return RuntimeResult(
