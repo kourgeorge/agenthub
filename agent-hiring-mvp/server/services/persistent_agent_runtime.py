@@ -17,7 +17,7 @@ from typing import Dict, Any, Optional, List, Tuple
 from dataclasses import dataclass
 from enum import Enum
 
-from .agent_runtime import AgentRuntimeService, RuntimeResult, RuntimeStatus
+from .base_runtime import RuntimeResult, RuntimeStatus
 from ..database.config import get_engine
 from ..models.hiring import Hiring
 from sqlalchemy.orm import sessionmaker
@@ -54,7 +54,7 @@ class PersistentAgentRuntimeService:
     def __init__(self, base_dir: Optional[str] = None):
         self.base_dir = base_dir or os.path.join(os.getcwd(), "persistent_agent_runtime")
         self.state_dir = os.path.join(self.base_dir, "states")
-        self.agent_runtime = AgentRuntimeService(base_dir)
+
         
         # Create directories
         os.makedirs(self.base_dir, exist_ok=True)
@@ -281,7 +281,7 @@ class PersistentAgentRuntimeService:
             logger.error(f"Error creating agent instance: {e}")
             return None
     
-    def initialize_agent(self, agent_id: str, init_config: Dict[str, Any], 
+    async def initialize_agent(self, agent_id: str, init_config: Dict[str, Any], 
                         agent_files: List[Dict[str, Any]], entry_point: Optional[str] = None, 
                         hiring_id: Optional[int] = None) -> RuntimeResult:
         """Initialize a persistent agent using the new inheritance-based design."""
@@ -431,7 +431,7 @@ class PersistentAgentRuntimeService:
                 error=f"Initialization error: {e}"
             )
     
-    def execute_agent(self, agent_id: str, input_data: Dict[str, Any],
+    async def execute_agent(self, agent_id: str, input_data: Dict[str, Any],
                      agent_files: List[Dict[str, Any]], entry_point: Optional[str] = None) -> RuntimeResult:
         """Execute a persistent agent using the new inheritance-based design."""
         agent_id_str = str(agent_id)
@@ -487,7 +487,11 @@ class PersistentAgentRuntimeService:
             # Execute the agent
             logger.info(f"Executing persistent agent {agent_id}")
             try:
-                result = agent_instance.execute(input_data)
+                # Check if the agent's execute method is async
+                if hasattr(agent_instance.execute, '__await__'):
+                    result = await agent_instance.execute(input_data)
+                else:
+                    result = agent_instance.execute(input_data)
                 
                 # Add agent ID to response (platform concern)
                 if isinstance(result, dict):
