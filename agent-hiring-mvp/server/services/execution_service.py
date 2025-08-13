@@ -26,7 +26,7 @@ class ExecutionCreateRequest(BaseModel):
     hiring_id: int  # Now required
     user_id: int  # Now required - comes from authentication
     input_data: Optional[Dict[str, Any]] = None
-    execution_type: str = "run"  # "initialize" or "run"
+    execution_type: str = "run"  # "initialize", "run", or "cleanup"
 
 
 class ExecutionService:
@@ -81,12 +81,14 @@ class ExecutionService:
         """Create a new execution record."""
         execution_id = str(uuid.uuid4())
         
-        # Validate hiring exists and is active
+        # Validate hiring exists
         hiring = self.db.query(Hiring).filter(Hiring.id == execution_data.hiring_id).first()
         if not hiring:
             raise ValueError("Hiring not found")
         
-        if hiring.status != "active":
+        # For cleanup executions, allow any hiring status
+        # For other executions, require active status
+        if execution_data.execution_type != "cleanup" and hiring.status != "active":
             raise ValueError(f"Hiring is not active (status: {hiring.status})")
         
         # Validate that the agent is approved
@@ -264,7 +266,7 @@ class ExecutionService:
                     if not agent_files:
                         raise Exception("Agent files not found")
                     
-                    runtime_result = self.persistent_runtime.execute_agent(
+                    runtime_result = await self.persistent_runtime.execute_agent(
                         agent_id=agent.id,
                         input_data=execution.input_data or {},
                         agent_files=agent_files,
@@ -563,7 +565,7 @@ class ExecutionService:
     # PERSISTENT AGENT METHODS
     # =============================================================================
     
-    def initialize_persistent_agent(self, agent_id: str, init_config: Dict[str, Any], hiring_id: Optional[int] = None) -> Dict[str, Any]:
+    async def initialize_persistent_agent(self, agent_id: str, init_config: Dict[str, Any], hiring_id: Optional[int] = None) -> Dict[str, Any]:
         """Initialize a persistent agent."""
         try:
             # Get agent details
@@ -585,7 +587,7 @@ class ExecutionService:
                     return {"error": "Agent files not found"}
                 
                 # Initialize the agent
-                result = self.persistent_runtime.initialize_agent(
+                result = await self.persistent_runtime.initialize_agent(
                     agent_id=agent_id,
                     init_config=init_config,
                     agent_files=agent_files,
@@ -640,7 +642,7 @@ class ExecutionService:
                 result = deployment_service.initialize_persistent_agent(deployment.deployment_id, execution.input_data or {})
             else:
                 # Use in-process persistent agent
-                result = self.initialize_persistent_agent(
+                result = await self.initialize_persistent_agent(
                     agent_id=agent.id,
                     init_config=execution.input_data or {},
                     hiring_id=execution.hiring_id
@@ -833,4 +835,85 @@ class ExecutionService:
             return deployment
         except Exception as e:
             logger.error(f"Error getting deployment for hiring {hiring_id}: {e}")
-            return None 
+            return None
+
+    async def execute_cleanup(self, execution_id: str, user_id: int) -> Dict[str, Any]:
+        """Execute a cleanup operation for a hiring."""
+        try:
+            logger.info(f"Starting cleanup execution: {execution_id}")
+            
+            # Get the execution record
+            execution = self.system_db.query(Execution).filter(Execution.execution_id == execution_id).first()
+            if not execution:
+                logger.error(f"Cleanup execution not found: {execution_id}")
+                return {"status": "error", "error": "Execution not found"}
+            
+            # Update execution status to running
+            execution.status = ExecutionStatus.RUNNING
+            execution.started_at = datetime.utcnow()
+            self.system_db.commit()
+            
+            # Get the hiring to find the agent
+            hiring = self.system_db.query(Hiring).filter(Hiring.id == execution.hiring_id).first()
+            if not hiring:
+                execution.status = ExecutionStatus.FAILED
+                execution.completed_at = datetime.utcnow()
+                execution.error_message = "Hiring not found"
+                self.system_db.commit()
+                return {"status": "error", "error": "Hiring not found"}
+            
+            # Get the agent
+            agent = self.system_db.query(Agent).filter(Agent.id == hiring.agent_id).first()
+            if not agent:
+                execution.status = ExecutionStatus.FAILED
+                execution.completed_at = datetime.utcnow()
+                execution.error_message = "Agent not found"
+                self.system_db.commit()
+                return {"status": "error", "error": "Agent not found"}
+            
+            # Perform cleanup based on agent type
+            if agent.agent_type == "persistent":
+                # Clean up persistent agent
+                logger.info(f"Cleaning up persistent agent: {agent.id}")
+                cleanup_result = self.cleanup_persistent_agent(str(agent.id))
+            else:
+                # For function agents, just mark the hiring as completed
+                logger.info(f"Cleaning up function agent: {agent.id}")
+                cleanup_result = {"status": "success", "message": "Function agent cleanup completed"}
+            
+            logger.info(f"Cleanup result: {cleanup_result}")
+            
+            # Update execution status
+            if cleanup_result.get("status") == "success":
+                execution.status = ExecutionStatus.COMPLETED
+                execution.completed_at = datetime.utcnow()
+                execution.output_data = cleanup_result
+            else:
+                execution.status = ExecutionStatus.FAILED
+                execution.completed_at = datetime.utcnow()
+                execution.error_message = cleanup_result.get("error", "Cleanup failed")
+            
+            self.system_db.commit()
+            
+            # Update hiring status to cancelled (cleanup completed)
+            hiring.status = "cancelled"
+            self.system_db.commit()
+            
+            logger.info(f"Cleanup execution completed successfully: {execution_id}")
+            return cleanup_result
+            
+        except Exception as e:
+            logger.error(f"Error executing cleanup for execution {execution_id}: {e}")
+            
+            # Update execution status to failed
+            try:
+                execution = self.system_db.query(Execution).filter(Execution.execution_id == execution_id).first()
+                if execution:
+                    execution.status = ExecutionStatus.FAILED
+                    execution.completed_at = datetime.utcnow()
+                    execution.error_message = str(e)
+                    self.system_db.commit()
+            except:
+                pass
+            
+            return {"status": "error", "error": str(e)} 
