@@ -9,6 +9,7 @@ cryptography
 
 # Database
 sqlalchemy
+psycopg2-binary
 
 # Utilities
 python-dotenv
