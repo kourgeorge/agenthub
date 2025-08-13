@@ -1,25 +1,56 @@
+
 import requests
 
 API_BASE = "http://localhost:8002/api/v1"
-AGENT_ID, USER_ID = 8, 1
+AGENT_ID = "REPRA432"
+API_KEY = "7u87uNckrQRQrz1ukykH9GfvJ4xRZ6UCh2UhwsdqhLc"
 
-# Hire agent
-hiring_resp = requests.post(f"{API_BASE}/hiring/", json={"agent_id": AGENT_ID, "user_id": USER_ID})
-hiring_id = hiring_resp.json().get("hiring_id")
 
-# Execute agent
-task_data = {
-    "message": "Latest developments in quantum computing", "depth": 2, "breadth": 3
+
+headers = {
+    "X-API-Key": API_KEY,
+    "Content-Type": "application/json"
 }
 
-exec_resp = requests.post(f"{API_BASE}/execution/",
-                          json={"hiring_id": hiring_id, "input_data": task_data})
-exec_id = exec_resp.json().get("execution_id")
+# 1. Hire and deploy agent
+hire_response = requests.post(
+    f"{API_BASE}/agents/{AGENT_ID}/hire",
+    json={},
+    headers=headers
+)
+hiring_id = hire_response.json()["hiring_id"]
 
-# Run the execution
-run_resp = requests.post(f"{API_BASE}/execution/{exec_id}/run")
+# 2. Initialize agent (required for persistent agents)
+init_response = requests.post(
+    f"{API_BASE}/agents/{AGENT_ID}/initialize",
+    json={
+        "hiring_id": hiring_id,
+        "input_data": {
+  "website_url": "https://example.com"
+}
+    },
+    headers=headers
+)
 
-result_resp = requests.get(f"{API_BASE}/execution/{exec_id}")
-result_data = result_resp.json()
-output = result_data.get("output_data", {})
-print(output.get('answer', output.get('output', output.get('report', output))))
+# 3. Execute queries (can be called multiple times)
+exec_response = requests.post(
+    f"{API_BASE}/agents/{AGENT_ID}/execute",
+    json={
+        "hiring_id": hiring_id,
+        "input_data": {
+  "question": "What is this website about?"
+}
+    },
+    headers=headers
+)
+result = exec_response.json()["result"]
+
+# 4. Cleanup when done
+cleanup_response = requests.post(
+    f"{API_BASE}/agents/{AGENT_ID}/cleanup",
+    json={
+        "hiring_id": hiring_id,
+        "input_data": {}
+    },
+    headers=headers
+)

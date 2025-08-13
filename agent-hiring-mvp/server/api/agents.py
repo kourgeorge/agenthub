@@ -3,14 +3,19 @@
 import logging
 import tempfile
 import os
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status, BackgroundTasks
 from sqlalchemy.orm import Session
+from pydantic import BaseModel
 
 from ..database.config import get_session_dependency
 from ..services.agent_service import AgentService, AgentCreateRequest
+from ..services.hiring_service import HiringService, HiringCreateRequest
+from ..services.deployment_service import DeploymentService
+from ..services.function_deployment_service import FunctionDeploymentService
+from ..services.execution_service import ExecutionService, ExecutionCreateRequest
 from ..models.agent import Agent, AgentStatus
 from ..models.user import User
 from ..middleware.auth import get_current_user, get_current_user_optional
@@ -534,4 +539,201 @@ async def get_agent_file_content(
         "agent_id": agent_id,
         "file_path": file_path,
         "content": file_content
-    } 
+    }
+
+
+# =============================================================================
+# SIMPLIFIED API ENDPOINTS FOR EASY INTEGRATION (N8N, etc.)
+# =============================================================================
+
+class HiringRequest(BaseModel):
+    requirements: Optional[Dict[str, Any]] = None
+    billing_cycle: Optional[str] = "per_use"
+
+class DirectExecutionRequest(BaseModel):
+    hiring_id: int
+    input_data: Dict[str, Any]
+
+@router.post("/{agent_id}/hire", response_model=dict)
+async def hire_and_deploy_agent(
+    agent_id: str,
+    hiring_data: HiringRequest,
+    background_tasks: BackgroundTasks,
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_session_dependency)
+):
+    """Hire an agent and automatically deploy it (for all agent types)."""
+    
+    try:
+        # 1. Create hiring
+        hiring_service = HiringService(db)
+        hiring = hiring_service.create_hiring(HiringCreateRequest(
+            agent_id=agent_id,
+            user_id=current_user.id,
+            requirements=hiring_data.requirements,
+            billing_cycle=hiring_data.billing_cycle
+        ))
+        
+        # 2. Create deployment for ALL agent types
+        agent = db.query(Agent).filter(Agent.id == agent_id).first()
+        deployment_info = None
+        
+        if agent:
+            # All agent types need deployment
+            if agent.agent_type == "function":
+                deployment_service = FunctionDeploymentService(db)
+            elif agent.agent_type in ["acp_server", "persistent"]:
+                deployment_service = DeploymentService(db)
+            else:
+                # For unknown agent types, try to use the main deployment service
+                deployment_service = DeploymentService(db)
+            
+            try:
+                if agent.agent_type == "function":
+                    deployment_result = deployment_service.create_function_deployment(hiring.id)
+                else:
+                    deployment_result = deployment_service.create_deployment(hiring.id)
+                
+                if "error" not in deployment_result:
+                    # Start deployment in background
+                    background_tasks.add_task(
+                        deployment_service.build_and_deploy,
+                        deployment_result["deployment_id"]
+                    )
+                    deployment_info = {
+                        "deployment_id": deployment_result["deployment_id"],
+                        "status": "deployment_started",
+                        "agent_type": agent.agent_type,
+                        "proxy_endpoint": deployment_result.get("proxy_endpoint")
+                    }
+            except Exception as e:
+                logger.error(f"Deployment creation failed: {e}")
+                deployment_info = {"status": "deployment_failed", "error": str(e)}
+        
+        return {
+            "hiring_id": hiring.id,
+            "agent_id": agent_id,
+            "agent_type": agent.agent_type if agent else "unknown",
+            "status": "hired",
+            "deployment": deployment_info,
+            "message": f"Agent hired successfully. {agent.agent_type if agent else 'unknown'} deployment is starting in the background."
+        }
+    except Exception as e:
+        logger.error(f"Error in hire_and_deploy_agent: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
+
+@router.post("/{agent_id}/execute", response_model=dict)
+async def execute_agent_direct(
+    agent_id: str,
+    execution_data: DirectExecutionRequest,
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_session_dependency)
+):
+    """Execute an agent directly and return result."""
+    
+    # 1. Create execution
+    execution_service = ExecutionService()
+    execution = execution_service.create_execution(ExecutionCreateRequest(
+        hiring_id=execution_data.hiring_id,
+        user_id=current_user.id,
+        input_data=execution_data.input_data,
+        execution_type="run"
+    ))
+    
+    # 2. Run execution and wait for result
+    result = await execution_service.execute_agent(execution.execution_id, user_id=current_user.id)
+    
+    if result.get("status") == "error":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=result.get("error", "Execution failed")
+        )
+    
+    return {
+        "status": "success",
+        "result": result.get("result", {}),
+        "execution_id": execution.execution_id,
+        "hiring_id": execution_data.hiring_id,
+        "metadata": {
+            "execution_time": result.get("execution_time", 0),
+            "tokens_used": result.get("tokens_used", 0)
+        }
+    }
+
+@router.post("/{agent_id}/initialize", response_model=dict)
+async def initialize_persistent_agent(
+    agent_id: str,
+    init_data: DirectExecutionRequest,
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_session_dependency)
+):
+    """Initialize a persistent agent with configuration."""
+    
+    # 1. Create initialization execution
+    execution_service = ExecutionService()
+    execution = execution_service.create_execution(ExecutionCreateRequest(
+        hiring_id=init_data.hiring_id,
+        user_id=current_user.id,
+        input_data=init_data.input_data,
+        execution_type="initialize"
+    ))
+    
+    # 2. Run initialization and wait for result
+    result = await execution_service.execute_initialization(execution.execution_id, user_id=current_user.id)
+    
+    if result.get("status") == "error":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=result.get("error", "Initialization failed")
+        )
+    
+    return {
+        "status": "success",
+        "result": result.get("result", {}),
+        "execution_id": execution.execution_id,
+        "hiring_id": init_data.hiring_id,
+        "message": "Persistent agent initialized successfully",
+        "metadata": {
+            "execution_time": result.get("execution_time", 0),
+            "tokens_used": result.get("tokens_used", 0)
+        }
+    }
+
+@router.post("/{agent_id}/cleanup", response_model=dict)
+async def cleanup_persistent_agent(
+    agent_id: str,
+    cleanup_data: DirectExecutionRequest,
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_session_dependency)
+):
+    """Clean up a persistent agent and free resources."""
+    
+    # 1. Create cleanup execution
+    execution_service = ExecutionService()
+    execution = execution_service.create_execution(ExecutionCreateRequest(
+        hiring_id=cleanup_data.hiring_id,
+        user_id=current_user.id,
+        input_data=cleanup_data.input_data,
+        execution_type="cleanup"
+    ))
+    
+    # 2. Run cleanup and wait for result
+    result = await execution_service.execute_cleanup(execution.execution_id, user_id=current_user.id)
+    
+    if result.get("status") == "error":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=result.get("error", "Cleanup failed")
+        )
+    
+    return {
+        "status": "success",
+        "result": result.get("result", {}),
+        "execution_id": execution.execution_id,
+        "hiring_id": cleanup_data.hiring_id,
+        "message": "Persistent agent cleaned up successfully",
+        "metadata": {
+            "execution_time": result.get("execution_time", 0),
+            "tokens_used": result.get("tokens_used", 0)
+        }
+    }
