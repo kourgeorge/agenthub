@@ -24,6 +24,7 @@ class ExecutionType(str, Enum):
     """Execution type enumeration."""
     INITIALIZE = "initialize"
     RUN = "run"
+    CLEANUP = "cleanup"
 
 
 class Execution(Base):
@@ -38,7 +39,7 @@ class Execution(Base):
     
     # Execution Details
     status = Column(String(20), nullable=False, default=ExecutionStatus.PENDING.value)
-    execution_type = Column(String(20), nullable=False, default="run")  # "initialize" or "run"
+    execution_type = Column(String(20), nullable=False, default="run")  # "initialize", "run", or "cleanup"
     started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
     duration_ms = Column(Integer, nullable=True)  # Execution duration in milliseconds
