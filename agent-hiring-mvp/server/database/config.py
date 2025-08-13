@@ -13,6 +13,9 @@ class DatabaseSettings(BaseSettings):
     
     # Database URL (SQLite for development, PostgreSQL for production)
     database_url: str = "sqlite:///./agent_hiring.db"
+
+    # for using postgress sql
+    database_url: str = "postgresql://postgres:Gras2xan@localhost:5432/agenthub"
     
     # Database connection settings
     echo: bool = False  # SQLAlchemy echo mode

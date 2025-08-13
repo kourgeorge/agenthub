@@ -27,7 +27,13 @@ agent-hiring-mvp/
 
 ## 🚀 Quick Start
 
-### 1. Setup Environment
+### 📚 **New to AgentHub? Start Here!**
+- **[Getting Started Guide](documentation/USER_GETTING_STARTED.md)** - Complete setup in 5 minutes
+- **[User Guide](documentation/USER_GUIDE.md)** - Full platform usage manual
+- **[Examples & Tutorials](documentation/EXAMPLES_TUTORIALS.md)** - Practical usage examples
+
+### 🔧 **Technical Setup**
+1. **Setup Environment**
 ```bash
 cd agent-hiring-mvp
 python -m venv venv
@@ -35,21 +41,36 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 2. Initialize Database
+2. **Initialize Database**
 ```bash
 python -m server.database.init_db
 ```
 
-### 3. Start the Server
+3. **Start the Server**
 ```bash
 python -m server.main
 ```
 
-### 4. Start the Web UI
+4. **Start the Web UI**
 ```bash
 cd web-ui
 npm install
 npm start
+```
+
+### 🎯 **First Steps**
+```bash
+# Install CLI
+pip install -e ./agenthub-sdk
+
+# Browse agents
+agenthub agent list
+
+# Hire your first agent
+agenthub hire agent 1
+
+# Execute a task
+agenthub execute hiring <hiring_id> --input '{"task": "Hello!"}'
 ```
 
 ## 📋 Core Features
@@ -118,6 +139,28 @@ The system implements the Agent Communication Protocol (ACP) to provide:
 - Permanent communication links
 - Message routing and delivery
 - Agent state management
+
+## 📚 Documentation
+
+### 🎯 **User Documentation**
+- **[Getting Started Guide](documentation/USER_GETTING_STARTED.md)** - First-time setup and quick start
+- **[User Guide](documentation/USER_GUIDE.md)** - Complete user manual
+- **[CLI Reference](documentation/CLI_REFERENCE.md)** - Command-line interface documentation
+- **[Examples & Tutorials](documentation/EXAMPLES_TUTORIALS.md)** - Practical usage examples
+- **[Troubleshooting Guide](documentation/TROUBLESHOOTING_GUIDE.md)** - Common issues and solutions
+
+### 🏗️ **Technical Documentation**
+- **[Documentation Index](documentation/README.md)** - Complete documentation overview
+- **[Business Overview](documentation/AGENTHUB_BUSINESS_OVERVIEW.md)** - Platform vision and business model
+- **[Project Structure](documentation/PROJECT_STRUCTURE.md)** - Codebase organization
+- **[Database Schema](documentation/DATABASE_SCHEMA.md)** - Database design
+- **[Security](documentation/SECURITY_IMPROVEMENTS.md)** - Security features and best practices
+
+### 🔍 **Finding Help**
+- **New users**: Start with [Getting Started Guide](documentation/USER_GETTING_STARTED.md)
+- **CLI users**: Reference [CLI Reference](documentation/CLI_REFERENCE.md)
+- **Troubleshooting**: Check [Troubleshooting Guide](documentation/TROUBLESHOOTING_GUIDE.md)
+- **API users**: Visit `/docs` endpoint for interactive API documentation
 
 ## 🧪 Testing
 
