@@ -192,47 +192,47 @@ async def get_earnings_summary(
                 hiring["earnings"] = hiring_earnings
                 month_earnings += hiring_earnings
             
-            # Calculate earnings from individual executions (if not part of hiring)
+            # Calculate earnings from ALL executions (including those tied to hirings)
             for execution in month_data["executions"]:
-                if not execution["hiring_id"]:
-                    # Direct execution - calculate earnings using agent's price_per_use
-                    agent = db.query(Agent).filter(Agent.id == execution["agent_id"]).first()
-                    if agent and agent.price_per_use:
-                        execution_revenue = agent.price_per_use
-                    else:
-                        execution_revenue = 0.0  # No per-use revenue if no price set
-                    
-                    execution["revenue"] = execution_revenue
-                    month_revenue += execution_revenue
-                    
-                    # Get resource usage
-                    resource_usage = db.query(ExecutionResourceUsage).filter(
-                        ExecutionResourceUsage.execution_id == execution["id"]
-                    ).all()
-                    
-                    execution_resource_costs = sum(usage.cost for usage in resource_usage)
-                    execution["resource_costs"] = execution_resource_costs
-                    execution["resource_usage"] = [
-                        {
-                            "resource_type": usage.resource_type,
-                            "provider": usage.resource_provider,
-                            "model": usage.resource_model,
-                            "operation_type": usage.operation_type,
-                            "cost": usage.cost,
-                            "input_tokens": usage.input_tokens,
-                            "output_tokens": usage.output_tokens,
-                            "duration_ms": usage.duration_ms,
-                            "created_at": usage.created_at.isoformat() if usage.created_at else None
-                        }
-                        for usage in resource_usage
-                    ]
-                    
-                    month_resource_costs += execution_resource_costs
-                    
-                    # Calculate earnings: 70% of (revenue - resource_costs)
-                    execution_earnings = max(0, execution_revenue - execution_resource_costs) * 0.7
-                    execution["earnings"] = execution_earnings
-                    month_earnings += execution_earnings
+                # Get agent pricing information
+                agent = db.query(Agent).filter(Agent.id == execution["agent_id"]).first()
+                
+                # Calculate per-use revenue for ALL executions when price_per_use is set
+                execution_revenue = 0.0
+                if agent and agent.price_per_use:
+                    execution_revenue = agent.price_per_use
+                
+                execution["revenue"] = execution_revenue
+                month_revenue += execution_revenue
+                
+                # Get resource usage
+                resource_usage = db.query(ExecutionResourceUsage).filter(
+                    ExecutionResourceUsage.execution_id == execution["id"]
+                ).all()
+                
+                execution_resource_costs = sum(usage.cost for usage in resource_usage)
+                execution["resource_costs"] = execution_resource_costs
+                execution["resource_usage"] = [
+                    {
+                        "resource_type": usage.resource_type,
+                        "provider": usage.resource_provider,
+                        "model": usage.resource_model,
+                        "operation_type": usage.operation_type,
+                        "cost": usage.cost,
+                        "input_tokens": usage.input_tokens,
+                        "output_tokens": usage.output_tokens,
+                        "duration_ms": usage.duration_ms,
+                        "created_at": usage.created_at.isoformat() if usage.created_at else None
+                    }
+                    for usage in resource_usage
+                ]
+                
+                month_resource_costs += execution_resource_costs
+                
+                # Calculate earnings: 70% of (revenue - resource_costs)
+                execution_earnings = max(0, execution_revenue - execution_resource_costs) * 0.7
+                execution["earnings"] = execution_earnings
+                month_earnings += execution_earnings
             
             # Update month totals
             month_data["total_earnings"] = month_earnings
@@ -332,29 +332,29 @@ async def get_agent_earnings(
             hiring_earnings = max(0, hiring_revenue - hiring_resource_costs) * 0.7
             total_earnings += hiring_earnings
         
-        # Process direct executions
+        # Process ALL executions (including those tied to hirings)
         for execution in executions:
-            if not execution.hiring_id:
-                # Direct execution using agent's price_per_use
-                agent = db.query(Agent).filter(Agent.id == execution.agent_id).first()
-                if agent and agent.price_per_use:
-                    execution_revenue = agent.price_per_use
-                else:
-                    execution_revenue = 0.0  # No per-use revenue if no price set
-                
-                total_revenue += execution_revenue
-                
-                # Get resource costs
-                resource_usage = db.query(ExecutionResourceUsage).filter(
-                    ExecutionResourceUsage.execution_id == execution.id
-                ).all()
-                
-                execution_resource_costs = sum(usage.cost for usage in resource_usage)
-                total_resource_costs += execution_resource_costs
-                
-                # Calculate earnings: 70% of (revenue - resource_costs)
-                execution_earnings = max(0, execution_revenue - execution_resource_costs) * 0.7
-                total_earnings += execution_earnings
+            # Get agent pricing information
+            agent = db.query(Agent).filter(Agent.id == execution.agent_id).first()
+            
+            # Calculate per-use revenue for ALL executions when price_per_use is set
+            execution_revenue = 0.0
+            if agent and agent.price_per_use:
+                execution_revenue = agent.price_per_use
+            
+            total_revenue += execution_revenue
+            
+            # Get resource costs
+            resource_usage = db.query(ExecutionResourceUsage).filter(
+                ExecutionResourceUsage.execution_id == execution.id
+            ).all()
+            
+            execution_resource_costs = sum(usage.cost for usage in resource_usage)
+            total_resource_costs += execution_resource_costs
+            
+            # Calculate earnings: 70% of (revenue - resource_costs)
+            execution_earnings = max(0, execution_revenue - execution_resource_costs) * 0.7
+            total_earnings += execution_earnings
         
         return {
             "agent_id": agent_id,
@@ -435,16 +435,15 @@ async def get_earnings_stats(
                     agent_resource_costs += sum(usage.cost for usage in resource_usage)
             
             for execution in agent_executions:
-                if not execution.hiring_id:
-                    # Get agent pricing information
-                    agent = db.query(Agent).filter(Agent.id == execution.agent_id).first()
-                    if agent and agent.price_per_use:
-                        agent_revenue += agent.price_per_use
-                    
-                    resource_usage = db.query(ExecutionResourceUsage).filter(
-                        ExecutionResourceUsage.execution_id == execution.id
-                    ).all()
-                    agent_resource_costs += sum(usage.cost for usage in resource_usage)
+                # Get agent pricing information
+                agent = db.query(Agent).filter(Agent.id == execution.agent_id).first()
+                if agent and agent.price_per_use:
+                    agent_revenue += agent.price_per_use
+                
+                resource_usage = db.query(ExecutionResourceUsage).filter(
+                    ExecutionResourceUsage.execution_id == execution.id
+                ).all()
+                agent_resource_costs += sum(usage.cost for usage in resource_usage)
             
             agent_earnings[agent.id] = {
                 "name": agent.name,
@@ -505,12 +504,11 @@ async def get_earnings_stats(
                     if agent and agent.monthly_price:
                         month_revenue += agent.monthly_price
                 
-                # Add revenue from executions (per-use pricing)
+                # Add revenue from ALL executions (per-use pricing)
                 for execution in month_executions:
-                    if not execution.hiring_id:  # Only direct executions, not hiring-based ones
-                        agent = db.query(Agent).filter(Agent.id == execution.agent_id).first()
-                        if agent and agent.price_per_use:
-                            month_revenue += agent.price_per_use
+                    agent = db.query(Agent).filter(Agent.id == execution.agent_id).first()
+                    if agent and agent.price_per_use:
+                        month_revenue += agent.price_per_use
                 
                 month_earnings += month_revenue * 0.7  # 70% of revenue
             
