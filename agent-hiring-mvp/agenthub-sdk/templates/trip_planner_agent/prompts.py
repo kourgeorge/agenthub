@@ -224,6 +224,17 @@ Focus on creating a practical, enjoyable trip that matches the {budget_level} bu
 Provide a comprehensive, detailed itinerary that the traveler can use as their complete trip guide.
 """
 
+final_itinerary_with_research_prompt = """
+Create a comprehensive trip itinerary for: {destination}
+
+Trip Details:
+- Destination: {destination}
+- Travel Period: {month} ({travel_days} days)
+- Duration: {trip_duration} days
+- Budget Level: {budget_level}
+- Trip Type: {trip_type}
+- Preferences: {preferences}
+
 Research Information:
 - Destination Info: {destination_info}
 - Accommodations: {accommodations}
