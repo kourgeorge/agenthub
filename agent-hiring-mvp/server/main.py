@@ -44,7 +44,8 @@ from .api import (
     auth_router,
     api_keys_router,
     stats_router,
-    earnings_router
+    earnings_router,
+    contact_router
 )
 
 # Configure logging
@@ -128,7 +129,7 @@ app.include_router(auth_router, prefix="/api/v1")
 app.include_router(api_keys_router, prefix="/api/v1")
 app.include_router(stats_router, prefix="/api/v1")
 app.include_router(earnings_router, prefix="/api/v1")
-
+app.include_router(contact_router, prefix="/api/v1")
 
 
 @app.get("/")
@@ -150,7 +151,8 @@ async def root():
             "agent_proxy": "/api/v1/agent-proxy",
             "resources": "/api/v1/resources",
             "api_keys": "/api/v1/api-keys",
-            "earnings": "/api/v1/earnings"
+            "earnings": "/api/v1/earnings",
+            "contact": "/api/v1/contact"
         }
     }
 
