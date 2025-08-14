@@ -1,0 +1,33 @@
+{
+  "name": "Expensive Echo Agent",
+  "description": "A simple but expensive agent that echoes back input messages with processing",
+  "version": "1.0.0",
+  "entry_point": "echo_agent.py",
+  "agent_type": "function",
+  "author": "AgentHub Team",
+  "email": "team@agenthub.com",
+  "tags": [
+    "echo",
+    "simple",
+    "testing",
+    "debugging",
+    "message-processing",
+    "basic",
+    "demo"
+  ],
+  "pricing_model": "per_use",
+  "price_per_use": 3.5,
+  "requirements": [],
+  "config_schema": {
+    "message": {
+      "type": "string",
+      "description": "The message to echo back",
+      "default": "Helloworld"
+    },
+    "prefix": {
+      "type": "string",
+      "description": "Prefix to add before the echoed message",
+      "default": "Echo: "
+    }
+  }
+} 
