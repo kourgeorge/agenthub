@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from ..database.config import get_session_dependency
 from ..models.user import User
 from ..services.auth_service import AuthService
+from ..services.email_service import EmailService
 from ..middleware.auth import get_current_user
 
 router = APIRouter(tags=["users"])
@@ -119,6 +120,13 @@ def create_user(
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
+    
+    # Send welcome email
+    try:
+        EmailService.send_welcome_email(new_user.email, new_user.username)
+    except Exception as e:
+        # Log the error but don't fail the user creation
+        print(f"Failed to send welcome email to {new_user.email}: {e}")
     
     return {
         "id": new_user.id,
