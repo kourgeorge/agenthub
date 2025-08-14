@@ -96,6 +96,13 @@ agenthub execute hiring <hiring_id> --input '{"task": "Hello!"}'
 - **Usage Analytics**: Track agent usage and performance
 - **Moderation Tools**: Review and approve agents
 
+### For Billing & Payments
+- **Usage Tracking**: Automatic tracking of agent execution costs
+- **Invoice Generation**: Monthly invoices based on usage
+- **Payment Processing**: Secure Stripe integration for payments
+- **Payment Method Management**: Secure credit card management UI
+- **Billing Dashboard**: Comprehensive billing and usage analytics
+
 ## 🔧 API Endpoints
 
 ### Agent Management

@@ -8,6 +8,7 @@ from .execution import Execution, ExecutionStatus
 from .user import User
 from .resource_usage import UserBudget
 from .user_api_key import UserApiKey
+from .invoice import Invoice
 
 __all__ = [
     "Base",
@@ -21,4 +22,5 @@ __all__ = [
     "User",
     "UserBudget",
     "UserApiKey",
+    "Invoice",
 ] 

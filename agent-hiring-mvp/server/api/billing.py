@@ -12,6 +12,10 @@ from ..models.execution import Execution
 from ..models.hiring import Hiring
 from ..models.agent import Agent
 from ..models.resource_usage import ExecutionResourceUsage
+from ..models.user import User
+from ..config.payment_config import PaymentConfig
+from ..services.payment_service import PaymentService
+from ..services.invoice_service import InvoiceService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/billing", tags=["billing"])
@@ -56,12 +60,14 @@ async def get_billing_summary(
             
             # Get agent name for this execution
             agent_name = "Unknown Agent"
+            agent_price_per_use = 0.0
             if execution.hiring_id:
                 hiring = db.query(Hiring).filter(Hiring.id == execution.hiring_id).first()
                 if hiring:
                     agent = db.query(Agent).filter(Agent.id == hiring.agent_id).first()
                     if agent:
                         agent_name = agent.name
+                        agent_price_per_use = agent.price_per_use or 0.0
             
             # Add execution data
             monthly_data[month_key]["total_executions"] += 1
@@ -70,10 +76,11 @@ async def get_billing_summary(
                 "execution_id": execution.execution_id,  # Add the actual execution_id
                 "hiring_id": execution.hiring_id,
                 "agent_name": agent_name,  # Use the looked up agent name
+                "agent_price_per_use": agent_price_per_use,  # Add agent pricing
                 "executed_at": execution.created_at.isoformat(),
                 "status": execution.status,
                 "execution_time": execution.duration_ms / 1000 if execution.duration_ms else None,
-                "charges": 0.0,  # Will be calculated from resource usage
+                "charges": 0.0,  # Will be calculated from resource usage + agent pricing
                 "resource_usage": []
             })
         
@@ -150,6 +157,26 @@ async def get_billing_summary(
                                 "created_at": usage.created_at.isoformat() if usage.created_at else None
                             })
                             break
+        
+            # Calculate charges from agent pricing (price_per_use)
+            for month_data in monthly_data.values():
+                for execution in month_data["executions"]:
+                    if execution.get("agent_price_per_use", 0.0) > 0.0:
+                        # Add agent per-use cost to execution charges
+                        execution["charges"] += execution["agent_price_per_use"]
+                        # Add agent pricing to resource usage for transparency
+                        execution["resource_usage"].append({
+                            "resource_type": "agent_execution",
+                            "provider": "agenthub",
+                            "model": execution["agent_name"],
+                            "operation_type": "execution",
+                            "cost": execution["agent_price_per_use"],
+                            "input_tokens": None,
+                            "output_tokens": None,
+                            "duration_ms": None,
+                            "created_at": execution["executed_at"],
+                            "note": "Agent per-use pricing"
+                        })
         
         # Calculate total charges for each month
         for month_data in monthly_data.values():
@@ -334,4 +361,344 @@ async def download_invoice(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate invoice: {str(e)}"
-        ) 
+        )
+
+
+@router.post("/invoice/{month}/create")
+async def create_monthly_invoice(
+    month: str,
+    user_id: int = Query(..., description="User ID to create invoice for"),
+    db: Session = Depends(get_db)
+):
+    """Create a payable invoice for a specific month"""
+    try:
+        # Get user email for Stripe customer creation
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        
+        # Create invoice service
+        invoice_service = InvoiceService(db)
+        
+        # Create invoice
+        invoice = await invoice_service.create_monthly_invoice(
+            user_id=user_id,
+            month=month,
+            customer_email=user.email
+        )
+        
+        return {
+            "success": True,
+            "invoice_id": invoice['invoice_id'],
+            "invoice_number": invoice['invoice_number'],
+            "amount": invoice['amount'],
+            "payment_url": invoice['payment_url'],
+            "status": invoice['status'],
+            "due_date": invoice['due_date']
+        }
+        
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error(f"Error creating invoice: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create invoice: {str(e)}"
+        )
+
+
+@router.post("/invoice/{invoice_id}/pay")
+async def pay_invoice(
+    invoice_id: int,
+    payment_method_id: str,
+    user_id: int = Query(..., description="User ID to verify access"),
+    db: Session = Depends(get_db)
+):
+    """Process payment for an invoice"""
+    try:
+        # Create invoice service
+        invoice_service = InvoiceService(db)
+        
+        # Process payment
+        result = await invoice_service.process_payment(
+            invoice_id=invoice_id,
+            user_id=user_id,
+            payment_method_id=payment_method_id
+        )
+        
+        return result
+        
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error(f"Payment failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Payment failed: {str(e)}"
+        )
+
+
+@router.get("/invoices")
+async def get_user_invoices(
+    user_id: int = Query(..., description="User ID to get invoices for"),
+    limit: int = Query(50, description="Maximum number of invoices to return"),
+    db: Session = Depends(get_db)
+):
+    """Get all invoices for a user"""
+    try:
+        invoice_service = InvoiceService(db)
+        invoices = await invoice_service.get_user_invoices(user_id, limit)
+        
+        return {
+            "user_id": user_id,
+            "invoices": invoices,
+            "total_count": len(invoices)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error fetching invoices: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch invoices: {str(e)}"
+        )
+
+
+@router.get("/invoice/{invoice_id}")
+async def get_invoice_details(
+    invoice_id: int,
+    user_id: int = Query(..., description="User ID to verify access"),
+    db: Session = Depends(get_db)
+):
+    """Get detailed invoice information"""
+    try:
+        invoice_service = InvoiceService(db)
+        invoice = await invoice_service.get_invoice_details(invoice_id, user_id)
+        
+        if not invoice:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Invoice not found"
+            )
+        
+        return invoice
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching invoice details: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch invoice details: {str(e)}"
+        )
+
+
+@router.post("/invoice/{invoice_id}/cancel")
+async def cancel_invoice(
+    invoice_id: int,
+    user_id: int = Query(..., description="User ID to verify access"),
+    db: Session = Depends(get_db)
+):
+    """Cancel an unpaid invoice"""
+    try:
+        invoice_service = InvoiceService(db)
+        result = await invoice_service.cancel_invoice(invoice_id, user_id)
+        
+        return result
+        
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error(f"Error cancelling invoice: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to cancel invoice: {str(e)}"
+        )
+
+
+@router.get("/payment-methods")
+async def get_user_payment_methods(
+    user_id: int = Query(..., description="User ID to get payment methods for"),
+    db: Session = Depends(get_db)
+):
+    """Get all payment methods for a user"""
+    try:
+        if not PaymentConfig.STRIPE_SECRET_KEY:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Payment service not configured"
+            )
+        
+        payment_service = PaymentService(PaymentConfig.STRIPE_SECRET_KEY)
+        
+        # Get user's Stripe customer ID
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        
+        # Get or create Stripe customer
+        customer = await payment_service._get_or_create_customer(user_id, user.email)
+        
+        # Get payment methods from Stripe
+        payment_methods = await payment_service.get_customer_payment_methods(customer.id)
+        
+        return {
+            "user_id": user_id,
+            "payment_methods": payment_methods
+        }
+        
+    except Exception as e:
+        logger.error(f"Error fetching payment methods: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch payment methods: {str(e)}"
+        )
+
+
+@router.post("/payment-methods")
+async def add_payment_method(
+    user_id: int = Query(..., description="User ID to add payment method for"),
+    payment_method_data: Dict[str, Any] = None,
+    db: Session = Depends(get_db)
+):
+    """Add a new payment method for a user"""
+    try:
+        if not PaymentConfig.STRIPE_SECRET_KEY:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Payment service not configured"
+            )
+        
+        payment_service = PaymentService(PaymentConfig.STRIPE_SECRET_KEY)
+        
+        # Get user
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        
+        # Get or create Stripe customer
+        customer = await payment_service._get_or_create_customer(user_id, user.email)
+        
+        # Create payment method in Stripe
+        payment_method = await payment_service.create_payment_method(
+            customer_id=customer.id,
+            payment_method_data=payment_method_data
+        )
+        
+        return {
+            "success": True,
+            "payment_method": payment_method
+        }
+        
+    except Exception as e:
+        logger.error(f"Error adding payment method: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to add payment method: {str(e)}"
+        )
+
+
+@router.post("/payment-methods/{payment_method_id}/default")
+async def set_default_payment_method(
+    payment_method_id: str,
+    user_id: int = Query(..., description="User ID to verify access"),
+    db: Session = Depends(get_db)
+):
+    """Set a payment method as default for a user"""
+    try:
+        if not PaymentConfig.STRIPE_SECRET_KEY:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Payment service not configured"
+            )
+        
+        payment_service = PaymentService(PaymentConfig.STRIPE_SECRET_KEY)
+        
+        # Get user
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        
+        # Get or create Stripe customer
+        customer = await payment_service._get_or_create_customer(user_id, user.email)
+        
+        # Set as default payment method
+        result = await payment_service.set_default_payment_method(
+            customer_id=customer.id,
+            payment_method_id=payment_method_id
+        )
+        
+        return {
+            "success": True,
+            "message": "Default payment method updated"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error setting default payment method: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to set default payment method: {str(e)}"
+        )
+
+
+@router.delete("/payment-methods/{payment_method_id}")
+async def delete_payment_method(
+    payment_method_id: str,
+    user_id: int = Query(..., description="User ID to verify access"),
+    db: Session = Depends(get_db)
+):
+    """Delete a payment method for a user"""
+    try:
+        if not PaymentConfig.STRIPE_SECRET_KEY:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Payment service not configured"
+            )
+        
+        payment_service = PaymentService(PaymentConfig.STRIPE_SECRET_KEY)
+        
+        # Get user
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        
+        # Get or create Stripe customer
+        customer = await payment_service._get_or_create_customer(user_id, user.email)
+        
+        # Delete payment method from Stripe
+        result = await payment_service.delete_payment_method(payment_method_id)
+        
+        return {
+            "success": True,
+            "message": "Payment method deleted"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error deleting payment method: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete payment method: {str(e)}"
+        )

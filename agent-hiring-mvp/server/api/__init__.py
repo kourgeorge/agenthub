@@ -14,6 +14,8 @@ from .api_keys import router as api_keys_router
 from .stats import router as stats_router
 from .earnings import router as earnings_router
 from .contact import router as contact_router
+from .webhooks import router as webhooks_router
+from .admin import router as admin_router
 
 __all__ = [
     "agents_router",
@@ -30,4 +32,6 @@ __all__ = [
     "stats_router",
     "earnings_router",
     "contact_router",
+    "webhooks_router",
+    "admin_router",
 ] 
