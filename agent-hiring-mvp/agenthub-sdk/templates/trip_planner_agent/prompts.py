@@ -14,8 +14,8 @@ CRITICAL: You MUST extract the exact destination mentioned in the user input. Do
 Extract the following information:
 
 1. destination: The specific city, country, or region they want to visit (REQUIRED - use exactly what the user specified)
-2. start_date: When the trip begins in YYYY-MM-DD format (REQUIRED)
-3. end_date: When the trip ends in YYYY-MM-DD format (REQUIRED)
+2. month: Preferred month for the trip (optional - choose from: january, february, march, april, may, june, july, august, september, october, november, december)
+3. travel_days: Number of travel days as an integer (optional - default to 7 if not specified)
 4. budget_level: Choose from "budget", "moderate", or "luxury" (REQUIRED)
 5. trip_type: Choose from "leisure", "business", "adventure", "cultural", "romantic", "family", "solo", or "group" (REQUIRED)
 6. preferences: User interests and preferences like "art, food, nature, history" (REQUIRED)
@@ -25,13 +25,14 @@ IMPORTANT RULES:
 - Use the EXACT destination mentioned in the user input
 - Do NOT change or substitute the destination
 - If the user says "Vienna, Austria", use "Vienna, Austria" - NOT "Rome, Italy" or any other place
-- If no dates are given, assume a 7-day trip starting 30 days from today
+- If no month is specified or if month is "Not specified", set month to null (not "null" string)
+- If no travel days are specified, use 7 as default
 - If no budget is mentioned, assume "moderate"
 - If no trip type is mentioned, assume "leisure"
 - If no preferences are mentioned, assume "general travel"
 - If no group size is mentioned, assume 2 travelers
 
-CRITICAL: Ensure all fields have actual values, not empty strings.
+CRITICAL: Ensure all fields have actual values, not empty strings. For month, use null (not "null" string) when no month is specified.
 """
 
 destination_research_prompt = """
@@ -40,6 +41,8 @@ Research the destination: {destination}
 Trip Type: {trip_type}
 Budget Level: {budget_level}
 User Preferences: {preferences}
+Travel Days: {travel_days} days
+Preferred Month: {month if month else "Not specified"}
 
 Today's date is {date}.
 
@@ -149,7 +152,8 @@ day_planning_prompt = """
 Create a detailed day-by-day itinerary for: {destination}
 
 Trip Duration: {trip_duration} days
-Start Date: {start_date}
+Preferred Month: {month}
+Travel Days: {travel_days} days
 Activities: {activities}
 Restaurants: {restaurants}
 
@@ -161,7 +165,7 @@ IMPORTANT: You must provide a plan for each day with ALL required fields filled.
 
 For each day, provide:
 - day: Day number (1, 2, 3, etc.) (REQUIRED)
-- date: Actual date in YYYY-MM-DD format (REQUIRED)
+- date: Day label (e.g., "Day 1", "Day 2") (REQUIRED)
 - morning: Morning activities and timing (REQUIRED)
 - lunch: Lunch recommendations (REQUIRED)
 - afternoon: Afternoon activities and timing (REQUIRED)
@@ -187,11 +191,38 @@ Create a comprehensive trip itinerary for: {destination}
 
 Trip Details:
 - Destination: {destination}
-- Dates: {start_date} to {end_date}
+- Travel Period: {month} ({travel_days} days)
 - Duration: {trip_duration} days
 - Budget Level: {budget_level}
 - Trip Type: {trip_type}
 - Preferences: {preferences}
+
+Please create a comprehensive trip itinerary that includes:
+
+1. **Trip Summary and Understanding** - Start with a brief summary showing you understand the trip requirements:
+   - Confirm the destination and travel period (e.g., "I understand you want to visit {destination} for {travel_days} days{(' in ' + month) if month != 'Not specified' else ''}")
+   - Acknowledge the budget level and trip type (e.g., "This will be a {trip_type} trip with a {budget_level} budget")
+   - Show understanding of the user's preferences (e.g., "I've focused on {preferences} based on your interests")
+   - Mention any special requirements or constraints
+   - Provide a brief overview of what makes this destination special for this type of trip
+
+2. Trip Overview and Summary
+3. Destination Information and Tips
+4. Accommodation Recommendations
+5. Activity and Attraction Guide
+6. Dining Recommendations
+7. Detailed Day-by-Day Itinerary
+8. Budget Breakdown and Cost Estimates
+9. Transportation Information
+10. Packing List and Travel Tips
+11. Emergency Information and Contacts
+
+Format the itinerary in a clear, organized manner with sections, bullet points, and helpful formatting. Make it easy to read and follow.
+
+Focus on creating a practical, enjoyable trip that matches the {budget_level} budget level and {trip_type} trip style.
+
+Provide a comprehensive, detailed itinerary that the traveler can use as their complete trip guide.
+"""
 
 Research Information:
 - Destination Info: {destination_info}

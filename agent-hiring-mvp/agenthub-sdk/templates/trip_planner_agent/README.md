@@ -107,8 +107,8 @@ from trip_planner_agent import main
 # Plan a trip to Paris (uses AI knowledge only)
 result = main({
     "destination": "Paris, France",
-    "start_date": "2024-06-15",
-    "end_date": "2024-06-22",
+    "month": "june",
+    "travel_days": 7,
     "budget_level": "moderate",
     "trip_type": "leisure",
     "preferences": "art, food, culture, walking",
@@ -123,8 +123,8 @@ from trip_planner_agent import main
 # Plan a trip with real-time web search
 result = main({
     "destination": "Tokyo, Japan",
-    "start_date": "2024-07-10",
-    "end_date": "2024-07-15",
+    "month": "july",
+    "travel_days": 5,
     "budget_level": "luxury",
     "trip_type": "adventure",
     "preferences": "technology, food, nightlife, shopping",
@@ -151,8 +151,27 @@ This will show you:
 
 ### Required Parameters
 - **`destination`** (string): The travel destination (city, country, or region)
-- **`start_date`** (string): Start date in YYYY-MM-DD format
-- **`end_date`** (string): End date in YYYY-MM-DD format
+
+### Optional Parameters
+- **`month`** (string): Preferred month for the trip (january, february, march, april, may, june, july, august, september, october, november, december). **Note**: You must actively select a month from the dropdown to specify timing. If no month is selected, the agent will plan for flexible dates.
+- **`travel_days`** (integer): Number of travel days (1-30, default: 7). **Note**: You must specify a number to override the default 7-day trip.
+
+### How Parameters Work
+
+**Month Selection**: 
+- If you select a specific month (e.g., "july"), the agent will plan your trip for that month
+- If you don't select any month, the agent will plan for flexible dates (starting 30 days from today)
+- The agent will show "Not specified" in the output when no month is selected
+
+**Travel Days**:
+- If you specify a number (e.g., 10), the agent will plan for exactly that many days
+- If you don't specify anything, the agent will use the default of 7 days
+- The agent will show the actual number of days in the output
+
+**Example**: 
+- If you select "july" and "10" days → Agent plans a 10-day trip in July
+- If you select nothing for month and "5" days → Agent plans a 5-day trip with flexible dates
+- If you select nothing for both → Agent plans a 7-day trip with flexible dates
 
 ### Optional Parameters
 - **`budget_level`** (string): "budget", "moderate", or "luxury" (default: "moderate")
@@ -177,8 +196,8 @@ The agent returns a comprehensive trip plan with web search information:
   "status": "success",
   "destination": "Paris, France",
   "trip_itinerary": "Comprehensive trip itinerary in markdown format...",
-  "start_date": "2024-06-15",
-  "end_date": "2024-06-22",
+  "month": "june",
+  "travel_days": 7,
   "trip_duration": 7,
   "budget_level": "moderate",
   "trip_type": "leisure",
@@ -248,8 +267,8 @@ The agent follows a structured 7-step planning process with web search integrati
 ```python
 {
   "destination": "Paris, France",
-  "start_date": "2024-06-15",
-  "end_date": "2024-06-22",
+  "month": "june",
+  "travel_days": 7,
   "budget_level": "moderate",
   "trip_type": "leisure",
   "preferences": "art, food, culture, walking",
@@ -261,8 +280,8 @@ The agent follows a structured 7-step planning process with web search integrati
 ```python
 {
   "destination": "Tokyo, Japan",
-  "start_date": "2024-07-10",
-  "end_date": "2024-07-15",
+  "month": "july",
+  "travel_days": 5,
   "budget_level": "luxury",
   "trip_type": "adventure",
   "preferences": "technology, food, nightlife, shopping",
@@ -274,8 +293,8 @@ The agent follows a structured 7-step planning process with web search integrati
 ```python
 {
   "destination": "New York City, USA",
-  "start_date": "2024-08-20",
-  "end_date": "2024-08-23",
+  "month": "august",
+  "travel_days": 3,
   "budget_level": "budget",
   "trip_type": "business",
   "preferences": "business, networking, quick meals",

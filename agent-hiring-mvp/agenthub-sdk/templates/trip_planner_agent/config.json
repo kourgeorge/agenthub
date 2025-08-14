@@ -27,15 +27,68 @@
       "description": "The travel destination (city, country, or region)",
       "required": true
     },
-    "start_date": {
-      "type": "string",
-      "description": "Start date of the trip in YYYY-MM-DD format",
-      "required": true
+    "month": {
+      "type": "choice",
+      "description": "Preferred month for the trip (optional - select a month to specify timing, or leave unselected for flexible dates)",
+      "required": false,
+      "options": [
+        {
+          "value": "january",
+          "label": "January"
+        },
+        {
+          "value": "february",
+          "label": "February"
+        },
+        {
+          "value": "march",
+          "label": "March"
+        },
+        {
+          "value": "april",
+          "label": "April"
+        },
+        {
+          "value": "may",
+          "label": "May"
+        },
+        {
+          "value": "june",
+          "label": "June"
+        },
+        {
+          "value": "july",
+          "label": "July"
+        },
+        {
+          "value": "august",
+          "label": "August"
+        },
+        {
+          "value": "september",
+          "label": "September"
+        },
+        {
+          "value": "october",
+          "label": "October"
+        },
+        {
+          "value": "november",
+          "label": "November"
+        },
+        {
+          "value": "december",
+          "label": "December"
+        }
+      ]
     },
-    "end_date": {
-      "type": "string",
-      "description": "End date of the trip in YYYY-MM-DD format",
-      "required": true
+    "travel_days": {
+      "type": "integer",
+      "description": "Number of travel days (optional - specify how many days you want to travel, default is 7 days)",
+      "required": false,
+      "minimum": 1,
+      "maximum": 30,
+      "default": 7
     },
     "budget_level": {
       "type": "choice",

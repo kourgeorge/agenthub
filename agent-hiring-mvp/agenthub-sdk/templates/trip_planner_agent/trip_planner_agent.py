@@ -54,6 +54,7 @@ from utils import (
     get_today_str,
     parse_date_range,
     calculate_trip_duration,
+    generate_dates_from_month_and_days,
     format_currency,
     get_api_key_for_model,
     validate_destination,
@@ -750,42 +751,45 @@ class TripPlannerAgent:
             
             # Validate response fields
             destination = response.destination.strip() if response.destination else ""
-            start_date = response.start_date.strip() if response.start_date else ""
-            end_date = response.end_date.strip() if response.end_date else ""
+            month = response.month.strip() if response.month and response.month.strip() and response.month.strip().lower() != "null" else None
+            travel_days = response.travel_days if response.travel_days > 0 else 7
             budget_level = response.budget_level.strip() if response.budget_level else "moderate"
             trip_type = response.trip_type.strip() if response.trip_type else "leisure"
             preferences = response.preferences.strip() if response.preferences else "general travel"
             group_size = response.group_size if response.group_size > 0 else 2
+            
+            # Debug logging for month parameter
+            logger.info(f"Raw month from response: {response.month}")
+            logger.info(f"Processed month: {month}")
+            logger.info(f"Month type: {type(month)}")
+            
+            # Additional check for "NULL" string
+            if month and month.lower() == "null":
+                logger.warning("Month is 'NULL' string, setting to None")
+                month = None
 
             # Extract destination from user input if LLM failed
             if not destination:
                 destination = self.extract_destination_from_input(user_input)
                 logger.warning(f"LLM didn't extract destination, extracted from user input: {destination}")
 
-            # Extract dates from user input if LLM failed
-            if not start_date or not end_date:
-                start_date, end_date = self.extract_dates_from_input(user_input)
-                logger.warning(f"LLM didn't extract dates, extracted from user input: {start_date} to {end_date}")
+            # Generate dates from month and travel days
+            start_date, end_date = generate_dates_from_month_and_days(month, travel_days)
+            duration = travel_days
 
-            # Validate dates
-            if not start_date or not end_date:
-                raise ValueError("Start and end dates are required")
-
-            logger.info(f"Validated fields - destination: {destination}, start_date: {start_date}, end_date: {end_date}")
+            logger.info(f"Validated fields - destination: {destination}, month: {month}, travel_days: {travel_days}")
+            logger.info(f"Generated dates: {start_date} to {end_date}, duration: {duration}")
             logger.info(f"User input for special requirements: {user_input}")
 
-            # Calculate trip duration
-            start_date, end_date = parse_date_range(start_date, end_date)
-            duration = calculate_trip_duration(start_date, end_date)
-
-            logger.info(f"Parsed dates: {start_date} to {end_date}, duration: {duration}")
-
+            # Debug the state update
+            logger.info(f"Updating state with month: {month}, travel_days: {travel_days}")
+            
             return Command(
                 goto="research_destination",
                 update={
                     "destination": destination,
-                    "start_date": start_date,
-                    "end_date": end_date,
+                    "month": month,
+                    "travel_days": travel_days,
                     "trip_duration": duration,
                     "budget_level": budget_level,
                     "trip_type": trip_type,
@@ -796,7 +800,7 @@ class TripPlannerAgent:
                         "type": "override",
                         "value": [
                             SystemMessage(content=f"You are a travel planning expert. Planning a {duration}-day {trip_type} trip to {destination} with {budget_level} budget. Pay special attention to any constraints or special requirements mentioned by the user."),
-                            HumanMessage(content=f"Plan a detailed trip to {destination} from {start_date} to {end_date}. Budget: {budget_level}. Type: {trip_type}. Preferences: {preferences}. Special requirements: {user_input}")
+                            HumanMessage(content=f"Plan a detailed trip to {destination} for {travel_days} days{' in ' + month if month else ''}. Budget: {budget_level}. Type: {trip_type}. Preferences: {preferences}. Special requirements: {user_input}")
                         ]
                     }
                 }
@@ -808,26 +812,25 @@ class TripPlannerAgent:
             logger.error(f"Error details: {str(e)}")
             # Extract information from user input as fallback
             fallback_destination = self.extract_destination_from_input(user_input)
-            fallback_start_date, fallback_end_date = self.extract_dates_from_input(user_input)
             
             # Use extracted values or sensible defaults
             destination = fallback_destination or "Unknown Destination"
-            start_date = fallback_start_date or "2024-06-15"
-            end_date = fallback_end_date or "2024-06-22"
+            month = None  # No month preference in fallback
+            travel_days = 7  # Default to 7 days
             
-            # Calculate trip duration
-            start_date, end_date = parse_date_range(start_date, end_date)
-            duration = calculate_trip_duration(start_date, end_date)
+            # Generate dates from month and travel days
+            start_date, end_date = generate_dates_from_month_and_days(month, travel_days)
+            duration = travel_days
             
-            logger.warning(f"Using fallback values - destination: {destination}, dates: {start_date} to {end_date}")
+            logger.warning(f"Using fallback values - destination: {destination}, month: {month}, travel_days: {travel_days}")
             
             # Return a fallback response
             return Command(
                 goto="research_destination",
                 update={
                     "destination": destination,
-                    "start_date": start_date,
-                    "end_date": end_date,
+                    "month": month,
+                    "travel_days": travel_days,
                     "trip_duration": duration,
                     "budget_level": "moderate",
                     "trip_type": "leisure",
@@ -838,7 +841,7 @@ class TripPlannerAgent:
                         "type": "override",
                         "value": [
                             SystemMessage(content=f"You are a travel planning expert. Planning a {duration}-day leisure trip to {destination} with moderate budget."),
-                            HumanMessage(content=f"Plan a detailed trip to {destination} from {start_date} to {end_date}. Budget: moderate. Type: leisure. Preferences: general travel. Special requirements: {user_input}")
+                            HumanMessage(content=f"Plan a detailed trip to {destination} for {travel_days} days{' in ' + month if month else ''}. Budget: moderate. Type: leisure. Preferences: general travel. Special requirements: {user_input}")
                         ]
                     }
                 }
@@ -862,6 +865,8 @@ class TripPlannerAgent:
             ).with_config(model_config)
 
             destination = state.get("destination", "")
+            month = state.get("month", None)
+            travel_days = state.get("travel_days", 7)
             trip_type = state.get("trip_type", "")
             budget_level = state.get("budget_level", "")
             preferences = state.get("preferences", "")
@@ -872,6 +877,8 @@ class TripPlannerAgent:
                 logger.warning(f"Empty destination, using default: {destination}")
 
             logger.info(f"Researching destination: {destination}")
+            logger.info(f"State month: {month}")
+            logger.info(f"State travel_days: {travel_days}")
 
             # First, try to get real-time information from web search
             web_info = await self.web_search_tools.search_destination_info(destination)
@@ -1246,7 +1253,8 @@ class TripPlannerAgent:
 
             destination = state.get("destination", "")
             trip_duration = state.get("trip_duration", 1)
-            start_date = state.get("start_date", "")
+            month = state.get("month", None)
+            travel_days = state.get("travel_days", 7)
             activities = state.get("activities", [])
             restaurants = state.get("restaurants", [])
 
@@ -1262,7 +1270,8 @@ class TripPlannerAgent:
                     HumanMessage(content=day_planning_prompt.format(
                         destination=destination,
                         trip_duration=trip_duration,
-                        start_date=start_date,
+                        month=month if month else "Not specified",
+                        travel_days=travel_days,
                         activities=json.dumps(activities, indent=2),
                         restaurants=json.dumps(restaurants, indent=2),
                         date=get_today_str()
@@ -1299,14 +1308,8 @@ class TripPlannerAgent:
                 # Generate fallback day plans based on available activities and restaurants
                 fallback_day_plans = []
                 for day in range(1, trip_duration + 1):
-                    # Calculate the actual date
-                    try:
-                        from datetime import datetime, timedelta
-                        start_dt = datetime.strptime(start_date, "%Y-%m-%d")
-                        current_dt = start_dt + timedelta(days=day-1)
-                        current_date = current_dt.strftime("%Y-%m-%d")
-                    except:
-                        current_date = f"Day {day}"
+                    # Use day number instead of actual dates
+                    current_date = f"Day {day}"
                     
                     # Select activities and restaurants for this day
                     day_activities = activities[day-1 % len(activities)] if activities else {"name": "City exploration"}
@@ -1377,8 +1380,8 @@ class TripPlannerAgent:
 
             # Extract all the researched information
             destination = state.get("destination", "")
-            start_date = state.get("start_date", "")
-            end_date = state.get("end_date", "")
+            month = state.get("month", None)
+            travel_days = state.get("travel_days", 7)
             trip_duration = state.get("trip_duration", 1)
             budget_level = state.get("budget_level", "")
             trip_type = state.get("trip_type", "")
@@ -1421,8 +1424,8 @@ class TripPlannerAgent:
             response = await model.ainvoke([
                 HumanMessage(content=enhanced_prompt.format(
                     destination=destination,
-                    start_date=start_date,
-                    end_date=end_date,
+                    month=month if month else "Not specified",
+                    travel_days=travel_days,
                     trip_duration=trip_duration,
                     budget_level=budget_level,
                     trip_type=trip_type,
@@ -1438,14 +1441,16 @@ class TripPlannerAgent:
             ])
 
             logger.info(f"Final itinerary generated successfully")
+            logger.info(f"Final itinerary month: {month}")
+            logger.info(f"Final itinerary travel_days: {travel_days}")
 
             # Create the final itinerary structure
             final_itinerary = {
                 "trip_itinerary": response.content,
                 "special_considerations": special_considerations,
                 "destination": destination,
-                "start_date": start_date,
-                "end_date": end_date,
+                "month": month,
+                "travel_days": travel_days,
                 "trip_duration": trip_duration,
                 "budget_level": budget_level,
                 "trip_type": trip_type,
@@ -1456,6 +1461,31 @@ class TripPlannerAgent:
                 "day_plans": day_plans,
                 "destination_info": destination_info
             }
+            
+            # Add trip understanding summary
+            month_display = month if month else "Not specified"
+            final_itinerary["trip_understanding"] = f"""
+## Trip Understanding Summary
+
+I've analyzed your trip request and understand the following requirements:
+
+**Destination**: {destination}
+**Travel Period**: {month_display} ({travel_days} days)
+**Trip Type**: {trip_type}
+**Budget Level**: {budget_level}
+**Preferences**: {preferences}
+
+**My Approach**: I've tailored this itinerary specifically for a {trip_type} trip with a {budget_level} budget. The recommendations focus on {preferences} to match your interests. {destination} is perfect for this type of trip because of its rich culture, history, and diverse attractions.
+
+**What I've Prepared**: 
+- Comprehensive destination research with current information
+- {len(accommodations)} carefully selected accommodation options
+- {len(activities)} activities and attractions that match your preferences
+- {len(restaurants)} dining recommendations for various tastes and budgets
+- {len(day_plans)} days of detailed planning with realistic timing
+
+This itinerary is designed to give you the best possible experience in {destination} within your specified parameters.
+            """.strip()
 
             return Command(
                 goto=END,
@@ -1476,7 +1506,7 @@ class TripPlannerAgent:
 
 ## Trip Summary
 - **Destination**: {destination}
-- **Dates**: {start_date} to {end_date} ({trip_duration} days)
+- **Travel Period**: {month if month else 'Not specified'} ({travel_days} days)
 - **Budget Level**: {budget_level}
 - **Trip Type**: {trip_type}
 - **Preferences**: {preferences}
@@ -1509,10 +1539,32 @@ Estimated total cost: $100-200 per day per person
 
 *Note: This itinerary was generated with fallback data due to an error in the planning process.*
                 """,
+                "trip_understanding": f"""
+## Trip Understanding Summary
+
+I've analyzed your trip request and understand the following requirements:
+
+**Destination**: {destination}
+**Travel Period**: {month if month else 'Not specified'} ({travel_days} days)
+**Trip Type**: {trip_type}
+**Budget Level**: {budget_level}
+**Preferences**: {preferences}
+
+**My Approach**: I've tailored this itinerary specifically for a {trip_type} trip with a {budget_level} budget. The recommendations focus on {preferences} to match your interests.
+
+**What I've Prepared**: 
+- Comprehensive destination research with current information
+- {len(accommodations)} carefully selected accommodation options
+- {len(activities)} activities and attractions that match your preferences
+- {len(restaurants)} dining recommendations for various tastes and budgets
+- {len(day_plans)} days of detailed planning with realistic timing
+
+This itinerary is designed to give you the best possible experience in {destination} within your specified parameters.
+                """.strip(),
                 "special_considerations": special_considerations,
                 "destination": destination,
-                "start_date": start_date,
-                "end_date": end_date,
+                "month": month,
+                "travel_days": travel_days,
                 "trip_duration": trip_duration,
                 "budget_level": budget_level,
                 "trip_type": trip_type,
@@ -1574,11 +1626,11 @@ Estimated total cost: $100-200 per day per person
         return "Unknown Destination"
     
     def extract_dates_from_input(self, user_input: str) -> tuple[str, str]:
-        """Extract start and end dates from user input."""
+        """Extract start and end dates from user input (legacy method for backward compatibility)."""
         import re
         from datetime import datetime, timedelta
         
-        # Date patterns
+        # Date patterns for legacy date format
         date_patterns = [
             r'start_date["\']?\s*:\s*["\']([^"\']+)["\']',
             r'end_date["\']?\s*:\s*["\']([^"\']+)["\']',
@@ -1610,6 +1662,48 @@ Estimated total cost: $100-200 per day per person
         
         # Default dates if none found
         return "2024-06-15", "2024-06-22"
+
+    def extract_month_and_days_from_input(self, user_input: str) -> tuple[Optional[str], int]:
+        """Extract month preference and travel days from user input using pattern matching."""
+        import re
+        
+        # Month patterns
+        month_patterns = [
+            r'in\s+(january|february|march|april|may|june|july|august|september|october|november|december)',
+            r'during\s+(january|february|march|april|may|june|july|august|september|october|november|december)',
+            r'(january|february|march|april|may|june|july|august|september|october|november|december)',
+        ]
+        
+        # Travel days patterns
+        days_patterns = [
+            r'(\d+)\s+days?',
+            r'for\s+(\d+)\s+days?',
+            r'trip\s+of\s+(\d+)\s+days?',
+            r'(\d+)-day',
+        ]
+        
+        # Extract month
+        month = None
+        for pattern in month_patterns:
+            match = re.search(pattern, user_input.lower())
+            if match:
+                month = match.group(1).lower()
+                break
+        
+        # Extract travel days
+        travel_days = 7  # Default
+        for pattern in days_patterns:
+            match = re.search(pattern, user_input.lower())
+            if match:
+                try:
+                    days = int(match.group(1))
+                    if 1 <= days <= 30:  # Reasonable range
+                        travel_days = days
+                        break
+                except ValueError:
+                    continue
+        
+        return month, travel_days
 
     def extract_special_considerations(self, user_input: str) -> str:
         """Extracts and formats special considerations from the user's input."""
@@ -1686,9 +1780,9 @@ async def _main_async(input_data: Dict[str, Any], context: Dict[str, Any]) -> Di
     
     Args:
         input_data: Dictionary containing:
-            - destination: The travel destination
-            - start_date: Start date of the trip
-            - end_date: End date of the trip
+            - destination: The travel destination (required)
+            - month: Preferred month for the trip (optional)
+            - travel_days: Number of travel days (optional, default: 7)
             - budget_level: Budget level (budget, moderate, luxury)
             - trip_type: Type of trip (leisure, business, adventure, cultural, etc.)
             - preferences: User preferences and interests
@@ -1727,12 +1821,16 @@ async def _main_async(input_data: Dict[str, Any], context: Dict[str, Any]) -> Di
     agent.build_graph()
 
     logger.info(f"Starting trip planning for: {destination}")
+    logger.info(f"Input data: {input_data}")
+    logger.info(f"Month from input: {input_data.get('month', None)}")
+    logger.info(f"Travel days from input: {input_data.get('travel_days', 7)}")
 
     try:
         # Prepare initial state
         initial_state = {
             "user_input": f"Plan a trip to {destination}. " + 
-                         f"Dates: {input_data.get('start_date', '')} to {input_data.get('end_date', '')}. " +
+                         f"Month: {input_data.get('month', 'Not specified')}. " +
+                         f"Travel days: {input_data.get('travel_days', '7')}. " +
                          f"Budget: {input_data.get('budget_level', 'moderate')}. " +
                          f"Type: {input_data.get('trip_type', 'leisure')}. " +
                          f"Preferences: {input_data.get('preferences', '')}. " +
@@ -1740,8 +1838,8 @@ async def _main_async(input_data: Dict[str, Any], context: Dict[str, Any]) -> Di
                          f"Special requirements: {input_data.get('special_requirements', '')}",
             "planner_messages": [],
             "destination": "",
-            "start_date": "",
-            "end_date": "",
+            "month": input_data.get('month', None),
+            "travel_days": input_data.get('travel_days', 7),
             "trip_duration": 0,
             "budget_level": "",
             "trip_type": "",
@@ -1754,6 +1852,9 @@ async def _main_async(input_data: Dict[str, Any], context: Dict[str, Any]) -> Di
             "day_plans": [],
             "web_sources": []
         }
+        
+        logger.info(f"Initial state month: {initial_state['month']}")
+        logger.info(f"Initial state travel_days: {initial_state['travel_days']}")
 
         # Create runnable config
         runnable_config = RunnableConfig(
@@ -1767,27 +1868,68 @@ async def _main_async(input_data: Dict[str, Any], context: Dict[str, Any]) -> Di
         result = await agent.main_graph.ainvoke(initial_state, runnable_config)
         execution_time = time.time() - start_time
 
+        # Debug the result
+        logger.info(f"Final result keys: {result.keys()}")
+        logger.info(f"Final result month: {result.get('month', None)}")
+        logger.info(f"Final result travel_days: {result.get('travel_days', None)}")
+        
+        # Check if final_itinerary exists and extract from it
+        final_itinerary = result.get('final_itinerary', {})
+        if final_itinerary:
+            logger.info(f"Final itinerary keys: {final_itinerary.keys()}")
+            logger.info(f"Final itinerary month: {final_itinerary.get('month', None)}")
+            logger.info(f"Final itinerary travel_days: {final_itinerary.get('travel_days', None)}")
+
         # Prepare response
         response = {
             'status': 'success',
             'destination': destination,
-            'trip_itinerary': result.get('trip_itinerary', ''),
-            'start_date': result.get('start_date', ''),
-            'end_date': result.get('end_date', ''),
+            'trip_itinerary': final_itinerary.get('trip_itinerary', '') if final_itinerary else result.get('trip_itinerary', ''),
+            'trip_understanding': final_itinerary.get('trip_understanding', '') if final_itinerary else '',
+            'month': final_itinerary.get('month', None) if final_itinerary else result.get('month', None),
+            'travel_days': final_itinerary.get('travel_days', 7) if final_itinerary else result.get('travel_days', 7),
             'trip_duration': result.get('trip_duration', 0),
-            'budget_level': result.get('budget_level', ''),
-            'trip_type': result.get('trip_type', ''),
-            'preferences': result.get('preferences', ''),
-            'accommodations': result.get('accommodations', []),
-            'activities': result.get('activities', []),
-            'restaurants': result.get('restaurants', []),
-            'day_plans': result.get('day_plans', []),
-            'destination_info': result.get('destination_info', ''),
+            'budget_level': final_itinerary.get('budget_level', '') if final_itinerary else result.get('budget_level', ''),
+            'trip_type': final_itinerary.get('trip_type', '') if final_itinerary else result.get('trip_type', ''),
+            'preferences': final_itinerary.get('preferences', '') if final_itinerary else result.get('preferences', ''),
+            'accommodations': final_itinerary.get('accommodations', []) if final_itinerary else result.get('accommodations', []),
+            'activities': final_itinerary.get('activities', []) if final_itinerary else result.get('activities', []),
+            'restaurants': final_itinerary.get('restaurants', []) if final_itinerary else result.get('restaurants', []),
+            'day_plans': final_itinerary.get('day_plans', []) if final_itinerary else result.get('day_plans', []),
+            'destination_info': final_itinerary.get('destination_info', '') if final_itinerary else result.get('destination_info', ''),
             'web_sources': result.get('web_sources', []),
             'execution_time': execution_time,
             'generated_at': datetime.now().isoformat()
         }
+        
+        # Convert None month to "Not specified" for display
+        if response['month'] is None:
+            response['month'] = "Not specified"
+        
+        # Add a trip summary to show understanding
+        response['trip_summary'] = f"""
+## Trip Planning Summary
 
+I've successfully planned your trip with the following details:
+
+**Destination**: {response['destination']}
+**Travel Period**: {response['month']} ({response['travel_days']} days)
+**Trip Type**: {response['trip_type']}
+**Budget Level**: {response['budget_level']}
+**Preferences**: {response['preferences']}
+
+**What I've prepared for you:**
+- ✅ Destination research and information
+- ✅ {len(response['accommodations'])} accommodation recommendations
+- ✅ {len(response['activities'])} activity and attraction suggestions
+- ✅ {len(response['restaurants'])} dining recommendations
+- ✅ {len(response['day_plans'])} days of detailed day-by-day planning
+
+The complete itinerary below includes all the details you need for a fantastic trip to {response['destination']}!
+        """.strip()
+
+        logger.info(f"Final response month: {response['month']}")
+        logger.info(f"Final response travel_days: {response['travel_days']}")
         logger.info(f"Trip planning completed in {execution_time:.2f} seconds")
         return response
 
@@ -1836,8 +1978,8 @@ if __name__ == "__main__":
     # Test the agent
     test_input = {
         'destination': 'Vienna, Austria',
-        'start_date': '2025-07-24',
-        'end_date': '2025-08-03',
+        'month': 'july',
+        'travel_days': 10,
         'budget_level': 'moderate',
         'trip_type': 'leisure',
         'preferences': 'art, food, culture, walking',

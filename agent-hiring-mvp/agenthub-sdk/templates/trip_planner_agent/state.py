@@ -14,11 +14,13 @@ class TripPreferences(BaseModel):
     destination: str = Field(
         description="The travel destination (city, country, or region)"
     )
-    start_date: str = Field(
-        description="Start date of the trip in YYYY-MM-DD format"
+    month: Optional[str] = Field(
+        description="Preferred month for the trip (optional)",
+        default=None
     )
-    end_date: str = Field(
-        description="End date of the trip in YYYY-MM-DD format"
+    travel_days: int = Field(
+        description="Number of travel days",
+        default=7
     )
     budget_level: str = Field(
         description="Budget level: budget, moderate, or luxury"
@@ -156,8 +158,8 @@ class AgentState(MessagesState):
     user_input: str
     planner_messages: Annotated[list[MessageLikeRepresentation], override_reducer]
     destination: str
-    start_date: str
-    end_date: str
+    month: Optional[str]
+    travel_days: int
     trip_duration: int
     budget_level: str
     trip_type: str
@@ -172,8 +174,8 @@ class AgentState(MessagesState):
 class PlannerState(TypedDict):
     planner_messages: Annotated[list[MessageLikeRepresentation], override_reducer]
     destination: str
-    start_date: str
-    end_date: str
+    month: Optional[str]
+    travel_days: int
     trip_duration: int
     budget_level: str
     trip_type: str

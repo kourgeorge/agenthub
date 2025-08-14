@@ -12,6 +12,49 @@ def get_today_str() -> str:
     """Get today's date as a string."""
     return datetime.now().strftime("%Y-%m-%d")
 
+def generate_dates_from_month_and_days(month: Optional[str], travel_days: int) -> Tuple[str, str]:
+    """
+    Generate start and end dates from month preference and travel days.
+    
+    Args:
+        month: Preferred month (january, february, etc.) or None
+        travel_days: Number of travel days
+    
+    Returns:
+        Tuple of (start_date, end_date) in YYYY-MM-DD format
+    """
+    today = datetime.now()
+    
+    if month:
+        # Convert month name to month number
+        month_map = {
+            'january': 1, 'february': 2, 'march': 3, 'april': 4,
+            'may': 5, 'june': 6, 'july': 7, 'august': 8,
+            'september': 9, 'october': 10, 'november': 11, 'december': 12
+        }
+        
+        target_month = month_map.get(month.lower(), today.month)
+        current_year = today.year
+        
+        # If the target month has passed this year, plan for next year
+        if target_month < today.month:
+            current_year += 1
+        
+        # Set start date to the 15th of the target month (middle of month)
+        start_date = datetime(current_year, target_month, 15)
+        
+        # If the start date is in the past, move to next year
+        if start_date < today:
+            start_date = datetime(current_year + 1, target_month, 15)
+    else:
+        # No month specified, start 30 days from today
+        start_date = today + timedelta(days=30)
+    
+    # Calculate end date based on travel days
+    end_date = start_date + timedelta(days=travel_days - 1)
+    
+    return start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")
+
 def parse_date_range(start_date: str, end_date: str) -> Tuple[str, str]:
     """
     Parse and validate date range.
@@ -55,7 +98,7 @@ def calculate_trip_duration(start_date: str, end_date: str) -> int:
     try:
         start = datetime.strptime(start_date, "%Y-%m-%d")
         end = datetime.strptime(end_date, "%Y-%m-%d")
-        duration = (end - start).days
+        duration = (end - start).days + 1  # Include both start and end days
         return max(1, duration)  # Ensure at least 1 day
     except ValueError:
         logger.error("Error calculating trip duration")
@@ -194,15 +237,15 @@ def estimate_budget_range(budget_level: str, trip_duration: int, group_size: int
     
     return total_costs
 
-def format_trip_summary(destination: str, start_date: str, end_date: str, 
+def format_trip_summary(destination: str, month: Optional[str], travel_days: int, 
                        trip_type: str, budget_level: str, group_size: int) -> str:
     """
     Format a trip summary.
     
     Args:
         destination: Destination name
-        start_date: Start date
-        end_date: End date
+        month: Preferred month (optional)
+        travel_days: Number of travel days
         trip_type: Type of trip
         budget_level: Budget level
         group_size: Number of travelers
@@ -210,12 +253,10 @@ def format_trip_summary(destination: str, start_date: str, end_date: str,
     Returns:
         Formatted trip summary string
     """
-    duration = calculate_trip_duration(start_date, end_date)
-    
     summary = f"""
     Trip Summary:
     - Destination: {destination}
-    - Dates: {start_date} to {end_date} ({duration} days)
+    - Travel Period: {month if month else 'Not specified'} ({travel_days} days)
     - Type: {trip_type.title()}
     - Budget: {budget_level.title()}
     - Travelers: {group_size}
