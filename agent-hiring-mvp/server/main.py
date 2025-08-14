@@ -3,14 +3,29 @@
 import logging
 import argparse
 import asyncio
+import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 # StaticFiles removed - no static files needed for API-only server
 from fastapi.responses import JSONResponse
 # SessionMiddleware removed - not needed for server-side only API
+
+# Load environment variables from .env file
+try:
+    from dotenv import load_dotenv
+    # Load .env file from the project root (agent-hiring-mvp directory)
+    env_path = Path(__file__).parent.parent / ".env"
+    if env_path.exists():
+        load_dotenv(env_path)
+        logging.info(f"Loaded environment variables from {env_path}")
+    else:
+        logging.warning(f".env file not found at {env_path}")
+except ImportError:
+    logging.warning("python-dotenv not installed, environment variables may not be loaded from .env file")
 
 from .database.init_db import init_database
 from .services.token_service import TokenService

@@ -243,6 +243,45 @@ def request_password_reset(
     # Always return the same message for security
     return {"message": "If the email exists, a password reset link has been sent"}
 
+@router.post("/forgot-password")
+def forgot_password(
+    reset_data: PasswordResetRequest,
+    db: Session = Depends(get_session_dependency)
+):
+    """Forgot password - generate and send a new random password."""
+    user = db.query(User).filter(User.email == reset_data.email).first()
+    if user:
+        # Generate a new random password
+        new_password = EmailService.generate_random_password()
+        
+        # Update the user's password in the database
+        password_update_success = AuthService.update_user_password(db, user.id, new_password)
+        if password_update_success:
+            # Send the new password via email
+            email_sent_success = EmailService.send_new_password_email(reset_data.email, new_password)
+            
+            if email_sent_success:
+                # Clean up expired tokens
+                TokenService.cleanup_expired_tokens()
+                
+                return {"message": "A new password has been sent to your email address"}
+            else:
+                # Email sending failed - revert the password change for security
+                # We should revert to the old password or generate a new one
+                # For now, we'll return an error
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Password was updated but email delivery failed. Please contact support."
+                )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to update password"
+            )
+    
+    # Always return the same message for security (even if user doesn't exist)
+    return {"message": "If the email exists, a new password has been sent"}
+
 @router.post("/reset-password")
 def reset_password(
     reset_data: PasswordResetConfirmRequest,
