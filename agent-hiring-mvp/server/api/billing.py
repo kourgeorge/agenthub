@@ -58,8 +58,9 @@ async def get_billing_summary(
                     "executions": []
                 }
             
-            # Get agent name for this execution
+            # Get agent information for this execution
             agent_name = "Unknown Agent"
+            agent_type = "unknown"
             agent_price_per_use = 0.0
             if execution.hiring_id:
                 hiring = db.query(Hiring).filter(Hiring.id == execution.hiring_id).first()
@@ -67,6 +68,7 @@ async def get_billing_summary(
                     agent = db.query(Agent).filter(Agent.id == hiring.agent_id).first()
                     if agent:
                         agent_name = agent.name
+                        agent_type = agent.agent_type
                         agent_price_per_use = agent.price_per_use or 0.0
             
             # Add execution data
@@ -76,6 +78,7 @@ async def get_billing_summary(
                 "execution_id": execution.execution_id,  # Add the actual execution_id
                 "hiring_id": execution.hiring_id,
                 "agent_name": agent_name,  # Use the looked up agent name
+                "agent_type": agent_type,  # Add agent type
                 "agent_price_per_use": agent_price_per_use,  # Add agent pricing
                 "executed_at": execution.created_at.isoformat(),
                 "status": execution.status,
@@ -106,9 +109,10 @@ async def get_billing_summary(
                     "executions": []
                 }
             
-            # Get agent name
+            # Get agent information
             agent = db.query(Agent).filter(Agent.id == hiring.agent_id).first()
             agent_name = agent.name if agent else "Unknown Agent"
+            agent_type = agent.agent_type if agent else "unknown"
             
             # Count executions for this hiring
             execution_count = db.query(Execution).filter(
@@ -120,6 +124,7 @@ async def get_billing_summary(
                 "id": hiring.id,
                 "agent_id": hiring.agent_id,
                 "agent_name": agent_name,
+                "agent_type": agent_type,
                 "status": hiring.status,
                 "hired_at": hiring.created_at.isoformat(),
                 "billing_cycle": "monthly",  # Default for now
@@ -243,14 +248,16 @@ async def get_execution_resources(
             ExecutionResourceUsage.execution_id == execution.id
         ).all()
         
-        # Get agent name
+        # Get agent information
         agent_name = "Unknown Agent"
+        agent_type = "unknown"
         if execution.hiring_id:
             hiring = db.query(Hiring).filter(Hiring.id == execution.hiring_id).first()
             if hiring:
                 agent = db.query(Agent).filter(Agent.id == hiring.agent_id).first()
                 if agent:
                     agent_name = agent.name
+                    agent_type = agent.agent_type
         
         # Format resource usage data
         resources = []
@@ -277,6 +284,7 @@ async def get_execution_resources(
         return {
             "execution_id": execution.execution_id,  # Return the actual execution_id string
             "agent_name": agent_name,
+            "agent_type": agent_type,
             "status": execution.status,
             "started_at": execution.started_at.isoformat() if execution.started_at else None,
             "completed_at": execution.completed_at.isoformat() if execution.completed_at else None,

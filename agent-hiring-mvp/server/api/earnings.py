@@ -77,6 +77,7 @@ async def get_earnings_summary(
             # Get agent details
             agent = db.query(Agent).filter(Agent.id == hiring.agent_id).first()
             agent_name = agent.name if agent else "Unknown Agent"
+            agent_type = agent.agent_type if agent else "unknown"
             
             # Count executions for this hiring
             hiring_executions = db.query(Execution).filter(
@@ -90,6 +91,7 @@ async def get_earnings_summary(
                 "id": hiring.id,
                 "agent_id": hiring.agent_id,
                 "agent_name": agent_name,
+                "agent_type": agent_type,
                 "status": hiring.status,
                 "hired_at": hiring.created_at.isoformat(),
                 "hired_by_user_id": hiring.user_id,
@@ -120,6 +122,7 @@ async def get_earnings_summary(
             # Get agent details
             agent = db.query(Agent).filter(Agent.id == execution.agent_id).first()
             agent_name = agent.name if agent else "Unknown Agent"
+            agent_type = agent.agent_type if agent else "unknown"
             
             monthly_data[month_key]["total_executions"] += 1
             monthly_data[month_key]["executions"].append({
@@ -128,6 +131,7 @@ async def get_earnings_summary(
                 "hiring_id": execution.hiring_id,
                 "agent_id": execution.agent_id,
                 "agent_name": agent_name,
+                "agent_type": agent_type,
                 "executed_at": execution.created_at.isoformat(),
                 "status": execution.status,
                 "execution_time": execution.duration_ms / 1000 if execution.duration_ms else None,
