@@ -231,7 +231,7 @@ class AgentService:
         logger.info(f"Approved agent: {agent.name} (ID: {agent.id})")
         return agent
     
-    def reject_agent(self, agent_id: str, reason: str) -> Optional[Agent]:
+    async def reject_agent(self, agent_id: str, reason: str) -> Optional[Agent]:
         """Reject an agent and handle existing hirings and deployments."""
         agent = self.get_agent(agent_id)
         if not agent:
@@ -256,7 +256,7 @@ class AgentService:
                 active_hirings_count += 1
         
         # Clean up ALL deployments for this agent (comprehensive approach)
-        self._cleanup_all_agent_deployments(agent_id)
+        await self._cleanup_all_agent_deployments(agent_id)
         
         # Block new executions for this agent
         # (This is handled by the hiring service which checks agent status)
@@ -323,7 +323,7 @@ class AgentService:
         except Exception as e:
             logger.error(f"Exception stopping function deployment: {e}")
     
-    def _cleanup_all_agent_deployments(self, agent_id: str):
+    async def _cleanup_all_agent_deployments(self, agent_id: str):
         """Clean up all deployments for an agent (direct approach)."""
         try:
             from ..models.deployment import AgentDeployment
@@ -354,13 +354,14 @@ class AgentService:
                     elif deployment.agent.agent_type == "persistent":
                         # For persistent agents, try to cleanup first, then stop
                         try:
+                            # The deployment service now returns immediately for cleanup
                             cleanup_result = deployment_service.cleanup_persistent_agent(deployment.deployment_id)
                             if "error" in cleanup_result:
-                                logger.warning(f"Failed to cleanup persistent agent {deployment.deployment_id}: {cleanup_result['error']}")
+                                logger.warning(f"Failed to start persistent agent cleanup {deployment.deployment_id}: {cleanup_result['error']}")
                             else:
-                                logger.info(f"Successfully cleaned up persistent agent {deployment.deployment_id}")
+                                logger.info(f"Started persistent agent cleanup {deployment.deployment_id} in background")
                         except Exception as e:
-                            logger.warning(f"Error during persistent agent cleanup: {e}")
+                            logger.warning(f"Error starting persistent agent cleanup: {e}")
                         stop_result = deployment_service.stop_deployment(deployment.deployment_id, timeout=60)
                     else:
                         stop_result = function_deployment_service.stop_function_deployment(deployment.deployment_id)
