@@ -31,20 +31,34 @@ class PaymentService:
     async def create_payment_method(self, customer_id: str, payment_method_data: Dict[str, Any]) -> Dict[str, Any]:
         """Create a new payment method for a customer"""
         try:
-            # Create payment method
-            payment_method = stripe.PaymentMethod.create(
-                type='card',
-                card={
-                    'number': payment_method_data['card']['number'],
-                    'exp_month': payment_method_data['card']['exp_month'],
-                    'exp_year': payment_method_data['card']['exp_year'],
-                    'cvc': payment_method_data['card']['cvc']
-                },
-                billing_details={
-                    'name': payment_method_data.get('billing_details', {}).get('name'),
-                    'address': payment_method_data.get('billing_details', {}).get('address', {})
-                }
-            )
+            # Check if we're using a test token or raw card data
+            if 'token' in payment_method_data:
+                # Using Stripe test token - correct format: card[token]=tok_visa
+                payment_method = stripe.PaymentMethod.create(
+                    type='card',
+                    card={
+                        'token': payment_method_data['token']
+                    },
+                    billing_details={
+                        'name': payment_method_data.get('billing_details', {}).get('name'),
+                        'address': payment_method_data.get('billing_details', {}).get('address', {})
+                    }
+                )
+            else:
+                # Using raw card data (requires special Stripe configuration)
+                payment_method = stripe.PaymentMethod.create(
+                    type='card',
+                    card={
+                        'number': payment_method_data['card']['number'],
+                        'exp_month': payment_method_data['card']['exp_month'],
+                        'exp_year': payment_method_data['card']['exp_year'],
+                        'cvc': payment_method_data['card']['cvc']
+                    },
+                    billing_details={
+                        'name': payment_method_data.get('billing_details', {}).get('name'),
+                        'address': payment_method_data.get('billing_details', {}).get('address', {})
+                    }
+                )
             
             # Attach to customer
             payment_method.attach(customer=customer_id)
@@ -270,14 +284,22 @@ class PaymentService:
     async def _get_or_create_customer(self, user_id: int, customer_email: str = None):
         """Get existing Stripe customer or create new one"""
         try:
-            # First try to find existing customer by metadata
-            customers = stripe.Customer.list(
-                limit=100,
-                metadata={'user_id': str(user_id)}
-            )
-            
-            if customers.data:
-                return customers.data[0]
+            # First try to find existing customer by email (more reliable than metadata search)
+            if customer_email:
+                customers = stripe.Customer.list(
+                    limit=100,
+                    email=customer_email
+                )
+                
+                if customers.data:
+                    # Update existing customer with user_id metadata if not present
+                    customer = customers.data[0]
+                    if not customer.metadata.get('user_id'):
+                        stripe.Customer.modify(
+                            customer.id,
+                            metadata={'user_id': str(user_id)}
+                        )
+                    return customer
             
             # Create new customer if not found
             customer_data = {

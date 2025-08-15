@@ -3,7 +3,8 @@
 import logging
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Body
+from pydantic import BaseModel, validator
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
 
@@ -19,6 +20,29 @@ from ..services.invoice_service import InvoiceService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/billing", tags=["billing"])
+
+
+class AddPaymentMethodRequest(BaseModel):
+    """Request model for adding a payment method"""
+    user_id: int
+    payment_method: Dict[str, Any]
+    
+    class Config:
+        # Allow extra fields to be ignored
+        extra = "ignore"
+    
+    @validator('user_id')
+    def validate_user_id(cls, v):
+        if v is None or v <= 0:
+            raise ValueError('user_id must be a positive integer')
+        return v
+
+
+# Test endpoint to verify new code is running
+@router.get("/test-payment-model")
+async def test_payment_model():
+    """Test endpoint to verify the new code is running"""
+    return {"message": "New payment model code is running!", "timestamp": datetime.now().isoformat()}
 
 
 @router.get("/summary")
@@ -579,12 +603,15 @@ async def get_user_payment_methods(
 
 @router.post("/payment-methods")
 async def add_payment_method(
-    user_id: int = Query(..., description="User ID to add payment method for"),
-    payment_method_data: Dict[str, Any] = None,
+    request: AddPaymentMethodRequest = Body(...),
     db: Session = Depends(get_db)
 ):
     """Add a new payment method for a user"""
     try:
+        # Debug logging
+        logger.info(f"Received payment method request: user_id={request.user_id}, payment_method_type={type(request.payment_method)}")
+        logger.info(f"Payment method data: {request.payment_method}")
+        
         if not PaymentConfig.STRIPE_SECRET_KEY:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -594,7 +621,7 @@ async def add_payment_method(
         payment_service = PaymentService(PaymentConfig.STRIPE_SECRET_KEY)
         
         # Get user
-        user = db.query(User).filter(User.id == user_id).first()
+        user = db.query(User).filter(User.id == request.user_id).first()
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -602,19 +629,25 @@ async def add_payment_method(
             )
         
         # Get or create Stripe customer
-        customer = await payment_service._get_or_create_customer(user_id, user.email)
+        customer = await payment_service._get_or_create_customer(request.user_id, user.email)
         
         # Create payment method in Stripe
-        payment_method = await payment_service.create_payment_method(
+        payment_method_result = await payment_service.create_payment_method(
             customer_id=customer.id,
-            payment_method_data=payment_method_data
+            payment_method_data=request.payment_method
         )
         
         return {
             "success": True,
-            "payment_method": payment_method
+            "payment_method": payment_method_result
         }
         
+    except ValueError as e:
+        logger.error(f"Validation error adding payment method: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Validation error: {str(e)}"
+        )
     except Exception as e:
         logger.error(f"Error adding payment method: {e}")
         raise HTTPException(
