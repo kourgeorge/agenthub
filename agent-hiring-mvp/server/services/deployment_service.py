@@ -550,7 +550,16 @@ class PersistentAgent(ABC):
             "image": image_name,
             "name": container_name,
             "environment": deployment.environment_vars,
-            "detach": True
+            "detach": True,
+            "labels": {
+                "monitoring": "true",
+                "agent_type": agent_type,
+                "deployment_id": deployment.deployment_id,
+                "agent_id": str(deployment.agent_id),
+                "hiring_id": str(deployment.hiring_id),
+                "user_id": str(user_id),
+                "service": "agenthub-agent"
+            }
         }
         
         # Add resource limits
@@ -595,6 +604,20 @@ class PersistentAgent(ABC):
         container = self.docker_client.containers.run(**container_config)
         
         logger.info(f"Container {container_name} started with ID {container.id}")
+        
+        # Collect initial metrics for the new container
+        try:
+            from .prometheus_metrics import metrics_service
+            deployment_info = {
+                'container_name': container_name,
+                'agent_id': deployment.agent_id,
+                'hiring_id': deployment.hiring_id,
+                'deployment_type': deployment.deployment_type
+            }
+            metrics_service.collect_container_metrics(deployment_info)
+            logger.info(f"Initial metrics collected for container {container_name}")
+        except Exception as e:
+            logger.warning(f"Failed to collect initial metrics for container {container_name}: {e}")
         
         return container
     

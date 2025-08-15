@@ -586,7 +586,16 @@ with open('/tmp/agent_stderr.txt', 'w') as f:
             "environment": deployment.environment_vars,
             "detach": True,
             "restart_policy": {"Name": "unless-stopped"},
-            "working_dir": "/app"
+            "working_dir": "/app",
+            "labels": {
+                "monitoring": "true",
+                "agent_type": "function",
+                "deployment_id": deployment.deployment_id,
+                "agent_id": str(deployment.agent_id),
+                "hiring_id": str(deployment.hiring_id),
+                "user_id": str(user_id),
+                "service": "agenthub-agent"
+            }
         }
         
         # Add resource limits
@@ -616,6 +625,21 @@ with open('/tmp/agent_stderr.txt', 'w') as f:
         container = self.docker_client.containers.run(**container_config)
         
         logger.info(f"Function container {container_name} started with ID {container.id}")
+        
+        # Collect initial metrics for the new container
+        try:
+            from .prometheus_metrics import metrics_service
+            deployment_info = {
+                'container_name': container_name,
+                'agent_id': deployment.agent_id,
+                'hiring_id': deployment.hiring_id,
+                'deployment_type': deployment.deployment_type
+            }
+            metrics_service.collect_container_metrics(deployment_info)
+            logger.info(f"Initial metrics collected for function container {container_name}")
+        except Exception as e:
+            logger.warning(f"Failed to collect initial metrics for function container {container_name}: {e}")
+        
         return container
 
     def _generate_function_dockerfile(self) -> str:

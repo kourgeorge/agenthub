@@ -47,7 +47,8 @@ from .api import (
     earnings_router,
     contact_router,
     webhooks_router,
-    admin_router
+    admin_router,
+    metrics_router
 )
 
 # Configure logging
@@ -134,6 +135,7 @@ app.include_router(earnings_router, prefix="/api/v1")
 app.include_router(contact_router, prefix="/api/v1")
 app.include_router(webhooks_router, prefix="/api/v1")
 app.include_router(admin_router, prefix="/api/v1")
+app.include_router(metrics_router, prefix="/api/v1")
 
 
 @app.get("/")
@@ -158,7 +160,8 @@ async def root():
             "earnings": "/api/v1/earnings",
             "contact": "/api/v1/contact",
             "webhooks": "/api/v1/webhooks",
-            "admin": "/api/v1/admin"
+            "admin": "/api/v1/admin",
+            "metrics": "/api/v1/metrics"
         }
     }
 

@@ -30,6 +30,9 @@ passlib[bcrypt]
 docker
 aiohttp
 
+# Monitoring
+prometheus-client
+
 # Testing
 pytest
 pytest-asyncio
