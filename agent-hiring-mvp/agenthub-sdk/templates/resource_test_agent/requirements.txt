@@ -1,0 +1,2 @@
+# No external dependencies required - uses Python standard library only
+# This agent is designed for maximum compatibility in Docker containers

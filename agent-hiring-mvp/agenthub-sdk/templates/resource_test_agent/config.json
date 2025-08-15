@@ -1,0 +1,35 @@
+{
+  "name": "Resource Test Agent",
+  "description": "An agent that performs CPU and memory intensive tasks to test Docker monitoring systems. Uses only Python standard library for maximum compatibility.",
+  "version": "1.0.0",
+  "entry_point": "resource_test_agent.py",
+  "agent_type": "function",
+  "author": "AgentHub Team",
+  "email": "team@agenthub.com",
+  "tags": [
+    "resource-testing",
+    "monitoring",
+    "cpu-intensive",
+    "memory-intensive",
+    "docker-testing",
+    "performance-testing",
+    "stress-testing",
+    "standard-library"
+  ],
+  "pricing_model": "free",
+  "config_schema": {
+    "task_type": {
+      "type": "string",
+      "description": "Type of resource-intensive task to perform",
+      "enum": ["cpu", "memory", "both"],
+      "default": "both"
+    },
+    "intensity": {
+      "type": "integer",
+      "description": "Intensity level from 1 (low) to 10 (high)",
+      "minimum": 1,
+      "maximum": 10,
+      "default": 5
+    }
+  }
+}
