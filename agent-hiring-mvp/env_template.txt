@@ -1,0 +1,42 @@
+# Copy this content to your .env file in the agent-hiring-mvp directory
+# Replace the values with your actual configuration
+
+# Email Configuration
+GMAIL_SMTP_SERVER=smtp.gmail.com
+GMAIL_SMTP_PORT=587
+GMAIL_EMAIL=kourgeorge@gmail.com
+GMAIL_APP_PASSWORD=34440052
+
+# Company Settings
+COMPANY_NAME=AgentHub
+SUPPORT_EMAIL=support@agenthub.com
+
+# Database Configuration
+DATABASE_URL=sqlite:///./agenthub.db
+
+# JWT Settings
+JWT_SECRET_KEY=your_jwt_secret_key_here
+JWT_ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+REFRESH_TOKEN_EXPIRE_DAYS=7
+
+# Password Reset Settings
+PASSWORD_RESET_TOKEN_EXPIRE_HOURS=1
+
+# Stripe Payment Configuration
+STRIPE_SECRET_KEY=sk_test_your_stripe_secret_key_here
+STRIPE_PUBLISHABLE_KEY=pk_test_your_stripe_publishable_key_here
+STRIPE_WEBHOOK_SECRET=whsec_your_webhook_secret_here
+
+# Payment Settings
+DEFAULT_CURRENCY=usd
+INVOICE_DUE_DAYS=30
+
+# Company Billing Information
+COMPANY_ADDRESS=123 Business St, City, State 12345
+COMPANY_EMAIL=billing@agenthub.com
+COMPANY_PHONE=+1-555-123-4567
+
+# Invoice Settings
+INVOICE_PREFIX=AH
+AUTO_SEND_INVOICES=true
