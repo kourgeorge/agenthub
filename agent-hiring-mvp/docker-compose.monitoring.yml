@@ -21,36 +21,24 @@ services:
     networks:
       - monitoring
 
-  # Grafana for visualization
-  grafana:
-    image: grafana/grafana:latest
-    container_name: agenthub-grafana
-    ports:
-      - "3000:3000"
-    environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin123
-      - GF_USERS_ALLOW_SIGN_UP=false
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./grafana/provisioning:/etc/grafana/provisioning
-    restart: unless-stopped
-    networks:
-      - monitoring
-    depends_on:
-      - prometheus
-
-  # Node Exporter for system metrics
-  node-exporter:
-    image: prom/node-exporter:latest
-    container_name: agenthub-node-exporter
-    command:
-      - '--path.rootfs=/host'
-    network_mode: host # Changed back to host network mode
-    pid: host
-    restart: unless-stopped
-    volumes:
-      - '/:/host:ro,rslave'
+  # Grafana for visualization (optional - uncomment if needed)
+  # grafana:
+  #   image: grafana/grafana:latest
+  #   container_name: agenthub-grafana
+  #   ports:
+  #     - "3000:3000"
+  #   environment:
+  #     - GF_SECURITY_ADMIN_USER=admin
+  #     - GF_SECURITY_ADMIN_PASSWORD=admin123
+  #     - GF_USERS_ALLOW_SIGN_UP=false
+  #   volumes:
+  #     - grafana_data:/var/lib/grafana
+  #     - ./grafana/provisioning:/etc/grafana/provisioning
+  #   restart: unless-stopped
+  #   networks:
+  #     - monitoring
+  #   depends_on:
+  #     - prometheus
 
   # cAdvisor for container metrics (alternative to our custom metrics)
   cadvisor:
@@ -71,26 +59,9 @@ services:
     networks:
       - monitoring
 
-  # Alert Manager (optional)
-  alertmanager:
-    image: prom/alertmanager:latest
-    container_name: agenthub-alertmanager
-    ports:
-      - "9093:9093"
-    volumes:
-      - ./alertmanager:/etc/alertmanager
-      - alertmanager_data:/alertmanager
-    command:
-      - '--config.file=/etc/alertmanager/config.yml'
-      - '--storage.path=/alertmanager'
-    restart: unless-stopped
-    networks:
-      - monitoring
-
 volumes:
   prometheus_data:
-  grafana_data:
-  alertmanager_data:
+  # grafana_data:  # Uncomment if using Grafana
 
 networks:
   monitoring:
