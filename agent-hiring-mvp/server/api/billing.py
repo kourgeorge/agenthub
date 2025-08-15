@@ -368,23 +368,111 @@ async def download_invoice(
             )
         ).count()
         
+        # Note: We'll still generate an invoice even with no activity for transparency
         if executions_count == 0 and hirings_count == 0:
+            logger.info(f"No billable activity found for user {user_id} in {month}, but will generate zero-amount invoice")
+        
+        # Get user information
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"No billing data found for {month}"
+                detail="User not found"
             )
         
-        # This would generate a PDF invoice in production
-        # For now, return a simple JSON response
-        return {
-            "message": f"Invoice for {month}",
-            "user_id": user_id,
-            "month": month,
-            "executions_count": executions_count,
-            "hirings_count": hirings_count,
-            "status": "not_implemented",
-            "note": "PDF generation not implemented yet"
-        }
+        # Get or create invoice for this month
+        invoice_service = InvoiceService(db)
+        try:
+            # Try to get existing invoice
+            existing_invoices = await invoice_service.get_user_invoices(user_id, limit=100)
+            invoice = None
+            
+            for inv in existing_invoices:
+                if inv.get('billing_data', {}).get('billing_period', {}).get('start', '').startswith(month):
+                    invoice = inv
+                    break
+            
+            # If no invoice exists, create one
+            if not invoice:
+                try:
+                    invoice = await invoice_service.create_monthly_invoice(
+                        user_id=user_id,
+                        month=month,
+                        customer_email=user.email
+                    )
+                except Exception as invoice_error:
+                    logger.warning(f"Could not create invoice through service: {invoice_error}")
+                    # Create a basic invoice structure for PDF generation
+                    invoice = {
+                        'invoice_number': f"INV-{month}-{user_id:06d}-{datetime.now().strftime('%Y%m%d')}",
+                        'status': 'draft',
+                        'amount': 0.0,
+                        'billing_data': {
+                            'total_charges': 0.0,
+                            'execution_count': executions_count,
+                            'hirings_count': hirings_count,
+                            'executions': [],
+                            'hirings': [],
+                            'billing_period': {
+                                'start': start_date.isoformat(),
+                                'end': end_date.isoformat()
+                            }
+                        }
+                    }
+        except Exception as e:
+            logger.error(f"Failed to get/create invoice: {e}")
+            # Create a basic invoice structure for PDF generation
+            invoice = {
+                'invoice_number': f"INV-{month}-{user_id:06d}-{datetime.now().strftime('%Y%m%d')}",
+                'status': 'draft',
+                'amount': 0.0,
+                'billing_data': {
+                    'total_charges': 0.0,
+                    'execution_count': executions_count,
+                    'hirings_count': hirings_count,
+                    'executions': [],
+                    'hirings': [],
+                    'billing_period': {
+                        'start': start_date.isoformat(),
+                        'end': end_date.isoformat()
+                    }
+                }
+            }
+        
+        # Generate PDF invoice
+        try:
+            from ..services.pdf_invoice_generator import PDFInvoiceGenerator
+            
+            pdf_generator = PDFInvoiceGenerator()
+            user_data = {
+                'username': user.username,
+                'email': user.email
+            }
+            
+            pdf_bytes = pdf_generator.generate_invoice_pdf(invoice, user_data)
+            
+            # Return PDF file
+            from fastapi.responses import Response
+            return Response(
+                content=pdf_bytes,
+                media_type="application/pdf",
+                headers={
+                    "Content-Disposition": f"attachment; filename=invoice-{month}.pdf"
+                }
+            )
+            
+        except ImportError:
+            logger.error("PDF generation dependencies not available")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="PDF generation not available - missing dependencies"
+            )
+        except Exception as e:
+            logger.error(f"Failed to generate PDF invoice: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to generate PDF invoice: {str(e)}"
+            )
         
     except HTTPException:
         raise

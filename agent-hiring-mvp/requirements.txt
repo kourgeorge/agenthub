@@ -17,6 +17,10 @@ pyyaml
 requests
 stripe
 
+# PDF Generation
+reportlab
+jinja2
+
 # Authentication
 PyJWT
 bcrypt
