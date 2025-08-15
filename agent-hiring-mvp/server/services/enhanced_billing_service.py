@@ -8,15 +8,14 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_
+from sqlalchemy import func, and_, or_
 
 from .resource_usage_tracker import ResourceUsageTracker
-from ..models.container_resource_usage import ContainerResourceUsage, UsageAggregation
-from ..models.agent_activity_log import AgentActivityLog
+from ..models.container_resource_usage import ContainerResourceUsage, UsageAggregation, AgentActivityLog
 from ..models.deployment import AgentDeployment
 from ..models.hiring import Hiring
 from ..models.user import User
-from ..models.user_budget import UserBudget
+from ..models.resource_usage import UserBudget
 
 logger = logging.getLogger(__name__)
 

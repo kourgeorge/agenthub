@@ -12,12 +12,13 @@ import docker
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
 
-from ..models.container_resource_usage import ContainerResourceUsage, ResourcePricing, UsageAggregation
-from ..models.agent_activity_log import AgentActivityLog
+from ..models.container_resource_usage import ContainerResourceUsage, ResourcePricing, UsageAggregation, AgentActivityLog
 from ..models.deployment import AgentDeployment
 from ..models.agent import Agent
 from ..models.hiring import Hiring
 from ..models.user import User
+from ..models.execution import Execution
+from ..models.resource_usage import ExecutionResourceUsage
 
 logger = logging.getLogger(__name__)
 
@@ -25,28 +26,13 @@ logger = logging.getLogger(__name__)
 class ResourceUsageTracker:
     """Tracks container resource usage and calculates costs for billing."""
     
-    # Default AWS-competitive pricing (per hour)
+    # Default AWS-competitive pricing (per hour) - independent of agent type
+    # TESTING: Increased rates by 100x for visibility
     DEFAULT_PRICING = {
-        "cpu": {
-            "acp": 0.0416,        # $0.0416 per vCPU-hour (t3.micro equivalent)
-            "function": 0.0208,   # $0.0208 per vCPU-hour (t3.nano equivalent)
-            "persistent": 0.0312  # $0.0312 per vCPU-hour (t3.small equivalent)
-        },
-        "memory": {
-            "acp": 0.0056,        # $0.0056 per GB-hour
-            "function": 0.0028,   # $0.0028 per GB-hour
-            "persistent": 0.0042  # $0.0042 per GB-hour
-        },
-        "network": {
-            "acp": 0.09,          # $0.09 per GB (outbound)
-            "function": 0.09,     # $0.09 per GB (outbound)
-            "persistent": 0.09    # $0.09 per GB (outbound)
-        },
-        "storage": {
-            "acp": 0.10,          # $0.10 per GB-month (EBS gp3 equivalent)
-            "function": 0.10,     # $0.10 per GB-month
-            "persistent": 0.10    # $0.10 per GB-month
-        }
+        "cpu": 4.16,          # $4.16 per vCPU-hour (100x for testing)
+        "memory": 0.56,       # $0.56 per GB-hour (100x for testing)
+        "network": 9.00,      # $9.00 per GB (100x for testing)
+        "storage": 10.00      # $10.00 per GB-month (100x for testing)
     }
     
     def __init__(self, db_session: Session):
@@ -59,7 +45,7 @@ class ResourceUsageTracker:
         # Collection interval (30 seconds for accurate hourly billing)
         self.collection_interval = 30
         
-    def _load_pricing_config(self) -> Dict[str, Dict[str, float]]:
+    def _load_pricing_config(self) -> Dict[str, float]:
         """Load pricing configuration from database or use defaults."""
         try:
             # Try to load from database first
@@ -70,9 +56,9 @@ class ResourceUsageTracker:
             if pricing_records:
                 pricing = {}
                 for record in pricing_records:
+                    # Use the first active price for each resource type (agent-type independent)
                     if record.resource_type not in pricing:
-                        pricing[record.resource_type] = {}
-                    pricing[record.resource_type][record.deployment_type] = record.base_price
+                        pricing[record.resource_type] = record.base_price
                 return pricing
         except Exception as e:
             logger.warning(f"Failed to load pricing from database: {e}")
@@ -95,39 +81,96 @@ class ResourceUsageTracker:
             try:
                 container = self.docker_client.containers.get(deployment.container_name)
                 stats = container.stats(stream=False)
+                
+                # Validate that we have the required stats structure
+                if not stats or 'cpu_stats' not in stats or 'precpu_stats' not in stats:
+                    logger.warning(f"Container {deployment.container_name} returned incomplete stats")
+                    return None
+                
+                # Debug logging for stats structure
+                logger.debug(f"Container {deployment.container_name} stats keys: {list(stats.keys())}")
+                if 'cpu_stats' in stats:
+                    logger.debug(f"CPU stats keys: {list(stats['cpu_stats'].keys())}")
+                    if 'cpu_usage' in stats['cpu_stats']:
+                        logger.debug(f"CPU usage keys: {list(stats['cpu_stats']['cpu_usage'].keys())}")
+                
             except docker.errors.NotFound:
                 logger.warning(f"Container {deployment.container_name} not found")
                 return None
+            except Exception as e:
+                logger.error(f"Error getting stats for container {deployment.container_name}: {e}")
+                return None
             
             # Calculate CPU usage percentage
-            cpu_delta = stats['cpu_stats']['cpu_usage']['total_usage'] - stats['precpu_stats']['cpu_usage']['total_usage']
-            system_delta = stats['cpu_stats']['system_cpu_usage'] - stats['precpu_stats']['system_cpu_usage']
-            
-            if system_delta > 0:
-                cpu_usage_percent = (cpu_delta / system_delta) * len(stats['cpu_stats']['cpu_usage']['percpu_usage']) * 100.0
-            else:
+            try:
+                cpu_delta = stats['cpu_stats']['cpu_usage']['total_usage'] - stats['precpu_stats']['cpu_usage']['total_usage']
+                system_delta = stats['cpu_stats']['system_cpu_usage'] - stats['precpu_stats']['system_cpu_usage']
+                
+                if system_delta > 0:
+                    # Get CPU count - handle cases where percpu_usage might not exist
+                    try:
+                        cpu_count = len(stats['cpu_stats']['cpu_usage']['percpu_usage'])
+                    except (KeyError, TypeError):
+                        # Fallback: try to get CPU count from other sources
+                        try:
+                            cpu_count = stats['cpu_stats'].get('online_cpus', 1)
+                        except (KeyError, TypeError):
+                            cpu_count = 1  # Default to 1 CPU if we can't determine
+                    
+                    cpu_usage_percent = (cpu_delta / system_delta) * cpu_count * 100.0
+                else:
+                    # Container is idle or stats are not yet available
+                    cpu_usage_percent = 0.0
+                    
+            except (KeyError, TypeError) as e:
+                logger.warning(f"Error calculating CPU usage for {deployment.container_name}: {e}")
+                cpu_usage_percent = 0.0
+            except Exception as e:
+                logger.error(f"Unexpected error calculating CPU usage for {deployment.container_name}: {e}")
                 cpu_usage_percent = 0.0
             
             # Memory usage
-            memory_usage = stats['memory_stats']['usage']
-            memory_limit = stats['memory_stats']['limit']
+            try:
+                memory_usage = stats['memory_stats'].get('usage', 0)
+                memory_limit = stats['memory_stats'].get('limit', 0)
+                
+                # Ensure we have valid memory values
+                if memory_usage is None or memory_limit is None:
+                    logger.warning(f"Container {deployment.container_name} has invalid memory stats")
+                    memory_usage = 0
+                    memory_limit = 0
+                    
+            except (KeyError, TypeError) as e:
+                logger.warning(f"Error getting memory stats for {deployment.container_name}: {e}")
+                memory_usage = 0
+                memory_limit = 0
             
             # Network stats
-            network_stats = stats['networks']
-            rx_bytes = sum(net['rx_bytes'] for net in network_stats.values()) if network_stats else 0
-            tx_bytes = sum(net['tx_bytes'] for net in network_stats.values()) if network_stats else 0
+            try:
+                network_stats = stats.get('networks', {})
+                rx_bytes = sum(net.get('rx_bytes', 0) for net in network_stats.values()) if network_stats else 0
+                tx_bytes = sum(net.get('tx_bytes', 0) for net in network_stats.values()) if network_stats else 0
+            except (KeyError, TypeError) as e:
+                logger.warning(f"Error getting network stats for {deployment.container_name}: {e}")
+                rx_bytes = 0
+                tx_bytes = 0
             
             # Block I/O stats
-            block_stats = stats['blkio_stats']['io_service_bytes']
-            read_bytes = sum(stat['value'] for stat in block_stats if stat['op'] == 'Read')
-            write_bytes = sum(stat['value'] for stat in block_stats if stat['op'] == 'Write')
+            try:
+                block_stats = stats.get('blkio_stats', {}).get('io_service_bytes', [])
+                read_bytes = sum(stat.get('value', 0) for stat in block_stats if stat.get('op') == 'Read')
+                write_bytes = sum(stat.get('value', 0) for stat in block_stats if stat.get('op') == 'Write')
+            except (KeyError, TypeError) as e:
+                logger.warning(f"Error getting block I/O stats for {deployment.container_name}: {e}")
+                read_bytes = 0
+                write_bytes = 0
             
-            # Get pricing for this deployment type
+            # Get pricing for this resource type (agent-type independent)
             deployment_type = deployment.deployment_type or "function"
-            cpu_cost_per_hour = self.pricing.get("cpu", {}).get(deployment_type, 0.02)
-            memory_cost_per_gb_hour = self.pricing.get("memory", {}).get(deployment_type, 0.003)
-            network_cost_per_gb = self.pricing.get("network", {}).get(deployment_type, 0.09)
-            storage_cost_per_gb_hour = self.pricing.get("storage", {}).get(deployment_type, 0.10) / 730  # Convert monthly to hourly
+            cpu_cost_per_hour = self.pricing.get("cpu", 4.16)
+            memory_cost_per_gb_hour = self.pricing.get("memory", 0.56)
+            network_cost_per_gb = self.pricing.get("network", 9.00)
+            storage_cost_per_gb_hour = self.pricing.get("storage", 10.00) / 730  # Convert monthly to hourly
             
             # Calculate costs for this snapshot (30-second interval)
             interval_hours = self.collection_interval / 3600.0
@@ -150,6 +193,12 @@ class ResourceUsageTracker:
             # Total cost for this snapshot
             total_cost = cpu_cost + memory_cost + network_cost + storage_cost
             
+            # Debug logging for cost breakdown
+            logger.debug(f"Cost breakdown for {deployment.container_name}: "
+                        f"CPU=${cpu_cost:.6f}, Memory=${memory_cost:.6f}, "
+                        f"Network=${network_cost:.6f}, Storage=${storage_cost:.6f}, "
+                        f"Total=${total_cost:.6f}")
+            
             # Create resource usage record
             resource_usage = ContainerResourceUsage(
                 container_id=container.id,
@@ -169,8 +218,8 @@ class ResourceUsageTracker:
                 block_write_bytes=write_bytes,
                 
                 # Container status
-                container_status=container.status,
-                is_healthy=deployment.is_healthy,
+                container_status=getattr(container, 'status', 'unknown'),
+                is_healthy=getattr(deployment, 'is_healthy', False),
                 
                 # Pricing configuration
                 cpu_cost_per_hour=cpu_cost_per_hour,
@@ -191,13 +240,16 @@ class ResourceUsageTracker:
                 
                 # Metadata
                 deployment_type=deployment_type,
-                agent_type=deployment.agent.agent_type if deployment.agent else None,
+                agent_type=getattr(deployment.agent, 'agent_type', None) if deployment.agent else None,
                 resource_limits=deployment.deployment_config.get("resources") if deployment.deployment_config else None
             )
             
             # Save to database
             self.db.add(resource_usage)
             self.db.commit()
+            
+            # Calculate memory in GB for logging
+            memory_gb = memory_usage / (1024**3) if memory_usage else 0
             
             logger.debug(f"Collected metrics for {deployment.container_name}: CPU={cpu_usage_percent:.1f}%, "
                         f"Memory={memory_gb:.2f}GB, Cost=${total_cost:.6f}")
@@ -389,6 +441,116 @@ class ResourceUsageTracker:
             logger.error(f"Error saving daily aggregation: {e}")
             self.db.rollback()
     
+    def create_hiring_aggregation(self, hiring_id: int) -> Dict[str, Any]:
+        """Create hiring-level resource usage aggregation for billing."""
+        try:
+            # Get hiring details
+            hiring = self.db.query(Hiring).filter(Hiring.id == hiring_id).first()
+            if not hiring:
+                logger.error(f"Hiring {hiring_id} not found")
+                return {}
+            
+            # Get all container usage for this hiring
+            container_usage = self.db.query(ContainerResourceUsage).filter(
+                ContainerResourceUsage.hiring_id == hiring_id
+            ).all()
+            
+            if not container_usage:
+                logger.info(f"No container usage found for hiring {hiring_id}")
+                return {}
+            
+            # Calculate totals
+            total_cpu_hours = 0.0
+            total_memory_gb_hours = 0.0
+            total_network_gb = 0.0
+            total_storage_gb_hours = 0.0
+            total_cost = 0.0
+            total_snapshots = len(container_usage)
+            
+            for usage in container_usage:
+                # Convert snapshot costs to hourly rates
+                interval_hours = usage.collection_interval_seconds / 3600.0
+                
+                # CPU: convert percentage to hours
+                cpu_hours = (usage.cpu_usage_percent / 100.0) * interval_hours
+                total_cpu_hours += cpu_hours
+                
+                # Memory: convert bytes to GB-hours
+                memory_gb = usage.memory_usage_bytes / (1024**3)
+                memory_hours = memory_gb * interval_hours
+                total_memory_gb_hours += memory_hours
+                
+                # Network: convert bytes to GB
+                network_gb = (usage.network_rx_bytes + usage.network_tx_bytes) / (1024**3)
+                total_network_gb += network_gb
+                
+                # Storage: based on memory limit
+                storage_gb = usage.memory_limit_bytes / (1024**3)
+                storage_hours = storage_gb * interval_hours
+                total_storage_gb_hours += storage_hours
+                
+                # Total cost
+                total_cost += usage.total_cost
+            
+            # Create or update hiring aggregation
+            existing = self.db.query(UsageAggregation).filter(
+                and_(
+                    UsageAggregation.hiring_id == hiring_id,
+                    UsageAggregation.aggregation_period == "hiring"
+                )
+            ).first()
+            
+            if existing:
+                # Update existing
+                existing.total_cpu_hours = total_cpu_hours
+                existing.total_memory_gb_hours = total_memory_gb_hours
+                existing.total_network_gb = total_network_gb
+                existing.total_storage_gb_hours = total_storage_gb_hours
+                existing.total_cost = total_cost
+                existing.period_end = datetime.now(timezone.utc)
+            else:
+                # Create new hiring aggregation
+                aggregation = UsageAggregation(
+                    user_id=hiring.user_id,
+                    agent_id=hiring.agent_id,
+                    hiring_id=hiring_id,
+                    aggregation_period="hiring",
+                    period_start=hiring.hired_at,
+                    period_end=datetime.now(timezone.utc),
+                    total_cpu_hours=total_cpu_hours,
+                    total_memory_gb_hours=total_memory_gb_hours,
+                    total_network_gb=total_network_gb,
+                    total_storage_gb_hours=total_storage_gb_hours,
+                    total_cost=total_cost,
+                    total_requests=total_snapshots,
+                    deployment_type="acp"  # Default, will be updated
+                )
+                self.db.add(aggregation)
+            
+            self.db.commit()
+            
+            hiring_summary = {
+                "hiring_id": hiring_id,
+                "agent_id": hiring.agent_id,
+                "user_id": hiring.user_id,
+                "total_cpu_hours": total_cpu_hours,
+                "total_memory_gb_hours": total_memory_gb_hours,
+                "total_network_gb": total_network_gb,
+                "total_storage_gb_hours": total_storage_gb_hours,
+                "total_cost": total_cost,
+                "total_snapshots": total_snapshots,
+                "hiring_start": hiring.hired_at,
+                "hiring_end": datetime.now(timezone.utc)
+            }
+            
+            logger.info(f"Created hiring aggregation for hiring {hiring_id}: ${total_cost:.6f}")
+            return hiring_summary
+            
+        except Exception as e:
+            logger.error(f"Error creating hiring aggregation for hiring {hiring_id}: {e}")
+            self.db.rollback()
+            return {}
+    
     def get_user_monthly_billing(self, user_id: int, year: int, month: int) -> Dict[str, Any]:
         """Get monthly billing summary for a user."""
         try:
@@ -487,9 +649,9 @@ class ResourceUsageTracker:
                                avg_cpu_percent: float = 50.0, avg_memory_gb: float = 1.0) -> Dict[str, float]:
         """Estimate cost for a deployment before it starts."""
         try:
-            cpu_cost_per_hour = self.pricing.get("cpu", {}).get(deployment_type, 0.02)
-            memory_cost_per_gb_hour = self.pricing.get("memory", {}).get(deployment_type, 0.003)
-            storage_cost_per_gb_hour = self.pricing.get("storage", {}).get(deployment_type, 0.10) / 730
+            cpu_cost_per_hour = self.pricing.get("cpu", 4.16)
+            memory_cost_per_gb_hour = self.pricing.get("memory", 0.56)
+            storage_cost_per_gb_hour = self.pricing.get("storage", 10.00) / 730
             
             # Calculate estimated costs
             cpu_cost = (avg_cpu_percent / 100.0) * cpu_cost_per_hour * duration_hours
@@ -509,3 +671,63 @@ class ResourceUsageTracker:
         except Exception as e:
             logger.error(f"Error estimating deployment cost: {e}")
             return {"total_cost": 0.0, "cost_per_hour": 0.0}
+    
+    def get_hiring_billing(self, hiring_id: int) -> Dict[str, Any]:
+        """Get billing information for a specific hiring."""
+        try:
+            # First create/update the hiring aggregation
+            hiring_summary = self.create_hiring_aggregation(hiring_id)
+            if not hiring_summary:
+                return {}
+            
+            # Get the hiring details
+            hiring = self.db.query(Hiring).filter(Hiring.id == hiring_id).first()
+            if not hiring:
+                return {}
+            
+            # Get all executions for this hiring
+            executions = self.db.query(Execution).filter(Execution.hiring_id == hiring_id).all()
+            
+            # Get execution resource usage from resource_usage.py
+            execution_costs = self.db.query(func.sum(ExecutionResourceUsage.cost)).filter(
+                ExecutionResourceUsage.execution_id.in_([e.id for e in executions])
+            ).scalar() or 0.0
+            
+            # Calculate total cost (container + execution)
+            total_cost = hiring_summary["total_cost"] + execution_costs
+            
+            billing_info = {
+                "hiring_id": hiring_id,
+                "agent_id": hiring.agent_id,
+                "user_id": hiring.user_id,
+                "hiring_start": hiring.hired_at,
+                "hiring_end": datetime.now(timezone.utc),
+                "billing_cycle": hiring.billing_cycle or "monthly",
+                
+                # Container resource costs
+                "container_cpu_hours": hiring_summary["total_cpu_hours"],
+                "container_memory_gb_hours": hiring_summary["total_memory_gb_hours"],
+                "container_network_gb": hiring_summary["total_network_gb"],
+                "container_storage_gb_hours": hiring_summary["total_storage_gb_hours"],
+                "container_cost": hiring_summary["total_cost"],
+                
+                # Execution resource costs
+                "execution_cost": execution_costs,
+                "total_executions": len(executions),
+                
+                # Total billing
+                "total_cost": total_cost,
+                
+                # Cost breakdown
+                "cost_breakdown": {
+                    "container_resources": hiring_summary["total_cost"],
+                    "execution_resources": execution_costs,
+                    "total": total_cost
+                }
+            }
+            
+            return billing_info
+            
+        except Exception as e:
+            logger.error(f"Error getting hiring billing for hiring {hiring_id}: {e}")
+            return {}

@@ -13,10 +13,13 @@ from ..models.execution import Execution
 from ..models.hiring import Hiring
 from ..models.agent import Agent
 from ..models.resource_usage import ExecutionResourceUsage
+from ..models.container_resource_usage import ContainerResourceUsage
+from ..models.deployment import AgentDeployment
 from ..models.user import User
 from ..config.payment_config import PaymentConfig
 from ..services.payment_service import PaymentService
 from ..services.invoice_service import InvoiceService
+from ..services.enhanced_billing_service import EnhancedBillingService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/billing", tags=["billing"])
@@ -38,11 +41,6 @@ class AddPaymentMethodRequest(BaseModel):
         return v
 
 
-# Test endpoint to verify new code is running
-@router.get("/test-payment-model")
-async def test_payment_model():
-    """Test endpoint to verify the new code is running"""
-    return {"message": "New payment model code is running!", "timestamp": datetime.now().isoformat()}
 
 
 @router.get("/summary")
@@ -130,7 +128,13 @@ async def get_billing_summary(
                     "total_hirings": 0,
                     "total_executions": 0,
                     "hirings": [],
-                    "executions": []
+                    "executions": [],
+                    "container_resources": {
+                        "total_cpu_hours": 0.0,
+                        "total_memory_gb_hours": 0.0,
+                        "total_storage_gb": 0.0,
+                        "total_cost": 0.0
+                    }
                 }
             
             # Get agent information
@@ -210,16 +214,54 @@ async def get_billing_summary(
         # Calculate total charges for each month
         for month_data in monthly_data.values():
             # Sum execution charges
-            month_data["total_charges"] = sum(
+            execution_charges = sum(
                 execution["charges"] for execution in month_data["executions"]
             )
             
-            # Calculate hiring charges (for now, just sum execution charges)
+            # Total charges = execution charges (container costs are calculated per hiring)
+            month_data["total_charges"] = execution_charges
+            
+            # Calculate hiring charges (execution charges + their specific container costs)
             for hiring in month_data["hirings"]:
-                hiring["charges"] = sum(
+                # Get execution charges for this specific hiring
+                hiring_execution_charges = sum(
                     execution["charges"] for execution in month_data["executions"]
                     if execution["hiring_id"] == hiring["id"]
                 )
+                
+                # Get container costs for this specific hiring from the beginning of the month
+                hiring_container_costs = 0.0
+                try:
+                    # Calculate container costs for this hiring from month start to now
+                    month_start = datetime.strptime(month_data["month"], "%Y-%m").replace(tzinfo=timezone.utc)
+                    month_end = datetime.now(timezone.utc)
+                    
+                    # Get container usage for this specific hiring
+                    hiring_container_usage = db.query(ContainerResourceUsage).filter(
+                        and_(
+                            ContainerResourceUsage.hiring_id == hiring["id"],
+                            ContainerResourceUsage.snapshot_timestamp >= month_start,
+                            ContainerResourceUsage.snapshot_timestamp <= month_end
+                        )
+                    ).all()
+                    
+                    # Sum up container costs for this hiring
+                    for usage in hiring_container_usage:
+                        hiring_container_costs += usage.total_cost
+                        
+                except Exception as e:
+                    logger.warning(f"Failed to calculate container costs for hiring {hiring['id']}: {e}")
+                    hiring_container_costs = 0.0
+                
+                # Total hiring charges = execution charges + container resource charges
+                hiring["charges"] = hiring_execution_charges + hiring_container_costs
+                
+                # Add container cost breakdown for transparency
+                hiring["container_costs"] = hiring_container_costs
+                hiring["execution_costs"] = hiring_execution_charges
+                
+                # Update monthly total to include container costs
+                month_data["total_charges"] += hiring_container_costs
         
         # Convert to list and sort by month
         result = list(monthly_data.values())
@@ -275,6 +317,7 @@ async def get_execution_resources(
         # Get agent information
         agent_name = "Unknown Agent"
         agent_type = "unknown"
+        deployment_id = None
         if execution.hiring_id:
             hiring = db.query(Hiring).filter(Hiring.id == execution.hiring_id).first()
             if hiring:
@@ -282,6 +325,14 @@ async def get_execution_resources(
                 if agent:
                     agent_name = agent.name
                     agent_type = agent.agent_type
+                
+                # Get deployment information for container resources
+                from ..models.deployment import AgentDeployment
+                deployment = db.query(AgentDeployment).filter(
+                    AgentDeployment.hiring_id == hiring.id
+                ).first()
+                if deployment:
+                    deployment_id = deployment.deployment_id
         
         # Format resource usage data
         resources = []
@@ -305,17 +356,48 @@ async def get_execution_resources(
             })
             total_cost += usage.cost
         
+        # Get container resource usage if deployment exists
+        container_resources = None
+        if deployment_id:
+            try:
+                enhanced_billing_service = EnhancedBillingService(db)
+                container_costs = await enhanced_billing_service._get_container_resource_costs(
+                    execution.user_id, 
+                    execution.started_at or execution.created_at, 
+                    execution.completed_at or execution.created_at
+                )
+                
+                # Find the specific deployment
+                for deployment in container_costs.get("deployments", []):
+                    if deployment.get("deployment_id") == deployment_id:
+                        container_resources = {
+                            "deployment_id": deployment_id,
+                            "cpu_hours": deployment.get("cpu_hours", 0.0),
+                            "memory_gb_hours": deployment.get("memory_gb_hours", 0.0),
+                            "storage_gb": deployment.get("storage_gb", 0.0),
+                            "network_gb": deployment.get("network_gb", 0.0),
+                            "container_cost": deployment.get("total_cost", 0.0),
+                            "start_time": deployment.get("start_time"),
+                            "end_time": deployment.get("end_time")
+                        }
+                        break
+                        
+            except Exception as e:
+                logger.warning(f"Failed to get container resource costs for execution {execution_id}: {e}")
+        
         return {
             "execution_id": execution.execution_id,  # Return the actual execution_id string
             "agent_name": agent_name,
             "agent_type": agent_type,
+            "deployment_id": deployment_id,
             "status": execution.status,
             "started_at": execution.started_at.isoformat() if execution.started_at else None,
             "completed_at": execution.completed_at.isoformat() if execution.completed_at else None,
             "duration_ms": execution.duration_ms,
             "total_cost": total_cost,
             "resource_count": len(resources),
-            "resources": resources
+            "resources": resources,
+            "container_resources": container_resources
         }
         
     except HTTPException:
@@ -325,6 +407,346 @@ async def get_execution_resources(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to fetch execution resources: {str(e)}"
+        )
+
+
+@router.get("/hiring/{hiring_id}/resources")
+async def get_hiring_resources(
+    hiring_id: int,
+    user_id: int = Query(..., description="User ID to verify access"),
+    db: Session = Depends(get_db)
+):
+    """Get detailed resource usage for a specific hiring."""
+    try:
+        # Get hiring information
+        hiring = db.query(Hiring).filter(Hiring.id == hiring_id).first()
+        
+        if not hiring:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Hiring not found"
+            )
+        
+        # Verify that the hiring belongs to the requesting user
+        if hiring.user_id != user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: You can only view your own hirings"
+            )
+        
+        # Get agent information
+        agent_name = "Unknown Agent"
+        agent_type = "unknown"
+        if hiring.agent:
+            agent_name = hiring.agent.name
+            agent_type = hiring.agent.agent_type
+        
+        # Get deployment information for container resources
+        deployment = db.query(AgentDeployment).filter(
+            AgentDeployment.hiring_id == hiring_id
+        ).first()
+        logger.info(f"Hiring {hiring_id} has deployment: {deployment is not None}")
+        
+        # Get all executions for this hiring
+        executions = db.query(Execution).filter(Execution.hiring_id == hiring_id).all()
+        logger.info(f"Hiring {hiring_id} has {len(executions)} executions")
+        
+        # Get resource usage for all executions
+        total_cost = 0.0
+        total_executions = len(executions)
+        all_resources = []
+        
+        for execution in executions:
+            logger.info(f"Checking execution {execution.id} (execution_id: {execution.execution_id})")
+            resource_usage = db.query(ExecutionResourceUsage).filter(
+                ExecutionResourceUsage.execution_id == execution.id
+            ).all()
+            logger.info(f"Execution {execution.id} has {len(resource_usage)} resource usage records")
+            
+            for usage in resource_usage:
+                all_resources.append({
+                    "execution_id": execution.execution_id,
+                    "executed_at": execution.started_at.isoformat() if execution.started_at else None,
+                    "resource_type": usage.resource_type,
+                    "provider": usage.resource_provider,
+                    "model": usage.resource_model,
+                    "operation_type": usage.operation_type,
+                    "cost": usage.cost,
+                    "input_tokens": usage.input_tokens,
+                    "output_tokens": usage.output_tokens,
+                    "total_tokens": usage.total_tokens,
+                    "duration_ms": usage.duration_ms,
+                    "request_metadata": usage.request_metadata,
+                    "response_metadata": usage.response_metadata,
+                    "created_at": usage.created_at.isoformat() if usage.created_at else None
+                })
+                total_cost += usage.cost
+        
+        # Get container resource usage directly from database
+        container_resources = None
+        if deployment:
+            logger.info(f"Getting container resource usage from database for deployment {deployment.deployment_id}")
+            try:
+                # Query container resource usage directly from database
+                container_usage = db.query(ContainerResourceUsage).filter(
+                    ContainerResourceUsage.deployment_id == deployment.deployment_id
+                ).all()
+                
+                if container_usage:
+                    # Calculate totals from raw database values
+                    total_container_cost = sum(usage.total_cost for usage in container_usage)
+                    
+                    # Calculate resource usage totals from database
+                    total_cpu_percent = sum(usage.cpu_usage_percent for usage in container_usage)
+                    total_memory_bytes = sum(usage.memory_usage_bytes for usage in container_usage)
+                    total_network_rx = sum(usage.network_rx_bytes for usage in container_usage)
+                    total_network_tx = sum(usage.network_tx_bytes for usage in container_usage)
+                    total_memory_limit = sum(usage.memory_limit_bytes for usage in container_usage)
+                    
+                    # Convert to appropriate units (same as database storage)
+                    # CPU: convert percentage to hours (30-second intervals)
+                    interval_hours = 30.0 / 3600.0  # 30 seconds in hours
+                    total_cpu_hours = (total_cpu_percent / 100.0) * interval_hours
+                    
+                    # Memory: convert bytes to GB-hours
+                    total_memory_gb_hours = (total_memory_bytes / (1024**3)) * interval_hours
+                    
+                    # Network: convert bytes to GB
+                    total_network_gb = (total_network_rx + total_network_tx) / (1024**3)
+                    
+                    # Storage: convert memory limit bytes to GB-hours
+                    total_storage_gb_hours = (total_memory_limit / (1024**3)) * interval_hours
+                    
+                    container_resources = {
+                        "deployment_id": deployment.deployment_id,
+                        "cpu_hours": round(total_cpu_hours, 4),
+                        "memory_gb_hours": round(total_memory_gb_hours, 4),
+                        "network_gb": round(total_network_gb, 4),
+                        "storage_gb_hours": round(total_storage_gb_hours, 4),
+                        "container_cost": round(total_container_cost, 6),
+                        "snapshots_count": len(container_usage),
+                        "start_time": min(usage.snapshot_timestamp for usage in container_usage).isoformat(),
+                        "end_time": max(usage.snapshot_timestamp for usage in container_usage).isoformat()
+                    }
+                    
+                    total_cost += total_container_cost
+                    logger.info(f"Container resources from database: {container_resources}")
+                else:
+                    logger.info(f"No container usage data found for deployment {deployment.deployment_id}")
+                    
+            except Exception as e:
+                logger.warning(f"Failed to get container resource usage from database for hiring {hiring_id}: {e}")
+        else:
+            logger.info(f"No deployment found for hiring {hiring_id}")
+        
+        return {
+            "hiring_id": hiring_id,
+            "agent_name": agent_name,
+            "agent_type": agent_type,
+            "status": hiring.status,
+            "hired_at": hiring.hired_at.isoformat(),
+            "total_executions": total_executions,
+            "total_cost": total_cost,
+            "resource_count": len(all_resources),
+            "resources": all_resources,
+            "container_resources": container_resources
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching hiring resources: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch hiring resources: {str(e)}"
+        )
+
+
+@router.get("/resources/summary")
+async def get_user_resource_summary(
+    user_id: int = Query(..., description="User ID to get resource summary for"),
+    months: int = Query(1, description="Number of months to fetch", ge=1, le=12),
+    db: Session = Depends(get_db)
+):
+    """Get comprehensive resource usage summary for a user including container resources."""
+    try:
+        # Calculate date range
+        end_date = datetime.now(timezone.utc)
+        start_date = end_date - timedelta(days=months * 30)
+        
+        # Get container resource costs
+        try:
+            enhanced_billing_service = EnhancedBillingService(db)
+            container_costs = await enhanced_billing_service._get_container_resource_costs(user_id, start_date, end_date)
+            
+            # Calculate totals
+            total_cpu_hours = container_costs.get("total_cpu_hours", 0.0)
+            total_memory_gb_hours = container_costs.get("total_memory_gb_hours", 0.0)
+            total_storage_gb = container_costs.get("total_storage_gb", 0.0)
+            total_network_gb = container_costs.get("total_network_gb", 0.0)
+            total_container_cost = sum(deployment.get("total_cost", 0) for deployment in container_costs.get("deployments", []))
+            
+            # Get deployment breakdown
+            deployments = []
+            for deployment in container_costs.get("deployments", []):
+                deployments.append({
+                    "deployment_id": deployment.get("deployment_id"),
+                    "agent_type": deployment.get("agent_type"),
+                    "cpu_hours": deployment.get("cpu_hours", 0.0),
+                    "memory_gb_hours": deployment.get("memory_gb_hours", 0.0),
+                    "storage_gb": deployment.get("storage_gb", 0.0),
+                    "network_gb": deployment.get("network_gb", 0.0),
+                    "total_cost": deployment.get("total_cost", 0.0),
+                    "start_time": deployment.get("start_time"),
+                    "end_time": deployment.get("end_time")
+                })
+            
+            return {
+                "user_id": user_id,
+                "period": {
+                    "start": start_date.isoformat(),
+                    "end": end_date.isoformat(),
+                    "months": months
+                },
+                "resource_summary": {
+                    "total_cpu_hours": round(total_cpu_hours, 4),
+                    "total_memory_gb_hours": round(total_memory_gb_hours, 4),
+                    "total_storage_gb": round(total_storage_gb, 4),
+                    "total_network_gb": round(total_network_gb, 4),
+                    "total_container_cost": round(total_container_cost, 6),
+                    "currency": "USD"
+                },
+                "deployments": deployments,
+                "deployment_count": len(deployments)
+            }
+            
+        except Exception as e:
+            logger.warning(f"Failed to get container resource costs: {e}")
+            return {
+                "user_id": user_id,
+                "period": {
+                    "start": start_date.isoformat(),
+                    "end": end_date.isoformat(),
+                    "months": months
+                },
+                "error": f"Resource usage data unavailable: {str(e)}",
+                "resource_summary": {
+                    "total_cpu_hours": 0.0,
+                    "total_memory_gb_hours": 0.0,
+                    "total_storage_gb": 0.0,
+                    "total_network_gb": 0.0,
+                    "total_container_cost": 0.0,
+                    "currency": "USD"
+                },
+                "deployments": [],
+                "deployment_count": 0
+            }
+            
+    except Exception as e:
+        logger.error(f"Error fetching resource summary for user {user_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch resource summary: {str(e)}"
+        )
+
+
+@router.get("/deployment/{deployment_id}/resources")
+async def get_deployment_resources(
+    deployment_id: str,
+    user_id: int = Query(..., description="User ID to verify access"),
+    db: Session = Depends(get_db)
+):
+    """Get detailed container resource usage for a specific deployment."""
+    try:
+        # Get deployment information
+        from ..models.deployment import AgentDeployment
+        deployment = db.query(AgentDeployment).filter(
+            AgentDeployment.deployment_id == deployment_id
+        ).first()
+        
+        if not deployment:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Deployment not found"
+            )
+        
+        # Verify that the deployment belongs to the requesting user
+        if deployment.hiring.user_id != user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: You can only view your own deployments"
+            )
+        
+        # Get container resource usage
+        try:
+            enhanced_billing_service = EnhancedBillingService(db)
+            container_costs = await enhanced_billing_service._get_container_resource_costs(
+                user_id, 
+                deployment.created_at, 
+                datetime.now(timezone.utc)
+            )
+            
+            # Find the specific deployment
+            deployment_resources = None
+            for dep in container_costs.get("deployments", []):
+                if dep.get("deployment_id") == deployment_id:
+                    deployment_resources = {
+                        "deployment_id": deployment_id,
+                        "agent_id": deployment.agent_id,
+                        "agent_type": deployment.deployment_type,
+                        "status": deployment.status,
+                        "created_at": deployment.created_at.isoformat(),
+                        "started_at": deployment.started_at.isoformat() if deployment.started_at else None,
+                        "cpu_hours": dep.get("cpu_hours", 0.0),
+                        "memory_gb_hours": dep.get("memory_gb_hours", 0.0),
+                        "storage_gb": dep.get("storage_gb", 0.0),
+                        "network_gb": dep.get("network_gb", 0.0),
+                        "total_cost": dep.get("total_cost", 0.0),
+                        "start_time": dep.get("start_time"),
+                        "end_time": dep.get("end_time"),
+                        "hourly_breakdown": dep.get("hourly_breakdown", [])
+                    }
+                    break
+            
+            if not deployment_resources:
+                # If no detailed data, provide basic deployment info
+                deployment_resources = {
+                    "deployment_id": deployment_id,
+                    "agent_id": deployment.agent_id,
+                    "agent_type": deployment.deployment_type,
+                    "status": deployment.status,
+                    "created_at": deployment.created_at.isoformat(),
+                    "started_at": deployment.started_at.isoformat() if deployment.started_at else None,
+                    "cpu_hours": 0.0,
+                    "memory_gb_hours": 0.0,
+                    "storage_gb": 0.0,
+                    "network_gb": 0.0,
+                    "total_cost": 0.0,
+                    "note": "Resource usage data not available yet"
+                }
+            
+            return deployment_resources
+            
+        except Exception as e:
+            logger.warning(f"Failed to get container resource costs for deployment {deployment_id}: {e}")
+            # Return basic deployment info if resource data is unavailable
+            return {
+                "deployment_id": deployment_id,
+                "agent_id": deployment.agent_id,
+                "agent_type": deployment.deployment_type,
+                "status": deployment.status,
+                "created_at": deployment.created_at.isoformat(),
+                "started_at": deployment.started_at.isoformat() if deployment.started_at else None,
+                "note": f"Resource usage data unavailable: {str(e)}"
+            }
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching deployment resources: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch deployment resources: {str(e)}"
         )
 
 

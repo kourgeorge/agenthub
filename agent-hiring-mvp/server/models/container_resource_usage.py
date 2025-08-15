@@ -58,12 +58,9 @@ class ContainerResourceUsage(Base):
     agent_type = Column(String(20), nullable=True)  # Type of agent
     resource_limits = Column(JSON, nullable=True)  # Applied resource limits
     
-    # Relationships
+    # Relationships - only keep deployment for direct access
     deployment = relationship("AgentDeployment", back_populates="resource_usage")
-    agent = relationship("Agent", back_populates="container_resource_usage")
-    hiring = relationship("Hiring", back_populates="container_resource_usage")
-    user = relationship("User", back_populates="container_resource_usage")
-    
+
     def __repr__(self) -> str:
         return f"<ContainerResourceUsage(id={self.id}, container='{self.container_name}', cost=${self.total_cost:.6f})>"
 
@@ -109,13 +106,7 @@ class AgentActivityLog(Base):
     agent_type = Column(String(20), nullable=True)
     user_agent = Column(String(255), nullable=True)  # Client user agent
     ip_address = Column(String(45), nullable=True)  # Client IP address
-    
-    # Relationships
-    agent = relationship("Agent", back_populates="activity_logs")
-    hiring = relationship("Hiring", back_populates="activity_logs")
-    user = relationship("User", back_populates="activity_logs")
-    deployment = relationship("AgentDeployment", back_populates="activity_logs")
-    
+
     def __repr__(self) -> str:
         return f"<AgentActivityLog(id={self.id}, agent='{self.agent_id}', activity='{self.activity_type}', cost=${self.total_cost:.6f})>"
 
@@ -128,8 +119,7 @@ class ResourcePricing(Base):
     
     # Resource type
     resource_type = Column(String(50), nullable=False, unique=True)  # cpu, memory, network, storage
-    deployment_type = Column(String(20), nullable=False)  # acp, function, persistent
-    
+
     # Pricing configuration
     base_price = Column(Float, nullable=False)  # Base price per unit
     price_unit = Column(String(20), nullable=False)  # per_hour, per_gb, per_request, etc.
@@ -199,11 +189,6 @@ class UsageAggregation(Base):
     # Metadata
     deployment_type = Column(String(20), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    
-    # Relationships
-    user = relationship("User", back_populates="usage_aggregations")
-    agent = relationship("Agent", back_populates="usage_aggregations")
-    hiring = relationship("Hiring", back_populates="usage_aggregations")
     
     def __repr__(self) -> str:
         return f"<UsageAggregation(id={self.id}, user={self.user_id}, agent={self.agent_id}, cost=${self.total_cost:.6f})>"

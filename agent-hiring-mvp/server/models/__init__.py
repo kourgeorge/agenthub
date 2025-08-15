@@ -6,9 +6,12 @@ from .agent_file import AgentFile
 from .hiring import Hiring, HiringStatus
 from .execution import Execution, ExecutionStatus
 from .user import User
-from .resource_usage import UserBudget
+from .resource_usage import UserBudget, ExecutionResourceUsage, ResourceConfig
 from .user_api_key import UserApiKey
 from .invoice import Invoice
+from .deployment import AgentDeployment, DeploymentStatus
+from .container_resource_usage import ContainerResourceUsage, AgentActivityLog, ResourcePricing, UsageAggregation
+
 
 __all__ = [
     "Base",
@@ -21,6 +24,15 @@ __all__ = [
     "ExecutionStatus",
     "User",
     "UserBudget",
+    "ExecutionResourceUsage",
+    "ResourceConfig",
     "UserApiKey",
     "Invoice",
+    "AgentDeployment",
+    "DeploymentStatus",
+    "ContainerResourceUsage",
+    "AgentActivityLog",
+    "ResourcePricing",
+    "UsageAggregation",
+
 ] 

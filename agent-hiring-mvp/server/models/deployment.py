@@ -68,5 +68,8 @@ class AgentDeployment(Base):
     agent = relationship("Agent", backref="deployments")
     hiring = relationship("Hiring", backref="deployment")
     
+    # Container resource usage relationship
+    resource_usage = relationship("ContainerResourceUsage", back_populates="deployment")
+    
     def __repr__(self) -> str:
         return f"<AgentDeployment(id={self.id}, deployment_id='{self.deployment_id}', status='{self.status}')>" 

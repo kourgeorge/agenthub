@@ -27,8 +27,11 @@ try:
 except ImportError:
     logging.warning("python-dotenv not installed, environment variables may not be loaded from .env file")
 
-from .database.init_db import init_database
+from .database.init_db import init_database, get_current_session
 from .services.token_service import TokenService
+from .services.resource_usage_tracker import ResourceUsageTracker
+from .models.deployment import AgentDeployment
+from .models.hiring import Hiring
 # Import models to ensure they're registered with SQLAlchemy Base metadata
 from .models import *
 from .api import (
@@ -38,6 +41,7 @@ from .api import (
     acp_router, 
     users_router, 
     billing_router,
+    enhanced_billing_router,
     deployment_router,
     agent_proxy_router,
     resources_router,
@@ -58,6 +62,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Global task references for monitoring
+cleanup_task = None
+metrics_task = None
+metrics_collection_active = False
+
 
 async def cleanup_tokens():
     """Background task to clean up expired tokens and blacklist."""
@@ -70,9 +79,77 @@ async def cleanup_tokens():
         except Exception as e:
             logger.error(f"Error during token cleanup: {e}")
 
+
+async def collect_container_metrics():
+    """Background task to continuously collect container resource usage metrics."""
+    # Wait a bit for the system to fully initialize before starting metrics collection
+    await asyncio.sleep(10)
+    logger.info("Starting container metrics collection service...")
+    
+    while True:
+        try:
+            # Get a fresh database session for this iteration
+            db = get_current_session()
+            try:
+                # Get all running deployments
+                running_deployments = db.query(AgentDeployment).join(Hiring).filter(
+                    AgentDeployment.status == "running"
+                ).all()
+                
+                if running_deployments:
+                    logger.info(f"Collecting metrics for {len(running_deployments)} running deployments")
+                    
+                    # Initialize resource usage tracker
+                    tracker = ResourceUsageTracker(db)
+                    
+                    # Collect metrics for each running deployment
+                    for deployment in running_deployments:
+                        try:
+                            # Check if container still exists and is running
+                            if deployment.container_name:
+                                # Run the synchronous collect_container_metrics in a thread pool
+                                loop = asyncio.get_event_loop()
+                                resource_usage = await loop.run_in_executor(
+                                    None, 
+                                    tracker.collect_container_metrics, 
+                                    deployment.deployment_id
+                                )
+                                
+                                if resource_usage:
+                                    logger.debug(f"Collected metrics for deployment {deployment.deployment_id}: cost=${resource_usage.total_cost:.6f}")
+                                else:
+                                    logger.debug(f"No metrics collected for deployment {deployment.deployment_id} (container may not be accessible)")
+                                    
+                            else:
+                                logger.warning(f"Deployment {deployment.deployment_id} has no container name")
+                                
+                        except Exception as e:
+                            logger.error(f"Error collecting metrics for deployment {deployment.deployment_id}: {e}")
+                            continue
+                    
+                    logger.info(f"Completed metrics collection for {len(running_deployments)} deployments")
+                else:
+                    logger.debug("No running deployments found for metrics collection")
+                    
+            except Exception as e:
+                logger.error(f"Error in container metrics collection: {e}")
+            finally:
+                db.close()
+                
+            # Wait for next collection cycle (30 seconds as configured in ResourceUsageTracker)
+            await asyncio.sleep(30)
+            
+        except Exception as e:
+            logger.error(f"Fatal error in container metrics collection loop: {e}")
+            # Wait a bit longer on error before retrying
+            await asyncio.sleep(60)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager."""
+    global cleanup_task, metrics_task, metrics_collection_active
+    
     # Startup
     logger.info("Starting Agent Hiring System...")
     try:
@@ -83,6 +160,11 @@ async def lifespan(app: FastAPI):
         cleanup_task = asyncio.create_task(cleanup_tokens())
         logger.info("Token cleanup task started")
         
+        # Start container metrics collection task
+        metrics_task = asyncio.create_task(collect_container_metrics())
+        metrics_collection_active = True
+        logger.info("Container metrics collection task started")
+        
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}")
         raise
@@ -92,11 +174,19 @@ async def lifespan(app: FastAPI):
     # Shutdown
     logger.info("Shutting down Agent Hiring System...")
     try:
-        cleanup_task.cancel()
-        await cleanup_task
-        logger.info("Token cleanup task stopped")
+        if cleanup_task:
+            cleanup_task.cancel()
+            await cleanup_task
+            logger.info("Token cleanup task stopped")
+        
+        if metrics_task:
+            metrics_task.cancel()
+            await metrics_task
+            metrics_collection_active = False
+            logger.info("Container metrics collection task stopped")
+        
     except Exception as e:
-        logger.error(f"Error stopping cleanup task: {e}")
+        logger.error(f"Error stopping background tasks: {e}")
 
 
 # Create FastAPI app
@@ -125,6 +215,7 @@ app.include_router(execution_router, prefix="/api/v1")
 app.include_router(acp_router, prefix="/api/v1")
 app.include_router(users_router, prefix="/api/v1")
 app.include_router(billing_router, prefix="/api/v1")
+app.include_router(enhanced_billing_router, prefix="/api/v1")
 app.include_router(deployment_router, prefix="/api/v1")
 app.include_router(agent_proxy_router, prefix="/api/v1")
 app.include_router(resources_router, prefix="/api/v1")
@@ -153,26 +244,28 @@ async def root():
             "execution": "/api/v1/execution",
             "acp": "/api/v1/acp",
             "billing": "/api/v1/billing",
+            "enhanced_billing": "/api/v1/enhanced-billing",
             "deployment": "/api/v1/deployment",
-            "agent_proxy": "/api/v1/agent-proxy",
-            "resources": "/api/v1/resources",
-            "api_keys": "/api/v1/api-keys",
-            "earnings": "/api/v1/earnings",
-            "contact": "/api/v1/contact",
-            "webhooks": "/api/v1/webhooks",
-            "admin": "/api/v1/admin",
-            "metrics": "/api/v1/metrics"
         }
     }
 
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint."""
+    """Health check endpoint to monitor system status."""
     return {
         "status": "healthy",
-        "service": "agent-hiring-system",
-        "version": "0.1.0",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "services": {
+            "database": "connected",
+            "token_cleanup": "active" if cleanup_task and not cleanup_task.done() else "inactive",
+            "metrics_collection": "active" if metrics_collection_active and metrics_task and not metrics_task.done() else "inactive"
+        },
+        "metrics_collection": {
+            "active": metrics_collection_active,
+            "task_status": "running" if metrics_task and not metrics_task.done() else "stopped",
+            "last_error": None  # Could be enhanced to track last error
+        }
     }
 
 
