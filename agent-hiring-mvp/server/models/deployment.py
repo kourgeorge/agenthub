@@ -19,6 +19,7 @@ class DeploymentStatus(str, Enum):
     STOPPED = "stopped"
     FAILED = "failed"
     CRASHED = "crashed"
+    CANCELLED = "cancelled"
 
 
 class AgentDeployment(Base):

@@ -5,7 +5,7 @@ import logging
 import zipfile
 from pathlib import Path
 from typing import List, Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
@@ -290,10 +290,9 @@ class AgentService:
                 else:
                     logger.info(f"Successfully stopped deployment {deployment.deployment_id}")
                     
-                    # Remove the deployment record
-                    self.db.delete(deployment)
-                    self.db.commit()
-                    logger.info(f"Removed deployment record for hiring {hiring.id}")
+                    # Note: Deployment status is managed by HiringService, not here
+                    # This method only handles container stopping, not deployment lifecycle
+                    logger.info(f"Stopped deployment {deployment.deployment_id} for hiring {hiring.id}")
         except Exception as e:
             logger.error(f"Exception stopping hiring deployment: {e}")
     
@@ -318,10 +317,9 @@ class AgentService:
                 else:
                     logger.info(f"Successfully stopped function deployment {deployment.deployment_id}")
                     
-                    # Remove the deployment record
-                    self.db.delete(deployment)
-                    self.db.commit()
-                    logger.info(f"Removed function deployment record for hiring {hiring.id}")
+                    # Note: Deployment status is managed by HiringService, not here
+                    # This method only handles container stopping, not deployment lifecycle
+                    logger.info(f"Stopped function deployment {deployment.deployment_id} for hiring {hiring.id}")
         except Exception as e:
             logger.error(f"Exception stopping function deployment: {e}")
     
@@ -372,9 +370,9 @@ class AgentService:
                     else:
                         logger.info(f"Successfully stopped deployment {deployment.deployment_id}")
                     
-                    # Remove the deployment record
-                    self.db.delete(deployment)
-                    logger.info(f"Removed deployment record {deployment.deployment_id}")
+                    # Note: Deployment status is managed by HiringService, not here
+                    # This method only handles container stopping, not deployment lifecycle
+                    logger.info(f"Stopped deployment {deployment.deployment_id}")
                     
                 except Exception as e:
                     logger.error(f"Exception cleaning up deployment {deployment.deployment_id}: {e}")

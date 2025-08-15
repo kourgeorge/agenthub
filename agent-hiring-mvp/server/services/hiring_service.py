@@ -306,10 +306,12 @@ class HiringService:
                     else:
                         logger.info(f"Successfully stopped deployment {deployment.deployment_id}")
                         
-                    # Remove the deployment record
-                    self.db.delete(deployment)
+                    # Update deployment status to cancelled instead of deleting
+                    deployment.status = "cancelled"
+                    deployment.stopped_at = datetime.now(timezone.utc)
+                    deployment.is_healthy = False
                     self.db.commit()
-                    logger.info(f"Removed deployment record for hiring {hiring.id}")
+                    logger.info(f"Updated deployment {deployment.deployment_id} status to cancelled for hiring {hiring.id}")
                     return True
             return True  # No deployment to cancel
         except Exception as e:
@@ -386,10 +388,12 @@ class HiringService:
                     else:
                         logger.info(f"Successfully stopped function deployment {deployment.deployment_id}")
                         
-                    # Remove the deployment record
-                    self.db.delete(deployment)
+                    # Update deployment status to cancelled instead of deleting
+                    deployment.status = "cancelled"
+                    deployment.stopped_at = datetime.now(timezone.utc)
+                    deployment.is_healthy = False
                     self.db.commit()
-                    logger.info(f"Removed function deployment record for hiring {hiring.id}")
+                    logger.info(f"Updated function deployment {deployment.deployment_id} status to cancelled for hiring {hiring.id}")
                     return True
             return True  # No deployment to cancel
         except Exception as e:
@@ -430,10 +434,12 @@ class HiringService:
                     else:
                         logger.info(f"Successfully stopped persistent deployment {deployment.deployment_id}")
                         
-                    # Remove the deployment record
-                    self.db.delete(deployment)
+                    # Update deployment status to cancelled instead of deleting
+                    deployment.status = "cancelled"
+                    deployment.stopped_at = datetime.now(timezone.utc)
+                    deployment.is_healthy = False
                     self.db.commit()
-                    logger.info(f"Removed persistent deployment record for hiring {hiring.id}")
+                    logger.info(f"Updated persistent deployment {deployment.deployment_id} status to cancelled for hiring {hiring.id}")
                     return True
             return True  # No deployment to cancel
         except Exception as e:
