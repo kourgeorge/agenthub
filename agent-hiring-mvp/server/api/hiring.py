@@ -343,7 +343,7 @@ def get_agent_hirings(
 
 
 @router.put("/{hiring_id}/activate")
-def activate_hiring(
+async def activate_hiring(
     hiring_id: int,
     notes: Optional[str] = None,
     current_user = Depends(get_current_user_optional),
@@ -366,7 +366,7 @@ def activate_hiring(
             detail="Access denied: You can only modify your own hirings"
         )
     
-    result = hiring_service.activate_hiring(hiring_id, notes)
+    result = await hiring_service.activate_hiring(hiring_id, notes)
     
     if not result:
         raise HTTPException(
@@ -392,7 +392,7 @@ def activate_hiring(
 
 
 @router.put("/{hiring_id}/suspend")
-def suspend_hiring(
+async def suspend_hiring(
     hiring_id: int,
     notes: Optional[str] = None,
     current_user = Depends(get_current_user_optional),
@@ -415,7 +415,7 @@ def suspend_hiring(
             detail="Access denied: You can only modify your own hirings"
         )
     
-    hiring = hiring_service.suspend_hiring(hiring_id, notes)
+    hiring = await hiring_service.suspend_hiring(hiring_id, notes)
     
     if not hiring:
         raise HTTPException(
@@ -431,7 +431,7 @@ def suspend_hiring(
 
 
 @router.put("/{hiring_id}/cancel")
-def cancel_hiring(
+async def cancel_hiring(
     hiring_id: int,
     notes: Optional[str] = None,
     timeout: Optional[int] = 60,
@@ -456,7 +456,7 @@ def cancel_hiring(
         )
     
     # Always perform the cancellation (this will clean up containers even if already cancelled)
-    hiring = hiring_service.cancel_hiring(hiring_id, notes)
+    hiring = await hiring_service.cancel_hiring(hiring_id, notes)
     
     if not hiring:
         raise HTTPException(

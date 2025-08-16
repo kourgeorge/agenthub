@@ -173,7 +173,7 @@ async def run_execution(
     current_user = Depends(get_current_user),
     db: Session = Depends(get_session_dependency)
 ):
-    """Run an execution (initialize or run type)."""
+    """Run an execution (initialize or run type) and wait for completion."""
     import logging
     logger = logging.getLogger(__name__)
     
@@ -199,22 +199,58 @@ async def run_execution(
                 detail="Access denied: You can only run your own executions"
             )
         
-        # Route based on execution type
-        if execution.execution_type == "initialize":
-            # Pass the authenticated user_id to the execution service
-            result = await execution_service.execute_initialization(execution_id, user_id=current_user.id)
-        else:
-            # Pass the authenticated user_id to the execution service
-            result = await execution_service.execute_agent(execution_id, user_id=current_user.id)
-        
-        if result.get("status") == "error":
-            logger.error(f"Execution failed: {execution_id} - {result.get('error')}")
+        # Update execution status to running immediately
+        execution_service.update_execution_status(execution_id, ExecutionStatus.RUNNING)
+        logger.info(f"🚀 Execution {execution_id} status set to RUNNING")
+
+        # Execute and wait for completion instead of running in background
+        try:
+            logger.info(f"🚀 Starting execution for {execution_id}")
+
+            if execution.execution_type == "initialize":
+                logger.info(f"Running initialization for execution {execution_id}")
+                result = await execution_service.execute_initialization(execution_id, user_id=current_user.id)
+            else:
+                logger.info(f"⚙Running agent execution for execution {execution_id}")
+                result = await execution_service.execute_agent(execution_id, user_id=current_user.id)
+
+            logger.info(f"Execution completed for {execution_id}")
+
+            # Return the execution result
+            if result.get("status") == "success":
+                return {
+                    "status": "success",
+                    "execution_id": execution_id,
+                    "result": result.get("result", {}),
+                    "message": f"Execution completed successfully",
+                    "execution_type": execution.execution_type,
+                    "execution_time": result.get("execution_time", 0),
+                    "usage_summary": result.get("usage_summary", {})
+                }
+            else:
+                # Return error result
+                return {
+                    "status": "error",
+                    "execution_id": execution_id,
+                    "error": result.get("error", "Execution failed"),
+                    "execution_type": execution.execution_type
+                }
+
+        except Exception as e:
+            logger.error(f"Execution failed for {execution_id}: {e}")
+            # Update status to failed
+            try:
+                execution_service.update_execution_status(execution_id, ExecutionStatus.FAILED, error_message=str(e))
+                logger.error(f"Execution {execution_id} status set to FAILED due to error: {str(e)}")
+            except Exception as update_error:
+                logger.error(f"Failed to update execution status for {execution_id}: {update_error}")
+            
+            # Re-raise the error to return it to the client
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=result.get("error", "Execution failed")
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Execution failed: {str(e)}"
             )
-        
-        return result
+
     except HTTPException:
         raise
     except Exception as e:

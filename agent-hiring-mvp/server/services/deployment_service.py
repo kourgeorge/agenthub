@@ -193,8 +193,8 @@ class DeploymentService:
             logger.error(f"Failed to create deployment: {e}")
             return {"error": str(e)}
     
-    def build_and_deploy(self, deployment_id: str) -> Dict[str, Any]:
-        """Build Docker image and deploy the agent."""
+    async def build_and_deploy(self, deployment_id: str) -> Dict[str, Any]:
+        """Build Docker image and deploy the agent asynchronously."""
         try:
             # Get deployment
             deployment = self.db.query(AgentDeployment).filter(
@@ -224,15 +224,17 @@ class DeploymentService:
             hiring_id = deployment.hiring_id
             deployment_uuid = deployment_id.split('_')[-1]  # Get the UUID part
             image_name = generate_docker_image_name(agent_type, user_id, agent.id, hiring_id, deployment_uuid)
-            image = self._build_docker_image(deploy_dir, image_name)
+            
+            # Build Docker image asynchronously
+            image = await self._build_docker_image(deploy_dir, image_name)
             
             # Update deployment with image info
             deployment.docker_image = image_name
             deployment.status = DeploymentStatus.DEPLOYING.value
             self.db.commit()
             
-            # Deploy container
-            container = self._deploy_container(deployment, image_name)
+            # Deploy container asynchronously
+            container = await self._deploy_container(deployment, image_name)
             
             # Update deployment with container info
             deployment.container_id = container.id
@@ -513,30 +515,47 @@ class PersistentAgent(ABC):
             logger.error(f"Failed to include SDK files: {e}")
             # Don't fail the deployment if SDK inclusion fails
     
-    def _build_docker_image(self, deploy_dir: Path, image_name: str):
-        """Build Docker image for the agent."""
+    async def _build_docker_image(self, deploy_dir: Path, image_name: str):
+        """Build Docker image for the agent asynchronously."""
         logger.info(f"Building Docker image {image_name}")
         
-        image, logs = self.docker_client.images.build(
-            path=str(deploy_dir),
-            tag=image_name,
-            rm=True,
-            forcerm=True
-        )
+        # Run Docker build in a thread pool to avoid blocking
+        loop = asyncio.get_event_loop()
         
-        # Log build output
-        for log in logs:
-            if isinstance(log, dict) and 'stream' in log:
-                stream_content = log['stream']
-                if isinstance(stream_content, str):
-                    logger.info(f"Build: {stream_content.strip()}")
-        
-        return image
-    
+        # Add timeout to prevent hanging builds
+        try:
+            image, logs = await asyncio.wait_for(
+                loop.run_in_executor(
+                    None,
+                    lambda: self.docker_client.images.build(
+                        path=str(deploy_dir),
+                        tag=image_name,
+                        rm=True,
+                        forcerm=True
+                    )
+                ),
+                timeout=300  # 5 minutes timeout
+            )
+            
+            # Log build output
+            for log in logs:
+                if isinstance(log, dict) and 'stream' in log:
+                    stream_content = log['stream']
+                    if isinstance(stream_content, str):
+                        logger.info(f"Build: {stream_content.strip()}")
+            
+            return image
+            
+        except asyncio.TimeoutError:
+            logger.error(f"Docker build timed out for {image_name} after 5 minutes")
+            raise Exception(f"Docker build timed out for {image_name}")
+        except Exception as e:
+            logger.error(f"Docker build failed for {image_name}: {e}")
+            raise
 
 
-    def _deploy_container(self, deployment: AgentDeployment, image_name: str):
-        """Deploy Docker container for the agent."""
+    async def _deploy_container(self, deployment: AgentDeployment, image_name: str):
+        """Deploy Docker container for the agent asynchronously."""
         user_id = deployment.hiring.user_id or "anon"
         agent_type = deployment.deployment_type or "function"
         
@@ -564,62 +583,59 @@ class PersistentAgent(ABC):
         
         # Add resource limits
         try:
-            # Get agent configuration for resource limits
-            agent_config = {}
-            if deployment.agent and hasattr(deployment.agent, 'config_schema'):
-                agent_config = deployment.agent.config_schema or {}
+            # Get resource limits for the agent
+            resource_limits = get_agent_resource_limits(deployment.agent_id)
+            docker_config = to_docker_config(resource_limits)
+            container_config.update(docker_config)
             
-            # Get resource limits (defaults + agent overrides)
-            resource_limits = get_agent_resource_limits(
-                agent_config, 
-                deployment.deployment_type or "acp"
-            )
+            # Run container creation in a thread pool to avoid blocking
+            loop = asyncio.get_event_loop()
             
-            # Convert to Docker configuration
-            docker_resource_config = to_docker_config(resource_limits)
-            container_config.update(docker_resource_config)
+            # Add timeout to prevent hanging container creation
+            try:
+                container = await asyncio.wait_for(
+                    loop.run_in_executor(
+                        None,
+                        lambda: self.docker_client.containers.run(**container_config)
+                    ),
+                    timeout=120  # 2 minutes timeout
+                )
+            except asyncio.TimeoutError:
+                logger.error(f"Container creation timed out for {container_name} after 2 minutes")
+                raise Exception(f"Container creation timed out for {container_name}")
+            except Exception as e:
+                logger.error(f"Container creation failed for {container_name}: {e}")
+                raise
             
-            logger.info(f"Applied resource limits: {resource_limits}")
+            # Update deployment with container info
+            deployment.container_id = container.id
+            deployment.container_name = container_name
+            deployment.status = DeploymentStatus.RUNNING.value
+            deployment.deployed_at = datetime.now(timezone.utc)
+            deployment.is_healthy = True
+            deployment.health_check_failures = 0
+            deployment.last_health_check = datetime.now(timezone.utc)
+            
+            # Get container port mapping
+            container.reload()
+            if container.ports:
+                # Extract the first exposed port
+                for container_port, host_ports in container.ports.items():
+                    if host_ports:
+                        deployment.external_port = int(host_ports[0]['HostPort'])
+                        break
+            
+            self.db.commit()
+            
+            logger.info(f"Container {container_name} deployed successfully with ID {container.id}")
+            return container
             
         except Exception as e:
-            logger.warning(f"Failed to apply resource limits, using defaults: {e}")
-            # Continue without resource limits if there's an error
-        
-        # Add port mapping for server-based agents (acp only)
-        if agent_type == "acp" and deployment.external_port:
-            container_config["ports"] = {f"{deployment.internal_port}/tcp": deployment.external_port}
-            container_config["restart_policy"] = {"Name": "unless-stopped"}
-        elif agent_type == "persistent":
-            # Persistent agents stay running and need restart policy
-            container_config["restart_policy"] = {"Name": "unless-stopped"}
-        else:
-            # Function agents don't need restart policy since they run once
-            container_config["restart_policy"] = {"Name": "no"}
-        
-        # Add any additional deployment configuration
-        if deployment.deployment_config:
-            container_config.update(deployment.deployment_config)
-        
-        # Create and start container
-        container = self.docker_client.containers.run(**container_config)
-        
-        logger.info(f"Container {container_name} started with ID {container.id}")
-        
-        # Collect initial metrics for the new container
-        try:
-            from .prometheus_metrics import metrics_service
-            deployment_info = {
-                'container_name': container_name,
-                'agent_id': deployment.agent_id,
-                'hiring_id': deployment.hiring_id,
-                'deployment_type': deployment.deployment_type
-            }
-            metrics_service.collect_container_metrics(deployment_info)
-            logger.info(f"Initial metrics collected for container {container_name}")
-        except Exception as e:
-            logger.warning(f"Failed to collect initial metrics for container {container_name}: {e}")
-        
-        return container
+            logger.error(f"Failed to deploy container {container_name}: {e}")
+            deployment.status = DeploymentStatus.FAILED.value
+            deployment.error_message = str(e)
+            self.db.commit()
+            raise
     
     def suspend_deployment(self, deployment_id: str) -> Dict[str, Any]:
         """Suspend a deployment by stopping the container but keeping it."""
@@ -1007,7 +1023,7 @@ class PersistentAgent(ABC):
         import json
         return json.loads(config_file.file_content)
 
-    def execute_persistent_agent(self, deployment_id: str, input_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute_persistent_agent(self, deployment_id: str, input_data: Dict[str, Any]) -> Dict[str, Any]:
         """Execute a persistent agent in its container via docker exec."""
         try:
             # Get deployment information
@@ -1145,7 +1161,7 @@ class PersistentAgent(ABC):
             return {"error": str(e)}
 
     def cleanup_persistent_agent(self, deployment_id: str) -> Dict[str, Any]:
-        """Clean up a persistent agent in its container via docker exec."""
+        """Clean up a persistent agent in its container via docker exec (non-blocking)."""
         try:
             # Get deployment information
             deployment = self.db.query(AgentDeployment).filter(
@@ -1180,18 +1196,20 @@ class PersistentAgent(ABC):
                 "agent_class": agent_class
             }
             
-            result = self._execute_in_container(container_name, exec_input)
+            # Start cleanup in a separate thread to avoid blocking
+            import threading
+            cleanup_thread = threading.Thread(
+                target=self._execute_in_container_sync,
+                args=(container_name, exec_input)
+            )
+            cleanup_thread.start()
             
-            if result.get("status") == "success":
-                return {
-                    "status": "success",
-                    "result": result.get("result", {})
-                }
-            else:
-                return {
-                    "status": "error",
-                    "error": result.get("error", "Cleanup failed")
-                }
+            # Return immediately - cleanup is running in background
+            return {
+                "status": "success",
+                "message": "Cleanup started in background",
+                "deployment_id": deployment_id
+            }
                 
         except Exception as e:
             logger.error(f"Error cleaning up persistent agent: {e}")
@@ -1348,6 +1366,7 @@ import json
 import sys
 import os
 import tempfile
+import time
 from io import StringIO
 from contextlib import redirect_stdout, redirect_stderr
 

@@ -1,6 +1,7 @@
 """Hiring service for managing agent hiring workflow."""
 
 import logging
+import asyncio
 import threading
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List
@@ -68,61 +69,89 @@ class HiringService:
         return hiring
     
     def _setup_agent_deployment_async(self, hiring: Hiring, agent: Agent):
-        """Setup deployment for any agent type in background thread."""
-        def deploy_in_background():
-            try:
-                # Create a new database session for the background thread
-                from ..database.config import get_engine
-                from sqlalchemy.orm import sessionmaker
-                
-                engine = get_engine()
-                SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-                db = SessionLocal()
-                
-                try:
-                    # Import here to avoid circular imports
-                    if agent.agent_type == AgentType.FUNCTION.value:
-                        from .function_deployment_service import FunctionDeploymentService
-                        deployment_service = FunctionDeploymentService(db)
-                    else:
-                        from .deployment_service import DeploymentService
-                        deployment_service = DeploymentService(db)
-                    
-                    # Create deployment
-                    if agent.agent_type == AgentType.FUNCTION.value:
-                        deployment_result = deployment_service.create_function_deployment(hiring.id)
-                    else:
-                        deployment_result = deployment_service.create_deployment(hiring.id)
-                    
-                    if "error" in deployment_result:
-                        logger.error(f"Failed to create deployment for hiring {hiring.id}: {deployment_result['error']}")
-                        return
-                    
-                    deployment_id = deployment_result["deployment_id"]
-                    logger.info(f"Created deployment {deployment_id} for hiring {hiring.id}")
-                    
-                    # Build and deploy the container
-                    if agent.agent_type == AgentType.FUNCTION.value:
-                        deploy_result = deployment_service.build_and_deploy_function(deployment_id)
-                    else:
-                        deploy_result = deployment_service.build_and_deploy(deployment_id)
-                    
-                    if "error" in deploy_result:
-                        logger.error(f"Failed to deploy {deployment_id}: {deploy_result['error']}")
-                        return
-                    
-                    logger.info(f"Successfully deployed {agent.agent_type} agent {agent.id} for hiring {hiring.id}")
-                    
-                finally:
-                    db.close()
-                    
-            except Exception as e:
-                logger.error(f"Exception in agent deployment setup: {e}")
-        
-        # Start deployment in background thread
-        deployment_thread = threading.Thread(target=deploy_in_background, daemon=True)
-        deployment_thread.start()
-        logger.info(f"Started {agent.agent_type} agent deployment in background for hiring {hiring.id}")
+        """Setup deployment for any agent type."""
+        try:
+            # Import here to avoid circular imports
+            if agent.agent_type == AgentType.FUNCTION.value:
+                from .function_deployment_service import FunctionDeploymentService
+                deployment_service = FunctionDeploymentService(self.db)
+            else:
+                from .deployment_service import DeploymentService
+                deployment_service = DeploymentService(self.db)
+            
+            # Create deployment record only
+            if agent.agent_type == AgentType.FUNCTION.value:
+                deployment_result = deployment_service.create_function_deployment(hiring.id)
+            else:
+                deployment_result = deployment_service.create_deployment(hiring.id)
+            
+            if "error" in deployment_result:
+                logger.error(f"Failed to create deployment for hiring {hiring.id}: {deployment_result['error']}")
+                return
+            
+            deployment_id = deployment_result["deployment_id"]
+            logger.info(f"Created deployment {deployment_id} for hiring {hiring.id}")
+            
+            # Start build process in background thread (non-blocking)
+            import threading
+            if agent.agent_type == AgentType.FUNCTION.value:
+                thread = threading.Thread(
+                    target=self._run_function_deployment,
+                    args=(deployment_id,),
+                    daemon=True
+                )
+            else:
+                thread = threading.Thread(
+                    target=self._run_acp_deployment,
+                    args=(deployment_id,),
+                    daemon=True
+                )
+            
+            thread.start()
+            logger.info(f"Started build and deploy thread for {agent.agent_type} agent {deployment_id}")
+            
+        except Exception as e:
+            logger.error(f"Exception in agent deployment setup: {e}")
+    
+    def _run_function_deployment(self, deployment_id):
+        """Run function deployment in background thread."""
+        try:
+            # Create new database session for this thread
+            from ..database.config import get_session_dependency
+            db = next(get_session_dependency())
+            
+            # Create new deployment service with fresh session
+            from .function_deployment_service import FunctionDeploymentService
+            deployment_service = FunctionDeploymentService(db)
+            
+            import asyncio
+            # Create new event loop for this thread
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(deployment_service.build_and_deploy_function(deployment_id))
+            
+        except Exception as e:
+            logger.error(f"Background function deployment failed for {deployment_id}: {e}")
+    
+    def _run_acp_deployment(self, deployment_id):
+        """Run ACP deployment in background thread."""
+        try:
+            # Create new database session for this thread
+            from ..database.config import get_session_dependency
+            db = next(get_session_dependency())
+            
+            # Create new deployment service with fresh session
+            from .deployment_service import DeploymentService
+            deployment_service = DeploymentService(db)
+            
+            import asyncio
+            # Create new event loop for this thread
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(deployment_service.build_and_deploy(deployment_id))
+            
+        except Exception as e:
+            logger.error(f"Background ACP deployment failed for {deployment_id}: {e}")
     
     def _setup_acp_agent_deployment(self, hiring: Hiring, agent: Agent):
         """Setup deployment for ACP server agent (synchronous version - kept for compatibility)."""
@@ -156,35 +185,20 @@ class HiringService:
         """Get a hiring by ID."""
         return self.db.query(Hiring).filter(Hiring.id == hiring_id).first()
     
-    def update_hiring_status(self, hiring_id: int, status: HiringStatus, 
-                           notes: Optional[str] = None) -> Optional[Hiring]:
-        """Update hiring status and handle agent-specific actions."""
+    async def update_hiring_status(self, hiring_id: int, status: HiringStatus,
+                                  timeout: int = 60) -> Optional[Hiring]:
+        """Update hiring status and handle associated deployment changes."""
         hiring = self.get_hiring(hiring_id)
         if not hiring:
             return None
         
         old_status = hiring.status
+        logger.info(f"Updating hiring {hiring_id} status from {old_status} to {status.value}")
         
-        # Check if hiring is already in the target status
-        if old_status == status.value:
-            # For cancellation, always attempt to clean up containers even if already cancelled
-            if status == HiringStatus.CANCELLED:
-                logger.info(f"Hiring {hiring_id} is already {status.value}, but attempting to clean up any remaining containers")
-                # Attempt to clean up any remaining containers
-                acp_cancellation_success = self._handle_acp_agent_cancellation(hiring, timeout=60)
-                function_cancellation_success = self._handle_function_agent_cancellation(hiring, timeout=60)
-                persistent_cancellation_success = self._handle_persistent_agent_cancellation(hiring, timeout=60)
-                
-                if not acp_cancellation_success or not function_cancellation_success or not persistent_cancellation_success:
-                    logger.warning(f"Some resources may not have been fully terminated for hiring {hiring_id}")
-                
-                self.db.commit()
-                self.db.refresh(hiring)
-                return hiring
-            else:
-                # Return the hiring without making changes, but log the attempt
-                logger.info(f"Hiring {hiring_id} is already {status.value}")
-                return hiring
+        # If the hiring is already in the target status, return without changes
+        if hiring.status == status.value:
+            logger.info(f"Hiring {hiring_id} is already {status.value}")
+            return hiring
         
         hiring.status = status.value
         
@@ -201,9 +215,9 @@ class HiringService:
             hiring.last_executed_at = datetime.now(timezone.utc)
             # For ACP agents, suspend the deployment (keep container but stop processing)
             self._handle_acp_agent_suspension(hiring)
-            # For function agents, also suspend the deployment
+            # Also handle function agent suspension
             self._handle_function_agent_suspension(hiring)
-            # For persistent agents, also suspend the deployment
+            # Also handle persistent agent suspension
             self._handle_persistent_agent_suspension(hiring)
         elif status == HiringStatus.CANCELLED:
             hiring.last_executed_at = datetime.now(timezone.utc)
@@ -401,11 +415,13 @@ class HiringService:
             return False
     
     def _handle_persistent_agent_cancellation(self, hiring: Hiring, timeout: int = 60):
-        """Handle persistent agent cancellation (stop and remove deployment)."""
+        """Handle persistent agent cancellation (cleanup and stop deployment)."""
         try:
             agent = hiring.agent
             if agent and agent.agent_type == "persistent":
                 from .deployment_service import DeploymentService
+                from ..models.deployment import AgentDeployment
+                
                 deployment_service = DeploymentService(self.db)
                 
                 # Find existing deployment
@@ -416,17 +432,10 @@ class HiringService:
                 if deployment:
                     logger.info(f"Starting persistent agent cancellation process for deployment {deployment.deployment_id}")
                     
-                    # First, try to cleanup the persistent agent (save state, etc.)
-                    try:
-                        cleanup_result = deployment_service.cleanup_persistent_agent(deployment.deployment_id)
-                        if "error" in cleanup_result:
-                            logger.warning(f"Failed to cleanup persistent agent {deployment.deployment_id}: {cleanup_result['error']}")
-                        else:
-                            logger.info(f"Successfully cleaned up persistent agent {deployment.deployment_id}")
-                    except Exception as e:
-                        logger.warning(f"Error during persistent agent cleanup: {e}")
+                    # Run cleanup synchronously to ensure it completes before continuing
+                    self._cleanup_persistent_agent_sync(deployment_service, deployment.deployment_id)
                     
-                    # Stop and remove the deployment with timeout
+                    # Stop and remove the deployment with timeout (this is synchronous)
                     stop_result = deployment_service.stop_deployment(deployment.deployment_id, timeout=timeout)
                     if "error" in stop_result:
                         logger.error(f"Failed to stop persistent deployment {deployment.deployment_id}: {stop_result['error']}")
@@ -445,6 +454,25 @@ class HiringService:
         except Exception as e:
             logger.error(f"Exception handling persistent agent cancellation: {e}")
             return False
+    
+    def _cleanup_persistent_agent_sync(self, deployment_service, deployment_id: str):
+        """Synchronous wrapper for persistent agent cleanup."""
+        try:
+            # Run the async cleanup in a new event loop for this thread
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                cleanup_result = loop.run_until_complete(
+                    deployment_service.cleanup_persistent_agent(deployment_id)
+                )
+                if "error" in cleanup_result:
+                    logger.warning(f"Failed to cleanup persistent agent {deployment_id}: {cleanup_result['error']}")
+                else:
+                    logger.info(f"Successfully cleaned up persistent agent {deployment_id}")
+            finally:
+                loop.close()
+        except Exception as e:
+            logger.warning(f"Error during persistent agent cleanup: {e}")
     
     def _handle_persistent_agent_activation(self, hiring: Hiring) -> Optional[Dict[str, Any]]:
         """Handle persistent agent activation (resume deployment)."""
@@ -521,9 +549,9 @@ class HiringService:
         
         return query.order_by(Hiring.created_at.desc()).all()
     
-    def activate_hiring(self, hiring_id: int, notes: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    async def activate_hiring(self, hiring_id: int, notes: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """Activate a hiring and return deployment info for ACP agents."""
-        hiring = self.update_hiring_status(hiring_id, HiringStatus.ACTIVE, notes)
+        hiring = await self.update_hiring_status(hiring_id, HiringStatus.ACTIVE, notes)
         if not hiring:
             return None
         
@@ -553,13 +581,13 @@ class HiringService:
             "deployment": deployment_info
         }
     
-    def suspend_hiring(self, hiring_id: int, notes: Optional[str] = None) -> Optional[Hiring]:
+    async def suspend_hiring(self, hiring_id: int, notes: Optional[str] = None) -> Optional[Hiring]:
         """Suspend a hiring."""
-        return self.update_hiring_status(hiring_id, HiringStatus.SUSPENDED, notes)
+        return await self.update_hiring_status(hiring_id, HiringStatus.SUSPENDED, notes)
     
-    def cancel_hiring(self, hiring_id: int, notes: Optional[str] = None) -> Optional[Hiring]:
+    async def cancel_hiring(self, hiring_id: int, notes: Optional[str] = None) -> Optional[Hiring]:
         """Cancel a hiring."""
-        return self.update_hiring_status(hiring_id, HiringStatus.CANCELLED, notes)
+        return await self.update_hiring_status(hiring_id, HiringStatus.CANCELLED, notes)
     
     def get_hiring_stats(self, user_id: Optional[int] = None, agent_id: Optional[str] = None) -> Dict[str, Any]:
         """Get hiring statistics."""

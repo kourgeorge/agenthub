@@ -129,7 +129,7 @@ class FunctionDeploymentService:
             logger.error(f"Failed to create function deployment: {e}")
             return {"error": str(e)}
     
-    def build_and_deploy_function(self, deployment_id: str) -> Dict[str, Any]:
+    async def build_and_deploy_function(self, deployment_id: str) -> Dict[str, Any]:
         """Build Docker image and deploy the function agent."""
         try:
             # Get deployment
@@ -159,7 +159,7 @@ class FunctionDeploymentService:
             hiring_id = deployment.hiring_id
             deployment_uuid = deployment_id.split('_')[-1]  # Get the UUID part
             image_name = generate_docker_image_name("func", user_id, agent.id, hiring_id, deployment_uuid)
-            image = self._build_function_docker_image(deploy_dir, image_name)
+            image = await self._build_function_docker_image(deploy_dir, image_name)
             
             # Update deployment with image info
             deployment.docker_image = image_name
@@ -167,7 +167,7 @@ class FunctionDeploymentService:
             self.db.commit()
             
             # Deploy container
-            container = self._deploy_function_container(deployment, image_name)
+            container = await self._deploy_function_container(deployment, image_name)
             
             # Update deployment with container info
             deployment.container_id = container.id
@@ -194,8 +194,8 @@ class FunctionDeploymentService:
                 self.db.commit()
             return {"error": str(e)}
     
-    def execute_in_container(self, deployment_id: str, input_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute a function in the deployed container."""
+    async def execute_in_container(self, deployment_id: str, input_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute a function in the deployed container asynchronously."""
         try:
             # Get deployment
             deployment = self.db.query(AgentDeployment).filter(
@@ -265,7 +265,21 @@ try:
         from {module_name} import {function_name}
         
         with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
-            result = {function_name}({input_data}, {{}})
+            # Try different calling patterns to handle various function signatures
+            try:
+                # First try calling with input_json directly
+                result = {function_name}({input_json})
+            except TypeError:
+                try:
+                    # If that fails, try calling with keyword argument 'config'
+                    result = {function_name}(config={input_json})
+                except TypeError:
+                    try:
+                        # If that fails, try calling with both input_data and config
+                        result = {function_name}({input_json}, {input_json})
+                    except TypeError:
+                        # If that also fails, try calling with no arguments
+                        result = {function_name}()
         
         # Write result to temp file
         with open('/tmp/agent_result.json', 'w') as f:
@@ -290,6 +304,7 @@ with open('/tmp/agent_stderr.txt', 'w') as f:
             
             logger.info(f"Executing function in container {container.id} with environment: {env_vars}")
             
+            # Execute the script in the container
             exec_result = container.exec_run(
                 cmd=["python", "-c", python_script],
                 environment=env_vars
@@ -346,7 +361,7 @@ with open('/tmp/agent_stderr.txt', 'w') as f:
             }
                 
         except Exception as e:
-            logger.error(f"Failed to execute in container: {e}")
+            logger.error(f"Failed to execute function in container {deployment_id}: {e}")
             return {"error": str(e)}
     
     def get_function_deployment_status(self, deployment_id: str) -> Dict[str, Any]:
@@ -539,39 +554,51 @@ with open('/tmp/agent_stderr.txt', 'w') as f:
             )
             logger.info(f"Created merged .env file for function deployment: {merged_env_path}")
             
+            # Create Dockerfile for function agents
+            dockerfile_path = deploy_dir / "Dockerfile"
+            with open(dockerfile_path, 'w') as f:
+                f.write(self._generate_function_dockerfile())
+            logger.info("Created Dockerfile for function deployment")
+            
         except Exception as e:
             logger.error(f"Failed to extract agent code: {e}")
             raise
     
-    def _build_function_docker_image(self, deploy_dir: Path, image_name: str):
-        """Build Docker image for function agent."""
+    async def _build_function_docker_image(self, deploy_dir: Path, image_name: str):
+        """Build Docker image for the function agent asynchronously."""
+        logger.info(f"Building function Docker image {image_name}")
+        
         try:
-            # Create Dockerfile
-            dockerfile_content = self._generate_function_dockerfile()
-            dockerfile_path = deploy_dir / "Dockerfile"
-            with open(dockerfile_path, 'w') as f:
-                f.write(dockerfile_content)
-            
-            # Build image
-            logger.info(f"Building Docker image: {image_name}")
-            image, build_logs = self.docker_client.images.build(
-                path=str(deploy_dir),
-                tag=image_name,
-                rm=True,
-                dockerfile="Dockerfile"
+            # Run Docker build in a thread pool to avoid blocking
+            loop = asyncio.get_event_loop()
+            image, logs = await loop.run_in_executor(
+                None,
+                lambda: self.docker_client.images.build(
+                    path=str(deploy_dir),
+                    tag=image_name,
+                    rm=True,
+                    forcerm=True
+                )
             )
             
-            logger.info(f"Successfully built image: {image_name}")
+            # Log build output
+            for log in logs:
+                if isinstance(log, dict) and 'stream' in log:
+                    stream_content = log['stream']
+                    if isinstance(stream_content, str):
+                        logger.info(f"Build: {stream_content.strip()}")
+            
+            logger.info(f"Function Docker image {image_name} built successfully")
             return image
             
         except Exception as e:
-            logger.error(f"Failed to build Docker image: {e}")
+            logger.error(f"Failed to build function Docker image: {e}")
             raise
     
 
 
-    def _deploy_function_container(self, deployment: AgentDeployment, image_name: str):
-        """Deploy Docker container for the function agent."""
+    async def _deploy_function_container(self, deployment: AgentDeployment, image_name: str):
+        """Deploy Docker container for the function agent asynchronously."""
         user_id = deployment.hiring.user_id or "anon"
         
         # Use centralized container naming
@@ -600,47 +627,38 @@ with open('/tmp/agent_stderr.txt', 'w') as f:
         
         # Add resource limits
         try:
-            # Get agent configuration for resource limits
-            agent_config = {}
-            if deployment.agent and hasattr(deployment.agent, 'config_schema'):
-                agent_config = deployment.agent.config_schema or {}
+            # Get resource limits for the agent
+            resource_limits = get_agent_resource_limits(deployment.agent_id)
+            docker_config = to_docker_config(resource_limits)
+            container_config.update(docker_config)
             
-            # Get resource limits (defaults + agent overrides)
-            resource_limits = get_agent_resource_limits(
-                agent_config, 
-                "function"  # Function agents are always function type
+            # Run container creation in a thread pool to avoid blocking
+            loop = asyncio.get_event_loop()
+            container = await loop.run_in_executor(
+                None,
+                lambda: self.docker_client.containers.run(**container_config)
             )
             
-            # Convert to Docker configuration
-            docker_resource_config = to_docker_config(resource_limits)
-            container_config.update(docker_resource_config)
+            # Update deployment with container info
+            deployment.container_id = container.id
+            deployment.container_name = container_name
+            deployment.status = DeploymentStatus.RUNNING.value
+            deployment.deployed_at = datetime.now(timezone.utc)
+            deployment.is_healthy = True
+            deployment.health_check_failures = 0
+            deployment.last_health_check = datetime.now(timezone.utc)
             
-            logger.info(f"Applied resource limits: {resource_limits}")
+            self.db.commit()
+            
+            logger.info(f"Function container {container_name} deployed successfully with ID {container.id}")
+            return container
             
         except Exception as e:
-            logger.warning(f"Failed to apply resource limits, using defaults: {e}")
-            # Continue without resource limits if there's an error
-        
-        # Create and start container
-        container = self.docker_client.containers.run(**container_config)
-        
-        logger.info(f"Function container {container_name} started with ID {container.id}")
-        
-        # Collect initial metrics for the new container
-        try:
-            from .prometheus_metrics import metrics_service
-            deployment_info = {
-                'container_name': container_name,
-                'agent_id': deployment.agent_id,
-                'hiring_id': deployment.hiring_id,
-                'deployment_type': deployment.deployment_type
-            }
-            metrics_service.collect_container_metrics(deployment_info)
-            logger.info(f"Initial metrics collected for function container {container_name}")
-        except Exception as e:
-            logger.warning(f"Failed to collect initial metrics for function container {container_name}: {e}")
-        
-        return container
+            logger.error(f"Failed to deploy function container {container_name}: {e}")
+            deployment.status = DeploymentStatus.FAILED.value
+            deployment.error_message = str(e)
+            self.db.commit()
+            raise
 
     def _generate_function_dockerfile(self) -> str:
         """Generate Dockerfile for function agents."""

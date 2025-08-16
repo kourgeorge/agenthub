@@ -139,9 +139,8 @@ class ExecutionService:
                                container_logs: Optional[str] = None) -> Optional[Execution]:
         """Update execution status and optionally set output data or error message."""
 
-        # Use system database session for background updates
-        # This bypasses user authentication requirements
-        execution = self.system_db.query(Execution).filter(Execution.execution_id == execution_id).first()
+        # Use the main database session for all operations to ensure consistency
+        execution = self.db.query(Execution).filter(Execution.execution_id == execution_id).first()
         if not execution:
             logger.error(f"❌ EXECUTION NOT FOUND: {execution_id}")
             return None
@@ -166,12 +165,13 @@ class ExecutionService:
             execution.container_logs = container_logs
 
         try:
-            # Use system database session for the commit
-            self.system_db.commit()
+            # Commit using the main database session
+            self.db.commit()
+            logger.info(f"✅ Execution status updated: {execution_id} -> {status.value}")
         except Exception as e:
             logger.error(f"DATABASE COMMIT FAILED: {execution_id}")
             logger.error(f"   Error: {str(e)}")
-            self.system_db.rollback()
+            self.db.rollback()
             raise
         
         return execution
@@ -209,8 +209,8 @@ class ExecutionService:
     async def execute_agent(self, execution_id: str, user_id: Optional[int] = None) -> Dict[str, Any]:
         """Execute an agent using the unified runtime service."""
 
-        # Use system database session for internal operations
-        execution = self._get_execution_system(execution_id)
+        # Use main database session for all operations to ensure consistency
+        execution = self.get_execution(execution_id)
         if not execution:
             logger.error(f"EXECUTION NOT FOUND FOR EXECUTION: {execution_id}")
             return {"status": "error", "message": "Execution not found"}
@@ -221,8 +221,9 @@ class ExecutionService:
         # Start resource tracking for this execution
         await self.resource_manager.start_execution(execution_id, current_user_id)
         
-        # Update status to running using system database session
+        # Update status to running using main database session
         self.update_execution_status(execution_id, ExecutionStatus.RUNNING)
+        logger.info(f"🚀 Execution {execution_id} started - status set to RUNNING")
         
         try:
             # Get agent details
@@ -230,35 +231,50 @@ class ExecutionService:
             if not agent:
                 raise Exception("Agent not found")
             
+            logger.info(f"📋 Executing agent {agent.id} (type: {agent.agent_type}) for execution {execution_id}")
+            
             # Get agent configuration
             agent_config = self._get_agent_config(agent)
             requires_initialization = agent_config.get('requires_initialization', False)
             
             # Check agent type and execute accordingly
             agent_type = getattr(agent, 'agent_type', 'function')
+            logger.info(f"🔍 Agent type detected: {agent_type}")
             
             if agent_type == 'acp_server':
                 # Handle ACP server agents
-                runtime_result = self._execute_acp_server_agent(agent, execution.input_data or {}, execution_id)
+                logger.info(f"🌐 Executing ACP server agent {agent.id}")
+                runtime_result = await self._execute_acp_server_agent(agent, execution.input_data or {}, execution_id)
             elif agent_type == 'persistent':
                 # Handle persistent agents
+                logger.info(f"🔄 Executing persistent agent {agent.id}")
                 # Check if agent has a Docker deployment for this hiring
                 deployment = self._get_active_deployment_for_hiring(execution.hiring_id)
                 if deployment:
                     # Use Docker-based persistent agent
                     from .deployment_service import DeploymentService
                     deployment_service = DeploymentService(self.db)
-                    result = deployment_service.execute_persistent_agent(deployment.deployment_id, execution.input_data or {})
+                    
+                    # Track execution time
+                    import time
+                    start_time = time.time()
+                    
+                    result = await deployment_service.execute_persistent_agent(deployment.deployment_id, execution.input_data or {})
+                    
+                    execution_time = time.time() - start_time
+                    logger.info(f"⏱️ Persistent agent execution completed in {execution_time:.2f}s")
                     
                     if result.get("status") == "success":
                         runtime_result = RuntimeResult(
                             status=RuntimeStatus.COMPLETED,
-                            output=result.get("result", {})
+                            output=result.get("result", {}),
+                            execution_time=execution_time
                         )
                     else:
                         runtime_result = RuntimeResult(
                             status=RuntimeStatus.FAILED,
-                            error=result.get("error", "Execution failed")
+                            error=result.get("error", "Execution failed"),
+                            execution_time=execution_time
                         )
                 else:
                     # Persistent agents require Docker deployment - no in-process fallback
@@ -269,13 +285,17 @@ class ExecutionService:
                     }
             else:
                 # Handle function agents (implicit initialization)
-                runtime_result = self._execute_function_agent(agent, execution.input_data or {}, execution_id)
+                logger.info(f"⚙️ Executing function agent {agent.id}")
+                runtime_result = await self._execute_function_agent(agent, execution.input_data or {}, execution_id)
+            
+            logger.info(f"✅ Execution {execution_id} completed with status: {runtime_result.status}")
             
             # End resource tracking and get usage summary
             usage_summary = await self.resource_manager.end_execution(execution_id, "completed")
 
             # Process runtime result
             if runtime_result.status == RuntimeStatus.COMPLETED:
+                logger.info(f"🎉 Execution {execution_id} succeeded - updating status to COMPLETED")
 
                 # Check if the output is already a JSON object (dict)
                 if isinstance(runtime_result.output, dict):
@@ -290,6 +310,7 @@ class ExecutionService:
                     }
 
                 self.update_execution_status(execution_id, ExecutionStatus.COMPLETED, output_data, container_logs=runtime_result.container_logs)
+                logger.info(f"✅ Execution {execution_id} status updated to COMPLETED in database")
                 
                 return {
                     "status": "success",
@@ -308,6 +329,7 @@ class ExecutionService:
                 error_msg = runtime_result.error or "Execution failed"
                 
                 self.update_execution_status(execution_id, ExecutionStatus.FAILED, error_message=error_msg, container_logs=runtime_result.container_logs)
+                logger.info(f"Execution {execution_id} status updated to FAILED in database")
                 
                 logger.error(f"EXECUTION FAILED: {execution_id}")
                 return {
@@ -355,8 +377,8 @@ class ExecutionService:
             return [file.to_dict() for file in agent_files]
         return None
     
-    def _execute_function_agent(self, agent: Agent, input_data: Dict[str, Any], execution_id: str):
-        """Execute a function agent using Docker deployment."""
+    async def _execute_function_agent(self, agent: Agent, input_data: Dict[str, Any], execution_id: str):
+        """Execute a function agent using Docker deployment asynchronously."""
         try:
             # Get the execution to find the hiring_id
             execution = self.get_execution(execution_id)
@@ -382,22 +404,35 @@ class ExecutionService:
                 from .function_deployment_service import FunctionDeploymentService
                 deployment_service = FunctionDeploymentService(self.db)
                 
-                result = deployment_service.execute_in_container(deployment.deployment_id, enhanced_input_data)
+                logger.info(f"Executing function agent {agent.id} in container {deployment.deployment_id}")
+                result = await deployment_service.execute_in_container(deployment.deployment_id, enhanced_input_data)
+                logger.info(f"Container execution result: {result}")
                 
                 # Extract container logs
                 container_logs = result.get("container_logs", "")
+                logger.info(f"Container logs: {container_logs[:200]}...")  # First 200 chars
                 
                 if result.get("status") == "success":
+                    # Function deployment service returns "result" field, not "output"
+                    output_data = result.get("result") or result.get("output")
+                    execution_time = result.get("execution_time")
+
+                    # If no execution time provided, use a default
+                    if execution_time is None:
+                        execution_time = 0.0
+                    
                     return RuntimeResult(
                         status=RuntimeStatus.COMPLETED,
-                        output=result.get("output"),
-                        execution_time=result.get("execution_time"),
+                        output=output_data,
+                        execution_time=execution_time,
                         container_logs=container_logs
                     )
                 else:
+                    error_msg = result.get("error", "Unknown error")
+                    logger.error(f"Function execution failed: {error_msg}")
                     return RuntimeResult(
                         status=RuntimeStatus.FAILED,
-                        error=result.get("error", "Unknown error"),
+                        error=error_msg,
                         container_logs=container_logs
                     )
             else:
@@ -413,46 +448,22 @@ class ExecutionService:
                 error=f"Function agent execution error: {str(e)}"
             )
     
-    def _execute_acp_server_agent(self, agent: Agent, input_data: Dict[str, Any], execution_id: str):
-        """Execute an ACP server agent by making HTTP requests to the running server."""
-        import requests
-        import json
+    async def _execute_acp_server_agent(self, agent: Agent, input_data: Dict[str, Any], execution_id: str):
+        """Execute an ACP server agent via HTTP request asynchronously."""
         import time
-        from .base_runtime import RuntimeResult, RuntimeStatus
-        from ..models.deployment import AgentDeployment
-        from ..models.hiring import Hiring
-        
         start_time = time.time()
         
         try:
-            # Get the execution to find the hiring_id
-            execution = self.get_execution(execution_id)
-            if not execution:
-                return RuntimeResult(
-                    status=RuntimeStatus.FAILED,
-                    error="Execution not found",
-                    execution_time=time.time() - start_time
-                )
-            
-            # Get the hiring associated with this execution
-            hiring = self.db.query(Hiring).filter(Hiring.id == execution.hiring_id).first()
-            if not hiring:
-                return RuntimeResult(
-                    status=RuntimeStatus.FAILED,
-                    error="No active hiring found for this agent",
-                    execution_time=time.time() - start_time
-                )
-            
-            # Get the deployment associated with this hiring
+            # Get deployment for this agent
+            from ..models.deployment import AgentDeployment
             deployment = self.db.query(AgentDeployment).filter(
-                AgentDeployment.hiring_id == hiring.id,
-                AgentDeployment.status == "running"
+                AgentDeployment.agent_id == agent.id
             ).first()
             
             if not deployment:
                 return RuntimeResult(
                     status=RuntimeStatus.FAILED,
-                    error="No running deployment found for this agent",
+                    error="No deployment found for ACP agent",
                     execution_time=time.time() - start_time
                 )
             
@@ -476,45 +487,56 @@ class ExecutionService:
                 "context": input_data.get("context", {})
             }
             
-            # Make HTTP request to the ACP server's chat endpoint
+            # Make HTTP request to the ACP server's chat endpoint asynchronously
             chat_url = f"{base_url}/chat"
-            logger.info(f"Making request to ACP agent at {chat_url}")
+            logger.info(f"Making async request to ACP agent at {chat_url}")
             
-            response = requests.post(
-                chat_url,
-                json=chat_payload,
-                headers={"Content-Type": "application/json"},
-                timeout=30
-            )
-            
+            import aiohttp
+            import asyncio
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    chat_url,
+                    json=chat_payload,
+                    headers={"Content-Type": "application/json"},
+                    timeout=aiohttp.ClientTimeout(total=30)
+                ) as response:
+                    
+                    execution_time = time.time() - start_time
+                    
+                    if response.status == 200:
+                        response_data = await response.json()
+                        logger.info(f"ACP agent execution completed successfully in {execution_time:.2f}s")
+                        
+                        return RuntimeResult(
+                            status=RuntimeStatus.COMPLETED,
+                            output=response_data,
+                            execution_time=execution_time
+                        )
+                    else:
+                        error_text = await response.text()
+                        logger.error(f"ACP agent returned error status {response.status}: {error_text}")
+                        
+                        return RuntimeResult(
+                            status=RuntimeStatus.FAILED,
+                            error=f"ACP agent error: {response.status} - {error_text}",
+                            execution_time=execution_time
+                        )
+                        
+        except asyncio.TimeoutError:
             execution_time = time.time() - start_time
-            
-            if response.status_code == 200:
-                try:
-                    result_data = response.json()
-                    return RuntimeResult(
-                        status=RuntimeStatus.COMPLETED,
-                        output=json.dumps(result_data),
-                        execution_time=execution_time
-                    )
-                except json.JSONDecodeError:
-                    return RuntimeResult(
-                        status=RuntimeStatus.FAILED,
-                        error=f"Invalid JSON response from ACP agent: {response.text}",
-                        execution_time=execution_time
-                    )
-            else:
-                return RuntimeResult(
-                    status=RuntimeStatus.FAILED,
-                    error=f"ACP agent returned status {response.status_code}: {response.text}",
-                    execution_time=execution_time
-                )
-        
-        except Exception as e:
+            logger.error(f"ACP agent execution timed out after {execution_time:.2f}s")
             return RuntimeResult(
                 status=RuntimeStatus.FAILED,
-                error=f"ACP execution error: {str(e)}",
-                execution_time=time.time() - start_time
+                error="ACP agent execution timed out",
+                execution_time=execution_time
+            )
+        except Exception as e:
+            execution_time = time.time() - start_time
+            logger.error(f"ACP agent execution failed: {e}")
+            return RuntimeResult(
+                status=RuntimeStatus.FAILED,
+                error=f"ACP agent execution failed: {str(e)}",
+                execution_time=execution_time
             )
 
     def get_execution_stats(self, agent_id: Optional[str] = None, user_id: Optional[int] = None) -> Dict[str, Any]:
@@ -613,7 +635,7 @@ class ExecutionService:
             }
 
     
-    def cleanup_persistent_agent(self, agent_id: str) -> Dict[str, Any]:
+    async def cleanup_persistent_agent(self, agent_id: str) -> Dict[str, Any]:
         """Clean up a persistent agent."""
         try:
             # Get agent details
@@ -627,7 +649,22 @@ class ExecutionService:
                 # Use Docker-based persistent agent
                 from .deployment_service import DeploymentService
                 deployment_service = DeploymentService(self.db)
-                return deployment_service.cleanup_persistent_agent(deployment.deployment_id)
+
+                # Track execution time
+                import time
+                start_time = time.time()
+
+                # The deployment service now returns immediately for cleanup
+                result = deployment_service.cleanup_persistent_agent(deployment.deployment_id)
+                
+                execution_time = time.time() - start_time
+                logger.info(f"⏱️ Persistent agent cleanup started in {execution_time:.2f}s")
+
+                # Add execution time to result
+                if isinstance(result, dict):
+                    result['execution_time'] = execution_time
+                
+                return result
             else:
                 # Persistent agents require Docker deployment - no in-process fallback
                 return {"error": f"Persistent agent {agent_id} requires Docker deployment for cleanup. No deployment found."}
@@ -746,7 +783,7 @@ class ExecutionService:
             if agent.agent_type == "persistent":
                 # Clean up persistent agent
                 logger.info(f"Cleaning up persistent agent: {agent.id}")
-                cleanup_result = self.cleanup_persistent_agent(str(agent.id))
+                cleanup_result = await self.cleanup_persistent_agent(str(agent.id))
             else:
                 # For function agents, just mark the hiring as completed
                 logger.info(f"Cleaning up function agent: {agent.id}")

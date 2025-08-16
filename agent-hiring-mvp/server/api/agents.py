@@ -1,5 +1,6 @@
 """Agents API endpoints."""
 
+import asyncio
 import logging
 import tempfile
 import os
@@ -595,11 +596,13 @@ async def hire_and_deploy_agent(
                     deployment_result = deployment_service.create_deployment(hiring.id)
                 
                 if "error" not in deployment_result:
-                    # Start deployment in background
-                    background_tasks.add_task(
-                        deployment_service.build_and_deploy,
-                        deployment_result["deployment_id"]
-                    )
+                    # Start deployment in background using asyncio.create_task
+                    task = asyncio.create_task(deployment_service.build_and_deploy(deployment_result["deployment_id"]))
+                    
+                    # Store the task reference to prevent garbage collection
+                    if not hasattr(hire_and_deploy_agent, '_background_tasks'):
+                        hire_and_deploy_agent._background_tasks = {}
+                    hire_and_deploy_agent._background_tasks[deployment_result["deployment_id"]] = task
                     deployment_info = {
                         "deployment_id": deployment_result["deployment_id"],
                         "status": "deployment_started",
