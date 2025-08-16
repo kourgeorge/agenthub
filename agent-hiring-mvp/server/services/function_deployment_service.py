@@ -264,22 +264,49 @@ try:
     if os.path.exists('/app/{module_name}.py'):
         from {module_name} import {function_name}
         
+        # Convert JavaScript boolean values to Python booleans
+        def convert_js_to_python(obj):
+            if isinstance(obj, dict):
+                return {{key: convert_js_to_python(value) for key, value in obj.items()}}
+            elif isinstance(obj, list):
+                return [convert_js_to_python(item) for item in obj]
+            elif obj == "true":
+                return True
+            elif obj == "false":
+                return False
+            elif obj == "null":
+                return None
+            else:
+                return obj
+        
+        # Parse and convert input data
+        input_data = json.loads({repr(input_json)})
+        converted_input = convert_js_to_python(input_data)
+        
         with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
             # Try different calling patterns to handle various function signatures
             try:
-                # First try calling with input_json directly
-                result = {function_name}({input_json})
+                # First try calling with converted input directly
+                result = {function_name}(converted_input)
             except TypeError:
                 try:
                     # If that fails, try calling with keyword argument 'config'
-                    result = {function_name}(config={input_json})
+                    result = {function_name}(config=converted_input)
                 except TypeError:
                     try:
                         # If that fails, try calling with both input_data and config
-                        result = {function_name}({input_json}, {input_json})
+                        result = {function_name}(converted_input, converted_input)
                     except TypeError:
-                        # If that also fails, try calling with no arguments
-                        result = {function_name}()
+                        try:
+                            # If that also fails, try calling with keyword arguments
+                            if isinstance(converted_input, dict):
+                                result = {function_name}(**converted_input)
+                            else:
+                                # If that also fails, try calling with no arguments
+                                result = {function_name}()
+                        except TypeError:
+                            # Last resort: try calling with no arguments
+                            result = {function_name}()
         
         # Write result to temp file
         with open('/tmp/agent_result.json', 'w') as f:
@@ -329,8 +356,17 @@ with open('/tmp/agent_stderr.txt', 'w') as f:
             if exec_result.output:
                 container_logs += f"=== CONTAINER OUTPUT ===\n{exec_result.output.decode()}\n"
             
+            # Log detailed execution information for debugging
+            logger.info(f"Function execution details for {deployment_id}:")
+            logger.info(f"  Exit code: {exec_result.exit_code}")
+            logger.info(f"  Stdout length: {len(stdout_logs)}")
+            logger.info(f"  Stderr length: {len(stderr_logs)}")
+            if stderr_logs:
+                logger.info(f"  Stderr content: {stderr_logs[:500]}...")
+            
             if exec_result.exit_code != 0:
-                error_msg = f"Container execution failed: {exec_result.output.decode()}"
+                error_msg = f"Container execution failed with exit code {exec_result.exit_code}: {exec_result.output.decode()}"
+                logger.error(f"Function execution failed: {error_msg}")
                 return {
                     "status": "error",
                     "error": error_msg,
@@ -341,6 +377,7 @@ with open('/tmp/agent_stderr.txt', 'w') as f:
             read_result = container.exec_run(cmd=["cat", "/tmp/agent_result.json"])
             if read_result.exit_code != 0:
                 error_msg = f"Failed to read result file: {read_result.output.decode()}"
+                logger.error(f"Failed to read result file: {error_msg}")
                 return {
                     "status": "error", 
                     "error": error_msg,
@@ -348,7 +385,17 @@ with open('/tmp/agent_stderr.txt', 'w') as f:
                 }
             
             result_json = read_result.output.decode().strip()
-            result_data = json.loads(result_json)
+            try:
+                result_data = json.loads(result_json)
+                logger.info(f"Function execution result: {result_data}")
+            except json.JSONDecodeError as e:
+                error_msg = f"Failed to parse result JSON: {e}. Raw result: {result_json[:200]}..."
+                logger.error(f"JSON parsing error: {error_msg}")
+                return {
+                    "status": "error",
+                    "error": error_msg,
+                    "container_logs": container_logs
+                }
             
             # Clean up temp files
             container.exec_run(cmd=["rm", "-f", "/tmp/agent_result.json", "/tmp/agent_stdout.txt", "/tmp/agent_stderr.txt"])

@@ -1252,10 +1252,29 @@ try:
     agent = {input_data.get('agent_class', '')}()
     print("Agent instance created", file=sys.stderr)
     
+    # Convert JavaScript boolean values to Python booleans
+    def convert_js_to_python(obj):
+        if isinstance(obj, dict):
+            return {{key: convert_js_to_python(value) for key, value in obj.items()}}
+        elif isinstance(obj, list):
+            return [convert_js_to_python(item) for item in obj]
+        elif obj == "true":
+            return True
+        elif obj == "false":
+            return False
+        elif obj == "null":
+            return None
+        else:
+            return obj
+    
+    # Convert input data
+    input_data = {repr(input_data.get('input', {}))}
+    converted_input = convert_js_to_python(input_data)
+    
     print("Starting agent initialization...", file=sys.stderr)
     start_time = time.time()
     with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
-        result = agent.initialize({repr(input_data.get('input', {}))})
+        result = agent.initialize(converted_input)
     end_time = time.time()
     print(f"Agent initialization completed in {{end_time - start_time:.2f}} seconds", file=sys.stderr)
 
@@ -1263,7 +1282,7 @@ try:
     # Save state to file (only essential data, not the full agent object)
     state_data = {{
         'initialized': True,
-        'config': {repr(input_data.get('input', {}))},
+        'config': converted_input,
         'agent_state': agent._state if hasattr(agent, '_state') else {{}}
     }}
     
@@ -1331,8 +1350,27 @@ try:
     agent._initialized = state_data.get('initialized', False)
     agent._state = state_data.get('agent_state', {{}})
 
+    # Convert JavaScript boolean values to Python booleans
+    def convert_js_to_python(obj):
+        if isinstance(obj, dict):
+            return {{key: convert_js_to_python(value) for key, value in obj.items()}}
+        elif isinstance(obj, list):
+            return [convert_js_to_python(item) for item in obj]
+        elif obj == "true":
+            return True
+        elif obj == "false":
+            return False
+        elif obj == "null":
+            return None
+        else:
+            return obj
+    
+    # Convert input data
+    input_data = {repr(input_data.get('input', {}))}
+    converted_input = convert_js_to_python(input_data)
+
     with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
-        result = agent.execute({repr(input_data.get('input', {}))})
+        result = agent.execute(converted_input)
 
     # Save updated state
     state_data['agent_state'] = agent._state if hasattr(agent, '_state') else {{}}
