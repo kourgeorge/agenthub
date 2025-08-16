@@ -67,7 +67,7 @@ class AgentDeployment(Base):
     
     # Relationships
     agent = relationship("Agent", backref="deployments")
-    hiring = relationship("Hiring", backref="deployment")
+    hiring = relationship("Hiring", backref="deployments")
     
     # Container resource usage relationship
     resource_usage = relationship("ContainerResourceUsage", back_populates="deployment")

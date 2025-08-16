@@ -324,6 +324,21 @@ class DeploymentReconciliationService:
                 AgentDeployment.container_name.is_(None)
             ).count()
             
+            # Running deployments that should have running containers (active hirings)
+            # This catches cases where active hirings have running deployments but no running containers
+            running_deployments_without_containers = self.db.query(AgentDeployment).join(Hiring).filter(
+                AgentDeployment.status == DeploymentStatus.RUNNING.value,
+                Hiring.status == "active"
+            ).count()
+            
+            # Calculate how many running containers we actually have
+            actual_running_containers = running_containers
+            
+            # The anomaly is when active hirings have running deployments but no running containers
+            deployment_container_mismatch = 0
+            if running_deployments_without_containers > actual_running_containers:
+                deployment_container_mismatch = running_deployments_without_containers - actual_running_containers
+            
             # Stopped deployments that should be running (active hirings)
             stopped_should_be_running = self.db.query(AgentDeployment).join(Hiring).filter(
                 AgentDeployment.status == DeploymentStatus.STOPPED.value,
@@ -341,7 +356,7 @@ class DeploymentReconciliationService:
             orphaned_containers = len(self._identify_orphaned_containers())
             
             # Total anomalies
-            total_anomalies = running_without_containers + stopped_should_be_running + failed_should_be_running + orphaned_containers
+            total_anomalies = running_without_containers + deployment_container_mismatch + stopped_should_be_running + failed_should_be_running + orphaned_containers
             
             return {
                 # Database Hirings
@@ -370,6 +385,8 @@ class DeploymentReconciliationService:
                 # Anomalies
                 "total_anomalies": total_anomalies,
                 "running_without_containers": running_without_containers,
+                "running_deployments_without_containers": running_deployments_without_containers,
+                "deployment_container_mismatch": deployment_container_mismatch,
                 "stopped_should_be_running": stopped_should_be_running,
                 "failed_should_be_running": failed_should_be_running,
                 "orphaned_containers": orphaned_containers,
@@ -384,14 +401,24 @@ class DeploymentReconciliationService:
     def validate_hiring_deployment_consistency(self) -> Dict[str, Any]:
         """Validate consistency between hiring status and deployment status."""
         try:
-            # Get all hirings with their deployments
-            hirings_with_deployments = self.db.query(Hiring).join(AgentDeployment).all()
+            # Get all hirings and check their deployments
+            all_hirings = self.db.query(Hiring).all()
             
             inconsistencies = []
             valid_pairs = []
             
-            for hiring in hirings_with_deployments:
-                deployment = hiring.deployments[0] if hiring.deployments else None
+            for hiring in all_hirings:
+                # Get deployments for this hiring
+                deployments = self.db.query(AgentDeployment).filter(
+                    AgentDeployment.hiring_id == hiring.id
+                ).all()
+                
+                if not deployments:
+                    continue  # Skip hirings without deployments
+                
+                # For now, we'll check the first deployment (most hirings have one)
+                # In the future, we could handle multiple deployments per hiring
+                deployment = deployments[0]
                 
                 if not deployment:
                     continue
@@ -433,7 +460,7 @@ class DeploymentReconciliationService:
                     })
             
             return {
-                "total_hirings_checked": len(hirings_with_deployments),
+                "total_hirings_checked": len(all_hirings),
                 "valid_pairs": len(valid_pairs),
                 "inconsistencies": len(inconsistencies),
                 "inconsistency_details": inconsistencies,
