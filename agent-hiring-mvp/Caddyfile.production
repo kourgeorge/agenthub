@@ -1,0 +1,50 @@
+# Production Caddyfile for AgentHub
+# Replace 'yourdomain.com' with your actual domain
+# Your FastAPI server runs on port 8002, web UI on port 8080
+# External access: HTTPS on port 8443
+# Cross-platform compatible (macOS, Windows, Linux)
+
+avi.kour.me:8443 {
+    # Reverse proxy to the web UI running on host
+    reverse_proxy host.docker.internal:8080 {
+        # Health checks
+        health_uri /health
+        health_interval 30s
+        health_timeout 10s
+        health_status 200
+    }
+    
+    # Security headers
+    header {
+        # Security headers
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy strict-origin-when-cross-origin
+        Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';"
+        
+        # Remove server header
+        -Server
+    }
+    
+    # Compression
+    encode gzip zstd
+    
+    # Logging
+    log {
+        output stdout
+        format json
+        level INFO
+    }
+    
+    # Rate limiting (optional)
+    # rate_limit {
+    #     zone api
+    #     rate 100r/10s
+    # }
+}
+
+# HTTP to HTTPS redirect (port 80)
+:80 {
+    redir https://{host}:8443{uri} permanent
+}

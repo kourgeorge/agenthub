@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  # Only Caddy reverse proxy with automatic SSL
+  caddy:
+    image: caddy:2-alpine
+    container_name: agenthub-caddy
+    ports:
+      - "80:80"
+      - "8443:443"  # External HTTPS on 8443, internal HTTPS on 443
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+    # Cross-platform host access
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # Use bridge network for better cross-platform compatibility
+    networks:
+      - caddy-network
+
+networks:
+  caddy-network:
+    driver: bridge
+
+volumes:
+  caddy_data:
+  caddy_config:
