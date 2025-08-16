@@ -174,9 +174,58 @@ class PrometheusMetricsService:
             deployment_type = deployment_info.get('deployment_type', 'unknown')
             
             # Calculate CPU usage percentage
-            cpu_delta = stats['cpu_stats']['cpu_usage']['total_usage'] - stats['precpu_stats']['cpu_usage']['total_usage']
-            system_delta = stats['cpu_stats']['system_cpu_usage'] - stats['precpu_stats']['system_cpu_usage']
-            cpu_usage_percent = (cpu_delta / system_delta) * len(stats['cpu_stats']['cpu_usage']['percpu_usage']) * 100.0
+            # NOTE: The 'system_cpu_usage' field is not always available in Docker container stats,
+            # especially on macOS or with certain container runtimes. This implementation provides
+            # a fallback calculation method to handle missing fields gracefully.
+            try:
+                # Check if we have the required CPU stats fields
+                if ('cpu_stats' in stats and 'precpu_stats' in stats and 
+                    'cpu_usage' in stats['cpu_stats'] and 'cpu_usage' in stats['precpu_stats']):
+                    
+                    cpu_delta = stats['cpu_stats']['cpu_usage']['total_usage'] - stats['precpu_stats']['cpu_usage']['total_usage']
+                    
+                    # Try to get system CPU usage - this field might not exist on all platforms
+                    system_delta = 0
+                    if ('system_cpu_usage' in stats['cpu_stats'] and 
+                        'system_cpu_usage' in stats['precpu_stats']):
+                        system_delta = stats['cpu_stats']['system_cpu_usage'] - stats['precpu_stats']['system_cpu_usage']
+                    
+                    # Calculate CPU usage percentage
+                    if system_delta > 0:
+                        # Standard calculation when system_cpu_usage is available
+                        try:
+                            cpu_count = len(stats['cpu_stats']['cpu_usage']['percpu_usage'])
+                        except (KeyError, TypeError):
+                            cpu_count = stats['cpu_stats'].get('online_cpus', 1)
+                        
+                        cpu_usage_percent = (cpu_delta / system_delta) * cpu_count * 100.0
+                    else:
+                        # Fallback calculation when system_cpu_usage is not available
+                        try:
+                            cpu_count = stats['cpu_stats'].get('online_cpus', 1)
+                            if 'percpu_usage' in stats['cpu_stats']['cpu_usage']:
+                                cpu_count = len(stats['cpu_stats']['cpu_usage']['percpu_usage'])
+                        except (KeyError, TypeError):
+                            cpu_count = 1
+                        
+                        # Conservative estimate based on CPU delta
+                        if cpu_delta > 0:
+                            cpu_usage_percent = min(cpu_delta / 1000000.0, 100.0)
+                        else:
+                            cpu_usage_percent = 0.0
+                        
+                        logger.debug(f"Using fallback CPU calculation for {container_name}: "
+                                   f"cpu_delta={cpu_delta}, estimated_usage={cpu_usage_percent:.2f}%")
+                else:
+                    logger.debug(f"Missing required CPU stats fields for {container_name}")
+                    cpu_usage_percent = 0.0
+                    
+            except (KeyError, TypeError) as e:
+                logger.warning(f"Error calculating CPU usage for {container_name}: {e}")
+                cpu_usage_percent = 0.0
+            except Exception as e:
+                logger.error(f"Unexpected error calculating CPU usage for {container_name}: {e}")
+                cpu_usage_percent = 0.0
             
             # Memory usage
             memory_usage = stats['memory_stats']['usage']

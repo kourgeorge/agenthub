@@ -87,12 +87,24 @@ class ResourceUsageTracker:
                     logger.warning(f"Container {deployment.container_name} returned incomplete stats")
                     return None
                 
-                # Debug logging for stats structure
+                # Enhanced debug logging for stats structure
                 logger.debug(f"Container {deployment.container_name} stats keys: {list(stats.keys())}")
                 if 'cpu_stats' in stats:
                     logger.debug(f"CPU stats keys: {list(stats['cpu_stats'].keys())}")
                     if 'cpu_usage' in stats['cpu_stats']:
                         logger.debug(f"CPU usage keys: {list(stats['cpu_stats']['cpu_usage'].keys())}")
+                    if 'system_cpu_usage' in stats['cpu_stats']:
+                        logger.debug(f"System CPU usage available: {stats['cpu_stats']['system_cpu_usage']}")
+                    else:
+                        logger.debug(f"System CPU usage NOT available for {deployment.container_name}")
+                if 'precpu_stats' in stats:
+                    logger.debug(f"PreCPU stats keys: {list(stats['precpu_stats'].keys())}")
+                    if 'cpu_usage' in stats['precpu_stats']:
+                        logger.debug(f"PreCPU usage keys: {list(stats['precpu_stats']['cpu_usage'].keys())}")
+                    if 'system_cpu_usage' in stats['precpu_stats']:
+                        logger.debug(f"PreCPU system CPU usage available: {stats['precpu_stats']['system_cpu_usage']}")
+                    else:
+                        logger.debug(f"PreCPU system CPU usage NOT available for {deployment.container_name}")
                 
             except docker.errors.NotFound:
                 logger.warning(f"Container {deployment.container_name} not found")
@@ -102,24 +114,67 @@ class ResourceUsageTracker:
                 return None
             
             # Calculate CPU usage percentage
+            # NOTE: The 'system_cpu_usage' field is not always available in Docker container stats,
+            # especially on macOS or with certain container runtimes. This implementation provides
+            # a fallback calculation method to handle missing fields gracefully.
             try:
-                cpu_delta = stats['cpu_stats']['cpu_usage']['total_usage'] - stats['precpu_stats']['cpu_usage']['total_usage']
-                system_delta = stats['cpu_stats']['system_cpu_usage'] - stats['precpu_stats']['system_cpu_usage']
-                
-                if system_delta > 0:
-                    # Get CPU count - handle cases where percpu_usage might not exist
-                    try:
-                        cpu_count = len(stats['cpu_stats']['cpu_usage']['percpu_usage'])
-                    except (KeyError, TypeError):
-                        # Fallback: try to get CPU count from other sources
-                        try:
-                            cpu_count = stats['cpu_stats'].get('online_cpus', 1)
-                        except (KeyError, TypeError):
-                            cpu_count = 1  # Default to 1 CPU if we can't determine
+                # Check if we have the required CPU stats fields
+                if ('cpu_stats' in stats and 'precpu_stats' in stats and 
+                    'cpu_usage' in stats['cpu_stats'] and 'cpu_usage' in stats['precpu_stats']):
                     
-                    cpu_usage_percent = (cpu_delta / system_delta) * cpu_count * 100.0
+                    cpu_delta = stats['cpu_stats']['cpu_usage']['total_usage'] - stats['precpu_stats']['cpu_usage']['total_usage']
+                    
+                    # Try to get system CPU usage - this field might not exist on all platforms
+                    system_delta = 0
+                    if ('system_cpu_usage' in stats['cpu_stats'] and 
+                        'system_cpu_usage' in stats['precpu_stats']):
+                        system_delta = stats['cpu_stats']['system_cpu_usage'] - stats['precpu_stats']['system_cpu_usage']
+                    else:
+                        # Fallback: use online_cpus if available, or estimate from other sources
+                        try:
+                            # Try to get CPU count from various sources
+                            cpu_count = 1
+                            if 'online_cpus' in stats['cpu_stats']:
+                                cpu_count = stats['cpu_stats']['online_cpus']
+                            elif 'cpu_usage' in stats['cpu_stats'] and 'percpu_usage' in stats['cpu_stats']['cpu_usage']:
+                                cpu_count = len(stats['cpu_stats']['cpu_usage']['percpu_usage'])
+                            
+                            # If we can't get system CPU usage, estimate CPU usage from container CPU delta
+                            # This is a fallback method that's less accurate but more reliable
+                            if cpu_delta > 0:
+                                # Estimate CPU usage based on container CPU time delta
+                                # This assumes the container is using a reasonable amount of CPU
+                                # and provides a conservative estimate
+                                cpu_usage_percent = min(cpu_delta / 1000000.0, 100.0)  # Conservative estimate
+                            else:
+                                cpu_usage_percent = 0.0
+                            
+                            logger.debug(f"Using fallback CPU calculation for {deployment.container_name}: "
+                                       f"cpu_delta={cpu_delta}, estimated_usage={cpu_usage_percent:.2f}%")
+                            
+                        except (KeyError, TypeError) as e:
+                            logger.debug(f"Fallback CPU calculation failed for {deployment.container_name}: {e}")
+                            cpu_usage_percent = 0.0
+                    
+                    # If we have system_delta, use the standard calculation
+                    if system_delta > 0:
+                        # Get CPU count - handle cases where percpu_usage might not exist
+                        try:
+                            cpu_count = len(stats['cpu_stats']['cpu_usage']['percpu_usage'])
+                        except (KeyError, TypeError):
+                            # Fallback: try to get CPU count from other sources
+                            try:
+                                cpu_count = stats['cpu_stats'].get('online_cpus', 1)
+                            except (KeyError, TypeError):
+                                cpu_count = 1  # Default to 1 CPU if we can't determine
+                        
+                        cpu_usage_percent = (cpu_delta / system_delta) * cpu_count * 100.0
+                    elif system_delta == 0 and 'cpu_usage_percent' not in locals():
+                        # Container is idle or stats are not yet available
+                        cpu_usage_percent = 0.0
+                        
                 else:
-                    # Container is idle or stats are not yet available
+                    logger.debug(f"Missing required CPU stats fields for {deployment.container_name}")
                     cpu_usage_percent = 0.0
                     
             except (KeyError, TypeError) as e:
