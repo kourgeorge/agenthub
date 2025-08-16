@@ -9,7 +9,7 @@ services:
       - "80:80"
       - "443:443"  # Standard HTTPS port
     volumes:
-      - ./Caddyfile.${CADDY_ENV:-dev}:/etc/caddy/Caddyfile:ro
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
     restart: unless-stopped
@@ -19,8 +19,6 @@ services:
     # Use bridge network for better cross-platform compatibility
     networks:
       - caddy-network
-    environment:
-      - CADDY_ENV=${CADDY_ENV:-dev}
 
 networks:
   caddy-network:
