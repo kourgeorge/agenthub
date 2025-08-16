@@ -80,6 +80,9 @@ async def cleanup_tokens():
             logger.error(f"Error during token cleanup: {e}")
 
 
+
+
+
 async def collect_container_metrics():
     """Background task to continuously collect container resource usage metrics."""
     # Wait a bit for the system to fully initialize before starting metrics collection
@@ -121,7 +124,9 @@ async def collect_container_metrics():
                                     logger.debug(f"No metrics collected for deployment {deployment.deployment_id} (container may not be accessible)")
                                     
                             else:
-                                logger.warning(f"Deployment {deployment.deployment_id} has no container name")
+                                # This deployment will be handled by the reconciliation service
+                                logger.debug(f"Deployment {deployment.deployment_id} has no container name - will be reconciled")
+                                continue
                                 
                         except Exception as e:
                             logger.error(f"Error collecting metrics for deployment {deployment.deployment_id}: {e}")
@@ -165,6 +170,8 @@ async def lifespan(app: FastAPI):
         metrics_collection_active = True
         logger.info("Container metrics collection task started")
         
+
+        
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}")
         raise
@@ -184,6 +191,8 @@ async def lifespan(app: FastAPI):
             await metrics_task
             metrics_collection_active = False
             logger.info("Container metrics collection task stopped")
+        
+
         
     except Exception as e:
         logger.error(f"Error stopping background tasks: {e}")

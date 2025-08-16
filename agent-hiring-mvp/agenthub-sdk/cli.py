@@ -2272,6 +2272,197 @@ def restart(ctx, deployment_id, base_url):
         sys.exit(1)
 
 
+@deploy.command(name='reconcile')
+@click.option('--deployment-id', type=str, help='Reconcile specific deployment (optional)')
+@click.option('--base-url', help='Base URL of the AgentHub server')
+@click.pass_context
+def reconcile_deployments(ctx, deployment_id, base_url):
+    """Reconcile deployment states with Docker runtime to fix inconsistencies."""
+    verbose = ctx.obj.get('verbose', False)
+    
+    base_url = base_url or cli_config.get('base_url', 'http://localhost:8002')
+    
+    try:
+        if deployment_id:
+            echo(style(f"🔧 Reconciling deployment {deployment_id}...", fg='blue'))
+            
+            async def reconcile_single():
+                api_key = ctx.obj.get('api_key') or cli_config.get('api_key')
+                async with AgentHubClient(base_url, api_key=api_key) as client:
+                    result = await client.post(f"/deployment/admin/reconcile/{deployment_id}")
+                    return result
+            
+            result = asyncio.run(reconcile_single())
+        else:
+            echo(style("🔧 Reconciling all deployments...", fg='blue'))
+            
+            async def reconcile_all():
+                api_key = ctx.obj.get('api_key') or cli_config.get('api_key')
+                async with AgentHubClient(base_url, api_key=api_key) as client:
+                    result = await client.post("/deployment/admin/reconcile")
+                    return result
+            
+            result = asyncio.run(reconcile_all())
+        
+        if "error" in result:
+            echo(style(f"❌ Reconciliation failed: {result['error']}", fg='red'))
+            sys.exit(1)
+        
+        echo(style("✅ Deployment reconciliation completed!", fg='green'))
+        
+        # Display results
+        results = result.get('results', {})
+        if results:
+            echo(f"  Total deployments processed: {results.get('total_deployments', 0)}")
+            echo(f"  Deployments reconciled: {results.get('reconciled', 0)}")
+            echo(f"  Orphaned containers identified: {results.get('orphaned_containers_found', 0)}")
+            
+            # Show status changes
+            status_changes = results.get('status_changes', [])
+            if status_changes:
+                echo(style("\n📊 Status Changes:", fg='cyan'))
+                for change in status_changes:
+                    echo(f"  {change['deployment_id'][:16]}...: {change['old_status']} → {change['new_status']}")
+                    if change.get('reason'):
+                        echo(f"    Reason: {change['reason']}")
+            
+            # Show orphaned containers info (READ-ONLY)
+            orphaned_details = results.get('orphaned_containers_details', [])
+            if orphaned_details:
+                echo(style("\n🔍 Orphaned Containers Found (NOT removed):", fg='yellow'))
+                echo(style("   These containers have no AgentHub deployment records", fg='yellow'))
+                echo(style("   They may be unrelated to AgentHub - reconciliation is READ-ONLY", fg='yellow'))
+                for container in orphaned_details[:5]:  # Show first 5
+                    echo(f"     {container['name']} (ID: {container['id']}) - {container['status']}")
+                if len(orphaned_details) > 5:
+                    echo(f"     ... and {len(orphaned_details) - 5} more")
+        
+        if verbose:
+            echo("\nFull response:")
+            echo(json.dumps(result, indent=2))
+            
+    except Exception as e:
+        echo(style(f"✗ Error reconciling deployments: {e}", fg='red'))
+        sys.exit(1)
+
+
+@deploy.command(name='health')
+@click.option('--base-url', help='Base URL of the AgentHub server')
+@click.pass_context
+def deployment_health(ctx, base_url):
+    """Get deployment health summary and identify potential issues."""
+    verbose = ctx.obj.get('verbose', False)
+    
+    base_url = base_url or cli_config.get('base_url', 'http://localhost:8002')
+    
+    try:
+        echo(style("🏥 Checking deployment health...", fg='blue'))
+        
+        async def get_health():
+            api_key = ctx.obj.get('api_key') or cli_config.get('api_key')
+            async with AgentHubClient(base_url, api_key=api_key) as client:
+                result = await client.get("/deployment/health-summary")
+                return result
+        
+        result = asyncio.run(get_health())
+        
+        if "error" in result:
+            echo(style(f"❌ Failed to get health summary: {result['error']}", fg='red'))
+            sys.exit(1)
+        
+        echo(style("📊 Deployment Health Summary:", fg='green'))
+        echo(f"  Total deployments: {result.get('total_deployments', 0)}")
+        echo(f"  Running deployments: {result.get('running_deployments', 0)}")
+        echo(f"  Deployments with containers: {result.get('deployments_with_containers', 0)}")
+        echo(f"  Healthy deployments: {result.get('healthy_deployments', 0)}")
+        
+        # Show note about READ-ONLY nature
+        note = result.get('note', '')
+        if note:
+            echo(style(f"  ℹ️  {note}", fg='blue'))
+        
+        # Highlight potential issues
+        deployments_without_containers = result.get('deployments_without_containers', 0)
+        deployments_should_have_containers = result.get('deployments_should_have_containers', 0)
+        unhealthy_deployments = result.get('unhealthy_deployments', 0)
+        
+        if deployments_without_containers > 0:
+            echo(style(f"  ⚠️  Deployments without containers: {deployments_without_containers}", fg='yellow'))
+            echo(style("     These deployments should have containers but don't", fg='yellow'))
+            echo(style("     Run reconciliation to update their status", fg='yellow'))
+        
+        if unhealthy_deployments > 0:
+            echo(style(f"  ⚠️  Unhealthy deployments: {unhealthy_deployments}", fg='yellow'))
+            echo(style("     These deployments may need attention", fg='yellow'))
+        
+        # Recommendations
+        if deployments_without_containers > 0 or unhealthy_deployments > 0:
+            echo(style("\n💡 Recommendations:", fg='cyan'))
+            echo(style("  Run 'agenthub deploy reconcile' to update database status", fg='cyan'))
+            echo(style("  Check logs for deployment errors", fg='cyan'))
+            echo(style("  Note: Reconciliation is READ-ONLY - Docker containers are not modified", fg='cyan'))
+        
+        if verbose:
+            echo("\nFull response:")
+            echo(json.dumps(result, indent=2))
+            
+    except Exception as e:
+        echo(style(f"✗ Error getting deployment health: {e}", fg='red'))
+        sys.exit(1)
+
+
+@deploy.command(name='consistency')
+@click.option('--base-url', help='Base URL of the AgentHub server')
+@click.pass_context
+def hiring_deployment_consistency(ctx, base_url):
+    """Validate consistency between hiring status and deployment status."""
+    verbose = ctx.obj.get('verbose', False)
+    
+    base_url = base_url or cli_config.get('base_url', 'http://localhost:8002')
+    
+    try:
+        echo(style("🔍 Checking hiring-deployment consistency...", fg='blue'))
+        
+        async def check_consistency():
+            api_key = ctx.obj.get('api_key') or cli_config.get('api_key')
+            async with AgentHubClient(base_url, api_key=api_key) as client:
+                result = await client.get("/deployment/hiring-consistency")
+                return result
+        
+        result = asyncio.run(check_consistency())
+        
+        if "error" in result:
+            echo(style(f"❌ Failed to check consistency: {result['error']}", fg='red'))
+            sys.exit(1)
+        
+        echo(style("📊 Hiring-Deployment Consistency Check:", fg='green'))
+        echo(f"  Total hirings checked: {result.get('total_hirings_checked', 0)}")
+        echo(f"  Valid pairs: {result.get('valid_pairs', 0)}")
+        echo(f"  Inconsistencies found: {result.get('inconsistencies', 0)}")
+        
+        # Show inconsistencies if any
+        inconsistencies = result.get('inconsistency_details', [])
+        if inconsistencies:
+            echo(style("\n⚠️  Inconsistencies Found:", fg='yellow'))
+            for inc in inconsistencies:
+                echo(f"  Hiring {inc['hiring_id']} (Deployment: {inc['deployment_id'][:16]}...)")
+                echo(f"    Hiring Status: {inc['hiring_status']}")
+                echo(f"    Deployment Status: {inc['deployment_id']}")
+                echo(f"    Expected: {inc['expected_deployment_status']}")
+                echo(f"    Issue: {inc['issue']}")
+                echo()
+        else:
+            echo(style("\n✅ All hiring-deployment pairs are consistent!", fg='green'))
+        
+        if verbose:
+            echo("\nFull response:")
+            echo(json.dumps(result, indent=2))
+            
+    except Exception as e:
+        echo(style(f"✗ Error checking consistency: {e}", fg='red'))
+        sys.exit(1)
+
+
 # =============================================================================
 # PERSISTENT AGENT COMMANDS
 # =============================================================================

@@ -3,6 +3,7 @@
 import asyncio
 import logging
 from typing import Dict, Any, List, Optional
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
 
@@ -11,6 +12,7 @@ logger = logging.getLogger(__name__)
 from ..database import get_db
 from ..services.deployment_service import DeploymentService
 from ..services.function_deployment_service import FunctionDeploymentService
+from ..services.deployment_reconciliation_service import DeploymentReconciliationService
 from ..models.deployment import AgentDeployment
 from ..models.agent import Agent
 from ..models.hiring import Hiring
@@ -275,4 +277,211 @@ async def start_deployment_build(
 
 
 # REMOVED: /rebuild endpoint - duplicate of /restart
-# Use /restart endpoint instead for better safety and consistency 
+# Use /restart endpoint instead for better safety and consistency
+
+
+@router.post("/reconcile")
+def reconcile_all_deployments(
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Manually trigger deployment reconciliation for all deployments."""
+    try:
+        reconciliation_service = DeploymentReconciliationService(db)
+        result = reconciliation_service.reconcile_all_deployments()
+        
+        if "error" in result:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=result["error"]
+            )
+        
+        return {
+            "message": "Deployment reconciliation completed",
+            "results": result
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to reconcile deployments: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to reconcile deployments: {str(e)}"
+        )
+
+
+@router.post("/reconcile/{deployment_id}")
+def reconcile_deployment(
+    deployment_id: str,
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Manually trigger reconciliation for a specific deployment."""
+    try:
+        reconciliation_service = DeploymentReconciliationService(db)
+        result = reconciliation_service.reconcile_deployment_by_id(deployment_id)
+        
+        if "error" in result:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=result["error"]
+            )
+        
+        return {
+            "message": "Deployment reconciliation completed",
+            "results": result
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to reconcile deployment {deployment_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to reconcile deployment: {str(e)}"
+        )
+
+
+@router.get("/health-summary")
+def get_deployment_health_summary(
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get a summary of deployment health status."""
+    try:
+        reconciliation_service = DeploymentReconciliationService(db)
+        result = reconciliation_service.get_deployment_health_summary()
+        
+        if "error" in result:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=result["error"]
+            )
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Failed to get deployment health summary: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get deployment health summary: {str(e)}"
+        )
+
+
+@router.get("/hiring-consistency")
+def validate_hiring_deployment_consistency(
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Validate consistency between hiring status and deployment status."""
+    try:
+        reconciliation_service = DeploymentReconciliationService(db)
+        result = reconciliation_service.validate_hiring_deployment_consistency()
+        
+        if "error" in result:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=result["error"]
+            )
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Failed to validate hiring-deployment consistency: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to validate hiring-deployment consistency: {str(e)}"
+        )
+
+
+# =============================================================================
+# SYSTEM ANALYSIS AND RECONCILIATION ENDPOINTS (Available to all authenticated users)
+# =============================================================================
+
+@router.get("/admin/analysis")
+def get_system_analysis(
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get comprehensive system analysis (Available to all authenticated users - READ-ONLY)."""
+    try:
+        reconciliation_service = DeploymentReconciliationService(db)
+        
+        # Collect all analysis data (READ-ONLY)
+        analysis_data = {
+            "deployment_health": reconciliation_service.get_deployment_health_summary(),
+            "hiring_consistency": reconciliation_service.validate_hiring_deployment_consistency(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "note": "This is READ-ONLY analysis data. No changes are made to the system."
+        }
+        
+        return analysis_data
+        
+    except Exception as e:
+        logger.error(f"Failed to get system analysis: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get system analysis: {str(e)}"
+        )
+
+
+@router.post("/admin/reconcile")
+def admin_reconcile_deployments(
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Endpoint to reconcile deployment states (Available to all authenticated users)."""
+    try:
+        reconciliation_service = DeploymentReconciliationService(db)
+        
+        # Perform the actual reconciliation
+        result = reconciliation_service.reconcile_all_deployments()
+        
+        if "error" in result:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=result["error"]
+            )
+        
+        return {
+            "message": "Deployment reconciliation completed",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "results": result
+        }
+        
+    except Exception as e:
+        logger.error(f"Reconciliation failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to reconcile deployments: {str(e)}"
+        )
+
+
+@router.post("/admin/reconcile/{deployment_id}")
+def admin_reconcile_specific_deployment(
+    deployment_id: str,
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Endpoint to reconcile a specific deployment (Available to all authenticated users)."""
+    try:
+        reconciliation_service = DeploymentReconciliationService(db)
+        
+        # Perform reconciliation for specific deployment
+        result = reconciliation_service.reconcile_deployment_by_id(deployment_id)
+        
+        if "error" in result:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=result["error"]
+            )
+        
+        return {
+            "message": f"Deployment {deployment_id} reconciliation completed",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "results": result
+        }
+        
+    except Exception as e:
+        logger.error(f"Reconciliation of deployment {deployment_id} failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to reconcile deployment: {str(e)}"
+        ) 

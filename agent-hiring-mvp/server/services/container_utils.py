@@ -14,8 +14,8 @@ def generate_container_name(deployment: AgentDeployment, agent_type: Optional[st
         agent_type: Optional override for agent type (if None, uses deployment.deployment_type)
     
     Returns:
-        Container name in format: {agent_type_abbr}-{user_id}-{agent_id}-{hiring_id}-{deployment_uuid[:8]}
-        If too long, uses: {agent_type_abbr}-{user_id}-{agent_id}-{deployment_uuid_hash[:12]}
+        Container name in format: aghub-{agent_type_abbr}-user_{user_id}-id_{agent_id}-hire_{hiring_id}-{deployment_uuid[:8]}
+        If too long, uses: aghub-{agent_type_abbr}-user_{user_id}-id_{agent_id}-{deployment_uuid_hash[:12]}
     """
     if agent_type is None:
         agent_type = deployment.deployment_type or "function"
@@ -30,14 +30,14 @@ def generate_container_name(deployment: AgentDeployment, agent_type: Optional[st
         "acp": "acp"
     }.get(agent_type, agent_type)
     
-    # Generate base container name with user_id
-    container_name = f"{agent_type_abbr}-{user_id}-{deployment.agent_id}-{deployment.hiring_id}-{deployment.deployment_id[:8]}"
+    # Generate base container name with the new format
+    container_name = f"aghub-{agent_type_abbr}-user_{user_id}-id_{deployment.agent_id}-hire_{deployment.hiring_id}-{deployment.deployment_id[:8]}"
     
     # Ensure container name doesn't exceed Docker's 64 character limit
     if len(container_name) > 64:
         # Create a hash of the full deployment_id to ensure uniqueness
         deployment_hash = hashlib.md5(deployment.deployment_id.encode()).hexdigest()
-        container_name = f"{agent_type_abbr}-{user_id}-{deployment.agent_id}-{deployment_hash[:12]}"
+        container_name = f"aghub-{agent_type_abbr}-user_{user_id}-id_{deployment.agent_id}-{deployment_hash[:12]}"
     
     return container_name
 
