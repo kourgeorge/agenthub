@@ -59,7 +59,7 @@ echo.
 echo ✅ Caddy is now running with SSL!
 echo.
 echo 🌐 Access your services:
-echo    - Web UI (HTTPS): https://localhost:8443
+echo    - Web UI (HTTPS): https://localhost
 echo    - HTTP (redirects to HTTPS): http://localhost
 echo    - FastAPI Server (internal): http://localhost:8002
 echo    - Web UI (internal): http://localhost:8080
@@ -79,5 +79,9 @@ echo.
 echo 💡 Remember: Keep your services running:
 echo    - Web UI on port 8080
 echo    - FastAPI server on port 8002
+echo.
+echo 🔄 Environment switching:
+echo    - Development (self-signed): switch-to-dev.bat
+echo    - Production (Let's Encrypt): switch-to-prod.bat
 echo.
 pause
