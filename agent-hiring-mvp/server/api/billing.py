@@ -455,6 +455,11 @@ async def get_hiring_resources(
         total_cost = 0.0
         total_executions = len(executions)
         all_resources = []
+        execution_charges = 0.0
+        
+        # Initialize execution charges to 0 if no executions
+        if total_executions == 0:
+            execution_charges = 0.0
         
         for execution in executions:
             logger.info(f"Checking execution {execution.id} (execution_id: {execution.execution_id})")
@@ -463,6 +468,8 @@ async def get_hiring_resources(
             ).all()
             logger.info(f"Execution {execution.id} has {len(resource_usage)} resource usage records")
             
+            # Calculate execution cost from resource usage
+            execution_cost = 0.0
             for usage in resource_usage:
                 all_resources.append({
                     "execution_id": execution.execution_id,
@@ -480,7 +487,34 @@ async def get_hiring_resources(
                     "response_metadata": usage.response_metadata,
                     "created_at": usage.created_at.isoformat() if usage.created_at else None
                 })
+                execution_cost += usage.cost
                 total_cost += usage.cost
+            
+            # Add agent per-use pricing if available
+            if hasattr(hiring, 'agent') and hiring.agent and hasattr(hiring.agent, 'price_per_use') and hiring.agent.price_per_use:
+                agent_execution_cost = hiring.agent.price_per_use
+                execution_cost += agent_execution_cost
+                total_cost += agent_execution_cost
+                
+                # Add agent pricing to resource usage for transparency
+                all_resources.append({
+                    "execution_id": execution.execution_id,
+                    "executed_at": execution.started_at.isoformat() if execution.started_at else None,
+                    "resource_type": "agent_execution",
+                    "provider": "agenthub",
+                    "model": hiring.agent.name,
+                    "operation_type": "execution",
+                    "cost": agent_execution_cost,
+                    "input_tokens": None,
+                    "output_tokens": None,
+                    "total_tokens": None,
+                    "duration_ms": None,
+                    "request_metadata": None,
+                    "response_metadata": None,
+                    "created_at": execution.started_at.isoformat() if execution.started_at else None
+                })
+            
+            execution_charges += execution_cost
         
         # Get container resource usage directly from database
         container_resources = None
@@ -547,6 +581,7 @@ async def get_hiring_resources(
             "hired_at": hiring.hired_at.isoformat(),
             "total_executions": total_executions,
             "total_cost": total_cost,
+            "execution_charges": round(execution_charges, 6),
             "resource_count": len(all_resources),
             "resources": all_resources,
             "container_resources": container_resources
