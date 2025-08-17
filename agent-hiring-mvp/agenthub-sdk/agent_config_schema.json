@@ -60,135 +60,201 @@
     },
     "config_schema": {
       "type": "object",
-      "description": "Schema defining the input parameters for the agent",
-      "additionalProperties": {
-        "type": "object",
-        "required": ["type"],
-        "properties": {
-          "type": {
-            "type": "string",
-            "description": "Data type of the parameter",
-            "enum": ["string", "number", "integer", "float", "boolean", "choice", "select", "textarea", "array", "object"]
-          },
-          "label": {
-            "type": "string",
-            "description": "Human-readable label for the parameter",
-            "maxLength": 100
-          },
-          "description": {
-            "type": "string",
-            "description": "Detailed description of the parameter",
-            "maxLength": 500
-          },
-          "required": {
-            "type": "boolean",
-            "description": "Whether the parameter is required",
-            "default": false
-          },
-          "placeholder": {
-            "type": "string",
-            "description": "Placeholder text for input fields",
-            "maxLength": 200
-          },
-          "default": {
-            "description": "Default value for the parameter"
-          },
-          "min": {
-            "type": "number",
-            "description": "Minimum value for numeric parameters"
-          },
-          "max": {
-            "type": "number",
-            "description": "Maximum value for numeric parameters"
-          },
-          "minimum": {
-            "type": "number",
-            "description": "Minimum value for numeric parameters (backend format)"
-          },
-          "maximum": {
-            "type": "number",
-            "description": "Maximum value for numeric parameters (backend format)"
-          },
-          "pattern": {
-            "type": "string",
-            "description": "Regex pattern for string validation"
-          },
-          "options": {
-            "type": "array",
-            "description": "Available options for choice/select parameters",
-            "items": {
-              "type": "object",
-              "required": ["value", "label"],
-              "properties": {
-                "value": {
-                  "description": "The actual value that will be passed to the agent"
-                },
-                "label": {
-                  "type": "string",
-                  "description": "Human-readable label for the option",
-                  "maxLength": 100
-                }
-              },
-              "additionalProperties": false
-            },
-            "minItems": 1
-          },
-          "choices": {
-            "type": "array",
-            "description": "Legacy format for choice options (array of strings)",
-            "items": {
-              "type": "string"
-            },
-            "minItems": 1
-          },
-          "items": {
-            "description": "Schema for array items (when type is 'array')"
-          },
-          "properties": {
+      "description": "Schema defining the input parameters for the agent (legacy format) or functions array (new format)",
+      "oneOf": [
+        {
+          "type": "object",
+          "description": "Legacy format: direct parameter definitions",
+          "additionalProperties": {
             "type": "object",
-            "description": "Properties for object type parameters"
+            "required": ["type"],
+            "properties": {
+              "type": {
+                "type": "string",
+                "description": "Data type of the parameter",
+                "enum": ["string", "number", "integer", "float", "boolean", "choice", "select", "textarea", "array", "object"]
+              },
+              "label": {
+                "type": "string",
+                "description": "Human-readable label for the parameter",
+                "maxLength": 100
+              },
+              "description": {
+                "type": "string",
+                "description": "Detailed description of the parameter",
+                "maxLength": 500
+              },
+              "required": {
+                "type": "boolean",
+                "description": "Whether the parameter is required",
+                "default": false
+              },
+              "placeholder": {
+                "type": "string",
+                "description": "Placeholder text for input fields",
+                "maxLength": 200
+              },
+              "default": {
+                "description": "Default value for the parameter"
+              },
+              "min": {
+                "type": "number",
+                "description": "Minimum value for numeric parameters"
+              },
+              "max": {
+                "type": "number",
+                "description": "Maximum value for numeric parameters"
+              },
+              "minimum": {
+                "type": "number",
+                "description": "Minimum value for numeric parameters (backend format)"
+              },
+              "maximum": {
+                "type": "number",
+                "description": "Maximum value for numeric parameters (backend format)"
+              },
+              "pattern": {
+                "type": "string",
+                "description": "Regex pattern for string validation"
+              },
+              "options": {
+                "type": "array",
+                "description": "Available options for choice/select parameters",
+                "items": {
+                  "type": "object",
+                  "required": ["value", "label"],
+                  "properties": {
+                    "value": {
+                      "description": "The actual value that will be passed to the agent"
+                    },
+                    "label": {
+                      "type": "string",
+                      "description": "Human-readable label for the option",
+                      "maxLength": 100
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "minItems": 1
+              },
+              "choices": {
+                "type": "array",
+                "description": "Legacy format for choice options (array of strings)",
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1
+              },
+              "items": {
+                "description": "Schema for array items (when type is 'array')"
+              },
+              "properties": {
+                "type": "object",
+                "description": "Properties for object type parameters"
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "type": {
+                      "enum": ["choice", "select"]
+                    }
+                  }
+                },
+                "then": {
+                  "anyOf": [
+                    {
+                      "required": ["options"]
+                    },
+                    {
+                      "required": ["choices"]
+                    }
+                  ]
+                }
+              }
+            ]
           }
         },
-        "allOf": [
-          {
-            "if": {
-              "properties": { "type": { "enum": ["choice", "select"] } }
-            },
-            "then": {
-              "anyOf": [
-                { "required": ["options"] },
-                { "required": ["choices"] }
-              ]
-            }
-          },
-          {
-            "if": {
-              "properties": { "type": { "enum": ["choice"] } }
-            },
-            "then": {
-              "not": {
-                "required": ["options", "choices"]
+        {
+          "type": "object",
+          "description": "New format: functions array with JSON Schema definitions",
+          "properties": {
+            "functions": {
+              "type": "array",
+              "description": "Array of function definitions",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "required": ["name", "description"],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "Name of the function",
+                    "minLength": 1
+                  },
+                  "description": {
+                    "type": "string",
+                    "description": "Description of what the function does",
+                    "minLength": 1
+                  },
+                  "inputSchema": {
+                    "type": "object",
+                    "description": "JSON Schema for input validation",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "enum": ["object"]
+                      },
+                      "properties": {
+                        "type": "object",
+                        "description": "Input parameter definitions"
+                      },
+                      "required": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": ["type", "properties"]
+                  },
+                  "outputSchema": {
+                    "type": "object",
+                    "description": "JSON Schema for output validation",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "enum": ["object"]
+                      },
+                      "properties": {
+                        "type": "object",
+                        "description": "Output field definitions"
+                      },
+                      "required": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": ["type", "properties"]
+                  }
+                },
+                "additionalProperties": false
               }
             }
           },
-          {
-            "if": {
-              "properties": { "type": { "enum": ["array"] } }
-            },
-            "then": {
-              "required": ["items"]
-            }
-          },
-          {
-            "if": {
-              "properties": { "type": { "enum": ["object"] } }
-            },
-            "then": {
-              "required": ["properties"]
-            }
-          }
-        ]
-      }
+          "required": ["functions"],
+          "additionalProperties": false
+        }
+      ]
     },
     "requirements": {
       "type": "array",

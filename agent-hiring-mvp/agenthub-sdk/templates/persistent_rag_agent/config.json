@@ -26,64 +26,190 @@
     "cleanup": "cleanup"
   },
   "config_schema": {
-    "initialize": {
-      "website_url": {
-        "type": "string",
-        "description": "URL of the website to index for RAG",
-        "required": true,
-        "placeholder": "https://example.com"
-      },
-      "model_name": {
-        "type": "choice",
-        "description": "OpenAI model to use for LLM",
-        "default": "gpt-3.5-turbo",
-        "options": [
-          {
-            "value": "gpt-3.5-turbo",
-            "label": "GPT-3.5 Turbo (Fast & Cost-effective)"
+    "functions": [
+      {
+        "name": "initialize",
+        "description": "Initialize the RAG agent by indexing the specified website content",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "website_url": {
+              "type": "string",
+              "description": "URL of the website to index for RAG",
+              "minLength": 1
+            },
+            "model_name": {
+              "type": "string",
+              "description": "OpenAI model to use for LLM",
+              "enum": [
+                "gpt-3.5-turbo",
+                "gpt-4",
+                "gpt-4o"
+              ],
+              "default": "gpt-3.5-turbo"
+            },
+            "temperature": {
+              "type": "number",
+              "description": "Temperature for LLM responses",
+              "minimum": 0,
+              "maximum": 2,
+              "default": 0
+            },
+            "chunk_size": {
+              "type": "integer",
+              "description": "Size of text chunks for processing",
+              "minimum": 100,
+              "maximum": 4000,
+              "default": 1000
+            },
+            "chunk_overlap": {
+              "type": "integer",
+              "description": "Overlap between text chunks",
+              "minimum": 0,
+              "maximum": 1000,
+              "default": 200
+            }
           },
-          {
-            "value": "gpt-4",
-            "label": "GPT-4 (High Quality)"
+          "required": [
+            "website_url"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "description": "Initialization status",
+              "enum": [
+                "success",
+                "error"
+              ]
+            },
+            "message": {
+              "type": "string",
+              "description": "Initialization result message"
+            },
+            "indexed_pages": {
+              "type": "integer",
+              "description": "Number of pages successfully indexed"
+            },
+            "total_chunks": {
+              "type": "integer",
+              "description": "Total number of text chunks created"
+            }
           },
-          {
-            "value": "gpt-4o",
-            "label": "GPT-4o (Latest & Most Capable)"
-          }
-        ]
+          "required": [
+            "status",
+            "message"
+          ],
+          "additionalProperties": false
+        }
       },
-      "temperature": {
-        "type": "number",
-        "description": "Temperature for LLM responses",
-        "default": 0,
-        "minimum": 0,
-        "maximum": 2
+      {
+        "name": "execute",
+        "description": "Execute a RAG query against the indexed content",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "question": {
+              "type": "string",
+              "description": "Question to ask about the indexed content",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "question"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "answer": {
+              "type": "string",
+              "description": "Answer to the question based on indexed content"
+            },
+            "question": {
+              "type": "string",
+              "description": "The original question that was asked"
+            },
+            "confidence": {
+              "type": "number",
+              "description": "Confidence score of the answer (0-1)",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "sources": {
+              "type": "array",
+              "description": "List of source documents used for the answer",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "url": {
+                    "type": "string"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "relevance_score": {
+                    "type": "number"
+                  }
+                }
+              }
+            },
+            "processing_time": {
+              "type": "number",
+              "description": "Time taken to process the query in seconds"
+            }
+          },
+          "required": [
+            "answer",
+            "question"
+          ],
+          "additionalProperties": false
+        }
       },
-      "chunk_size": {
-        "type": "integer",
-        "description": "Size of text chunks for processing",
-        "default": 1000,
-        "minimum": 100,
-        "maximum": 4000
-      },
-      "chunk_overlap": {
-        "type": "integer",
-        "description": "Overlap between text chunks",
-        "default": 200,
-        "minimum": 0,
-        "maximum": 1000
+      {
+        "name": "cleanup",
+        "description": "Clean up resources and perform cleanup operations",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "description": "Cleanup status",
+              "enum": [
+                "success",
+                "error"
+              ]
+            },
+            "message": {
+              "type": "string",
+              "description": "Cleanup result message"
+            },
+            "resources_freed": {
+              "type": "array",
+              "description": "List of resources that were freed",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "status",
+            "message"
+          ],
+          "additionalProperties": false
+        }
       }
-    },
-    "execute": {
-      "question": {
-        "type": "string",
-        "description": "Question to ask about the indexed content",
-        "required": true,
-        "placeholder": "What is this website about?"
-      }
-    }
+    ]
   },
-
   "capabilities": [
     "document_indexing",
     "rag_queries",

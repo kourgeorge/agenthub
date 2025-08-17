@@ -17,6 +17,7 @@ from ..database.config import get_session
 from .persistent_agent_runtime import RuntimeStatus, RuntimeResult
 from .persistent_agent_runtime import PersistentAgentRuntimeService
 from .resource_manager import ResourceManager
+from .json_schema_validation_service import JSONSchemaValidationService
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +63,9 @@ class ExecutionService:
         
         # Initialize persistent agent runtime
         self.persistent_runtime = PersistentAgentRuntimeService()
+        
+        # Initialize JSON Schema validation service
+        self.json_schema_validator = JSONSchemaValidationService()
     
     def __del__(self):
         """Clean up database sessions if we own them."""
@@ -233,6 +237,20 @@ class ExecutionService:
             
             logger.info(f"📋 Executing agent {agent.id} (type: {agent.agent_type}) for execution {execution_id}")
             
+            # Validate input data using JSON Schema if available
+            if execution.input_data and agent.has_json_schema:
+                try:
+                    validated_input = self.json_schema_validator.validate_input(execution.input_data, agent)
+                    logger.info(f"✅ Input validation passed for agent {agent.id}")
+                except ValueError as e:
+                    logger.error(f"❌ Input validation failed for agent {agent.id}: {e}")
+                    self.update_execution_status(execution_id, ExecutionStatus.FAILED, error_message=f"Input validation failed: {e}")
+                    return {
+                        "status": "error",
+                        "execution_id": execution_id,
+                        "error": f"Input validation failed: {e}"
+                    }
+            
             # Get agent configuration
             agent_config = self._get_agent_config(agent)
             requires_initialization = agent_config.get('requires_initialization', False)
@@ -297,17 +315,30 @@ class ExecutionService:
             if runtime_result.status == RuntimeStatus.COMPLETED:
                 logger.info(f"🎉 Execution {execution_id} succeeded - updating status to COMPLETED")
 
-                # Check if the output is already a JSON object (dict)
-                if isinstance(runtime_result.output, dict):
-                    # Agent returned a proper JSON object, use it directly
-                    output_data = runtime_result.output
+                # Validate output data using JSON Schema if available
+                if agent.has_json_schema and isinstance(runtime_result.output, dict):
+                    try:
+                        validated_output = self.json_schema_validator.validate_output(runtime_result.output, agent)
+                        logger.info(f"✅ Output validation passed for agent {agent.id}")
+                        # Use validated output
+                        output_data = validated_output
+                    except ValueError as e:
+                        logger.error(f"❌ Output validation failed for agent {agent.id}: {e}")
+                        # Continue with original output but log the validation failure
+                        output_data = runtime_result.output
+                        logger.warning(f"⚠️ Using unvalidated output due to validation failure: {e}")
                 else:
-                    # Agent returned a string, wrap it in the standard format
-                    output_data = {
-                        "output": runtime_result.output,
-                        "execution_time": runtime_result.execution_time,
-                        "status": "success"
-                    }
+                    # Check if the output is already a JSON object (dict)
+                    if isinstance(runtime_result.output, dict):
+                        # Agent returned a proper JSON object, use it directly
+                        output_data = runtime_result.output
+                    else:
+                        # Agent returned a string, wrap it in the standard format
+                        output_data = {
+                            "output": runtime_result.output,
+                            "execution_time": runtime_result.execution_time,
+                            "status": "success"
+                        }
 
                 self.update_execution_status(execution_id, ExecutionStatus.COMPLETED, output_data, container_logs=runtime_result.container_logs)
                 logger.info(f"✅ Execution {execution_id} status updated to COMPLETED in database")

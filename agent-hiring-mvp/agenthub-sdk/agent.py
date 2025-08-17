@@ -100,6 +100,117 @@ class AgentConfig:
             logger.error(f"Error loading config from {self.config_path}: {e}")
             return {}
     
+    # JSON Schema Support Methods
+    @property
+    def has_json_schema(self) -> bool:
+        """Check if agent has JSON Schema format in config_schema."""
+        config_schema = self.config.get("config_schema", {})
+        return (
+            config_schema and 
+            "functions" in config_schema and
+            isinstance(config_schema["functions"], list) and
+            len(config_schema["functions"]) > 0
+        )
+    
+    def get_function_schema(self, function_name: str) -> Optional[Dict[str, Any]]:
+        """Get function schema by name from config_schema.functions array."""
+        if not self.has_json_schema:
+            return None
+        
+        functions = self.config.get("config_schema", {}).get("functions", [])
+        for func in functions:
+            if func.get("name") == function_name:
+                return func
+        return None
+    
+    def get_input_schema(self, function_name: str = "execute") -> Optional[Dict[str, Any]]:
+        """Get input schema for a specific function using JSON Schema format from config_schema."""
+        if not self.has_json_schema:
+            return None
+        
+        function_schema = self.get_function_schema(function_name)
+        if function_schema and "inputSchema" in function_schema:
+            return function_schema["inputSchema"]
+        return None
+    
+    def get_output_schema(self, function_name: str = "execute") -> Optional[Dict[str, Any]]:
+        """Get output schema for a specific function using JSON Schema format from config_schema."""
+        if not self.has_json_schema:
+            return None
+        
+        function_schema = self.get_function_schema(function_name)
+        if function_schema and "outputSchema" in function_schema:
+            return function_schema["outputSchema"]
+        return None
+    
+    def get_function_name(self, function_name: str = "execute") -> Optional[str]:
+        """Get function name from config_schema."""
+        if not self.has_json_schema:
+            return None
+        
+        function_schema = self.get_function_schema(function_name)
+        if function_schema:
+            return function_schema.get("name")
+        return None
+    
+    def get_function_description(self, function_name: str = "execute") -> Optional[str]:
+        """Get function description from config_schema."""
+        if not self.has_json_schema:
+            return None
+        
+        function_schema = self.get_function_schema(function_name)
+        if function_schema:
+            return function_schema.get("description")
+        return None
+    
+    def get_available_functions(self) -> List[str]:
+        """Get list of available function names from config_schema."""
+        if not self.has_json_schema:
+            return []
+        
+        functions = self.config.get("config_schema", {}).get("functions", [])
+        return [func.get("name") for func in functions if func.get("name")]
+    
+    def validate_input(self, input_data: Dict[str, Any], function_name: str = "execute") -> Dict[str, Any]:
+        """Validate input using JSON Schema inputSchema from config_schema for a specific function."""
+        if not self.has_json_schema:
+            return input_data  # No validation if no schema
+        
+        input_schema = self.get_input_schema(function_name)
+        if not input_schema:
+            return input_data  # No validation if no input schema
+        
+        try:
+            import jsonschema
+            jsonschema.validate(input_data, input_schema)
+            return input_data
+        except ImportError:
+            logger.warning("jsonschema not available, skipping input validation")
+            return input_data
+        except Exception as e:
+            logger.error(f"Input validation failed: {e}")
+            raise ValueError(f"Input validation failed: {e}")
+    
+    def validate_output(self, output_data: Dict[str, Any], function_name: str = "execute") -> Dict[str, Any]:
+        """Validate output using JSON Schema outputSchema from config_schema for a specific function."""
+        if not self.has_json_schema:
+            return output_data  # No validation if no schema
+        
+        output_schema = self.get_output_schema(function_name)
+        if not output_schema:
+            return output_data  # No validation if no output schema
+        
+        try:
+            import jsonschema
+            jsonschema.validate(output_data, output_schema)
+            return output_data
+        except ImportError:
+            logger.warning("jsonschema not available, skipping output validation")
+            return output_data
+        except Exception as e:
+            logger.error(f"Output validation failed: {e}")
+            raise ValueError(f"Output validation failed: {e}")
+    
     def get(self, key: str, default: Any = None) -> Any:
         """Get a configuration value."""
         return self.config.get(key, default)

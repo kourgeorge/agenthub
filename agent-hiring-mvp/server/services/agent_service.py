@@ -14,6 +14,7 @@ from ..models.agent import Agent, AgentStatus, AgentType
 from ..models.agent_file import AgentFile
 from ..models.user import User
 from ..models.hiring import Hiring
+from .json_schema_validation_service import JSONSchemaValidationService
 
 logger = logging.getLogger(__name__)
 
@@ -42,9 +43,16 @@ class AgentService:
     
     def __init__(self, db: Session):
         self.db = db
+        self.json_schema_validator = JSONSchemaValidationService()
     
     def create_agent(self, agent_data: AgentCreateRequest, code_file_path: str, owner_id: int) -> Agent:
         """Create a new agent with multiple files."""
+        # Validate JSON Schema if provided
+        if agent_data.config_schema:
+            if not self.json_schema_validator.validate_agent_config_schema(agent_data.config_schema):
+                raise ValueError("Invalid JSON Schema format in config_schema")
+            logger.info(f"✅ JSON Schema validation passed for agent {agent_data.name}")
+        
         # Calculate code hash
         code_hash = self._calculate_file_hash(code_file_path)
         

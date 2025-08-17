@@ -1,7 +1,7 @@
 """Agent model for storing agent information."""
 
 from enum import Enum
-from typing import Optional
+from typing import Optional, Dict, List, Any
 
 from sqlalchemy import Column, String, Text, Boolean, JSON, Float, Integer, ForeignKey
 from sqlalchemy.orm import relationship
@@ -100,6 +100,104 @@ class Agent(Base):
             if file.is_main_file == 'Y':
                 return file
         return None
+    
+    # JSON Schema Support Methods
+    @property
+    def has_json_schema(self) -> bool:
+        """Check if agent has JSON Schema format in config_schema."""
+        if not self.config_schema:
+            return False
+        
+        # Check if it's the new functions array format
+        if "functions" in self.config_schema:
+            functions = self.config_schema.get("functions", [])
+            return (
+                isinstance(functions, list) and 
+                len(functions) > 0
+            )
+        
+        # Legacy format check
+        return (
+            "inputSchema" in self.config_schema and
+            "outputSchema" in self.config_schema
+        )
+    
+    def get_function_schema(self, function_name: str) -> Optional[Dict[str, Any]]:
+        """Get function schema by name from config_schema.functions array."""
+        if not self.has_json_schema:
+            return None
+        
+        # Check if it's the new functions array format
+        if "functions" in self.config_schema:
+            functions = self.config_schema.get("functions", [])
+            for func in functions:
+                if func.get("name") == function_name:
+                    return func
+            return None
+        
+        # Legacy format - return the entire config_schema as a single function
+        if function_name == "execute":
+            return {
+                "name": "execute",
+                "description": self.config_schema.get("description", ""),
+                "inputSchema": self.config_schema.get("inputSchema"),
+                "outputSchema": self.config_schema.get("outputSchema")
+            }
+        
+        return None
+    
+    def get_input_schema(self, function_name: str = "execute") -> Optional[dict]:
+        """Get input schema using JSON Schema format from config_schema."""
+        if not self.has_json_schema:
+            return None
+        
+        function_schema = self.get_function_schema(function_name)
+        if function_schema and "inputSchema" in function_schema:
+            return function_schema["inputSchema"]
+        return None
+    
+    def get_output_schema(self, function_name: str = "execute") -> Optional[dict]:
+        """Get output schema using JSON Schema format from config_schema."""
+        if not self.has_json_schema:
+            return None
+        
+        function_schema = self.get_function_schema(function_name)
+        if function_schema and "outputSchema" in function_schema:
+            return function_schema["outputSchema"]
+        return None
+    
+    def get_function_name(self, function_name: str = "execute") -> Optional[str]:
+        """Get function name from config_schema."""
+        if not self.has_json_schema:
+            return None
+        
+        function_schema = self.get_function_schema(function_name)
+        if function_schema:
+            return function_schema.get("name")
+        return None
+    
+    def get_function_description(self, function_name: str = "execute") -> Optional[str]:
+        """Get function description from config_schema."""
+        if not self.has_json_schema:
+            return None
+        
+        function_schema = self.get_function_schema(function_name)
+        if function_schema:
+            return function_schema.get("description")
+        return None
+    
+    def get_available_functions(self) -> List[str]:
+        """Get list of available function names from config_schema."""
+        if not self.has_json_schema:
+            return []
+        
+        # Check if it's the new functions array format
+        if "functions" in self.config_schema:
+            functions = self.config_schema.get("functions", [])
+            return [func.get("name") for func in functions if func.get("name")]
+        
+        # Legacy format - return execute as the only function
+        return ["execute"]
     
     def get_file_by_path(self, file_path: str):
         """Get a specific file by its path."""

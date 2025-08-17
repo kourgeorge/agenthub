@@ -144,6 +144,99 @@ class AgentConfigValidator:
             errors.append("config_schema must be a dictionary")
             return errors
         
+        # Check if it's the new functions array format
+        if "functions" in config_schema:
+            return self._validate_functions_array_format(config_schema)
+        
+        # Legacy format validation (for backward compatibility)
+        return self._validate_legacy_config_schema(config_schema)
+    
+    def _validate_functions_array_format(self, config_schema: Dict[str, Any]) -> List[str]:
+        """
+        Validate the new config_schema.functions array format.
+        
+        Args:
+            config_schema: The config_schema with functions array
+            
+        Returns:
+            List of validation error messages
+        """
+        errors = []
+        
+        functions = config_schema.get("functions")
+        if not isinstance(functions, list):
+            errors.append("config_schema.functions must be an array")
+            return errors
+        
+        if len(functions) == 0:
+            errors.append("config_schema.functions must contain at least one function")
+            return errors
+        
+        # Valid function fields
+        valid_function_fields = {
+            "name", "description", "inputSchema", "outputSchema", 
+            "examples", "metadata"
+        }
+        
+        for i, function in enumerate(functions):
+            if not isinstance(function, dict):
+                errors.append(f"Function {i} must be a dictionary")
+                continue
+            
+            # Validate required fields
+            if "name" not in function:
+                errors.append(f"Function {i} missing required 'name' field")
+                continue
+            
+            if "description" not in function:
+                errors.append(f"Function {i} missing required 'description' field")
+                continue
+            
+            # Validate function name
+            function_name = function["name"]
+            if not isinstance(function_name, str) or not function_name.strip():
+                errors.append(f"Function {i} name must be a non-empty string")
+                continue
+            
+            # Validate unknown fields
+            unknown_fields = set(function.keys()) - valid_function_fields
+            if unknown_fields:
+                errors.append(f"Function '{function_name}' contains unknown fields: {', '.join(unknown_fields)}")
+            
+            # Validate inputSchema if present
+            if "inputSchema" in function:
+                input_errors = self._validate_json_schema(function["inputSchema"], f"Function '{function_name}' inputSchema")
+                errors.extend(input_errors)
+            
+            # Validate outputSchema if present
+            if "outputSchema" in function:
+                output_errors = self._validate_json_schema(function["outputSchema"], f"Function '{function_name}' outputSchema")
+                errors.extend(output_errors)
+            
+            # Validate examples if present
+            if "examples" in function:
+                examples_errors = self._validate_examples(function["examples"], function_name)
+                errors.extend(examples_errors)
+            
+            # Validate metadata if present
+            if "metadata" in function:
+                metadata_errors = self._validate_metadata(function["metadata"], function_name)
+                errors.extend(metadata_errors)
+        
+        return errors
+    
+    def _validate_legacy_config_schema(self, config_schema: Dict[str, Any]) -> List[str]:
+        """
+        Validate the legacy config_schema format (for backward compatibility).
+        
+        Args:
+            config_schema: The legacy config_schema format
+            
+        Returns:
+            List of validation error messages
+        """
+        errors = []
+        
         # Valid parameter types
         valid_types = {
             "string", "number", "integer", "float", "boolean", 
@@ -261,6 +354,113 @@ class AgentConfigValidator:
                     valid_values = [opt["value"] for opt in param_config["options"]]
                     if default_value not in valid_values:
                         errors.append(f"Parameter '{param_name}' default value '{default_value}' not found in options: {valid_values}")
+        
+        return errors
+    
+    def _validate_json_schema(self, schema: Dict[str, Any], context: str) -> List[str]:
+        """
+        Validate that a schema follows JSON Schema format requirements.
+        
+        Args:
+            schema: The schema to validate
+            context: Context string for error messages
+            
+        Returns:
+            List of validation error messages
+        """
+        errors = []
+        
+        if not isinstance(schema, dict):
+            errors.append(f"{context} must be a dictionary")
+            return errors
+        
+        required_fields = ["type", "properties"]
+        for field in required_fields:
+            if field not in schema:
+                errors.append(f"{context} missing required field: {field}")
+                continue
+        
+        if "type" in schema and schema["type"] != "object":
+            errors.append(f"{context} type must be 'object'")
+        
+        if "properties" in schema and not isinstance(schema["properties"], dict):
+            errors.append(f"{context} properties must be a dictionary")
+        
+        return errors
+    
+    def _validate_examples(self, examples: List[Dict[str, Any]], function_name: str) -> List[str]:
+        """
+        Validate examples array for a function.
+        
+        Args:
+            examples: The examples array to validate
+            function_name: Name of the function for error context
+            
+        Returns:
+            List of validation error messages
+        """
+        errors = []
+        
+        if not isinstance(examples, list):
+            errors.append(f"Function '{function_name}' examples must be an array")
+            return errors
+        
+        for i, example in enumerate(examples):
+            if not isinstance(example, dict):
+                errors.append(f"Function '{function_name}' example {i} must be a dictionary")
+                continue
+            
+            # Validate required fields
+            if "name" not in example:
+                errors.append(f"Function '{function_name}' example {i} missing required 'name' field")
+            
+            if "input" not in example:
+                errors.append(f"Function '{function_name}' example {i} missing required 'input' field")
+            
+            if "output" not in example:
+                errors.append(f"Function '{function_name}' example {i} missing required 'output' field")
+        
+        return errors
+    
+    def _validate_metadata(self, metadata: Dict[str, Any], function_name: str) -> List[str]:
+        """
+        Validate metadata for a function.
+        
+        Args:
+            metadata: The metadata to validate
+            function_name: Name of the function for error context
+            
+        Returns:
+            List of validation error messages
+        """
+        errors = []
+        
+        if not isinstance(metadata, dict):
+            errors.append(f"Function '{function_name}' metadata must be a dictionary")
+            return errors
+        
+        # Validate estimated_cost if present
+        if "estimated_cost" in metadata:
+            cost = metadata["estimated_cost"]
+            if not isinstance(cost, (int, float)) or cost < 0:
+                errors.append(f"Function '{function_name}' estimated_cost must be a non-negative number")
+        
+        # Validate max_execution_time if present
+        if "max_execution_time" in metadata:
+            time = metadata["max_execution_time"]
+            if not isinstance(time, (int, float)) or time <= 0:
+                errors.append(f"Function '{function_name}' max_execution_time must be a positive number")
+        
+        # Validate resource_requirements if present
+        if "resource_requirements" in metadata:
+            resources = metadata["resource_requirements"]
+            if not isinstance(resources, dict):
+                errors.append(f"Function '{function_name}' resource_requirements must be a dictionary")
+            else:
+                if "memory" in resources and not isinstance(resources["memory"], str):
+                    errors.append(f"Function '{function_name}' resource_requirements.memory must be a string")
+                if "cpu" in resources and not isinstance(resources["cpu"], (int, float)):
+                    errors.append(f"Function '{function_name}' resource_requirements.cpu must be a number")
         
         return errors
     

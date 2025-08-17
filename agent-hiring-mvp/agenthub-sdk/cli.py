@@ -364,7 +364,51 @@ def validate(ctx, directory):
             echo("    ✓ ACP manifest validation (if applicable)")
             echo("    ✓ Config schema parameter validation")
         
-        # Step 6: Check if entry point file exists
+        # Step 6: JSON Schema Validation (if config_schema is present)
+        if verbose:
+            echo(style("Step 6: JSON Schema validation...", fg='cyan'))
+        
+        if config.has_json_schema:
+            try:
+                # Validate JSON Schema format
+                input_schema = config.get_input_schema()
+                output_schema = config.get_output_schema()
+                
+                if verbose:
+                    echo(f"    Found JSON Schema:")
+                    echo(f"      Function: {config.get_function_name()}")
+                    echo(f"      Description: {config.get_function_description()}")
+                    echo(f"      Input schema: {len(input_schema.get('properties', {}))} properties")
+                    echo(f"      Output schema: {len(output_schema.get('properties', {}))} properties")
+                
+                # Test validation with sample data
+                sample_input = {"test": "data"}
+                sample_output = {"result": "test"}
+                
+                try:
+                    config.validate_input(sample_input)
+                    config.validate_output(sample_output)
+                    if verbose:
+                        echo(style("  ✅ PASSED: JSON Schema validation", fg='green'))
+                        echo("    ✓ Input schema is valid")
+                        echo("    ✓ Output schema is valid")
+                        echo("    ✓ Schema validation functions work")
+                except Exception as e:
+                    if verbose:
+                        echo(style(f"  ❌ FAILED: JSON Schema validation: {e}", fg='red'))
+                    echo(style(f"✗ JSON Schema validation failed: {e}", fg='red'))
+                    sys.exit(1)
+            except Exception as e:
+                if verbose:
+                    echo(style(f"  ❌ FAILED: JSON Schema validation error: {e}", fg='red'))
+                echo(style(f"✗ JSON Schema validation error: {e}", fg='red'))
+                sys.exit(1)
+        else:
+            if verbose:
+                echo(style("  ⚠️ SKIPPED: No JSON Schema found in config_schema", fg='yellow'))
+                echo("    (This is optional - agents can work without JSON Schemas)")
+        
+        # Step 7: Check if entry point file exists
         if verbose:
             echo(style("Step 6: Checking entry point file...", fg='cyan'))
         
@@ -378,9 +422,9 @@ def validate(ctx, directory):
         if verbose:
             echo(style(f"  ✅ PASSED: Entry point file found: {config.get('entry_point', 'agent.py')}", fg='green'))
         
-        # Step 7: Validate main function (static analysis)
+        # Step 8: Validate main function (static analysis)
         if verbose:
-            echo(style("Step 7: Validating main function (static analysis)...", fg='cyan'))
+            echo(style("Step 8: Validating main function (static analysis)...", fg='cyan'))
         
         main_errors = _validate_main_function(agent_dir, config)
         if main_errors:
@@ -400,9 +444,9 @@ def validate(ctx, directory):
             echo("    ✓ Synchronous function (not async)")
             echo("    ✓ Basic syntax validation")
         
-        # Step 8: Check requirements.txt
+        # Step 9: Check requirements.txt
         if verbose:
-            echo(style("Step 8: Checking requirements.txt...", fg='cyan'))
+            echo(style("Step 9: Checking requirements.txt...", fg='cyan'))
         
         requirements_file = agent_dir / "requirements.txt"
         if not requirements_file.exists():
@@ -421,9 +465,9 @@ def validate(ctx, directory):
                 except Exception as e:
                     echo(f"    ⚠ Warning: Could not read requirements.txt: {e}")
         
-        # Step 9: Check for additional files
+        # Step 10: Check for additional files
         if verbose:
-            echo(style("Step 9: Checking additional files...", fg='cyan'))
+            echo(style("Step 10: Checking additional files...", fg='cyan'))
         
         readme_file = agent_dir / "README.md"
         if readme_file.exists():
@@ -441,9 +485,9 @@ def validate(ctx, directory):
             if verbose:
                 echo(style("  ⚠ WARNING: .gitignore not found", fg='yellow'))
         
-        # Step 10: Validate config_schema parameters (if present)
+        # Step 11: Validate config_schema parameters (if present)
         if config.get('config_schema') and verbose:
-            echo(style("Step 10: Validating config_schema parameters...", fg='cyan'))
+            echo(style("Step 11: Validating config_schema parameters...", fg='cyan'))
             
             param_count = len(config.get('config_schema', {}))
             echo(f"    Parameters found: {param_count}")

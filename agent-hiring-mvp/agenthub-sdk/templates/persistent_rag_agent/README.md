@@ -1,233 +1,242 @@
 # Persistent RAG Agent
 
-A demonstration of the new persistent agent architecture in AgentHub, featuring separate initialization and execution phases.
+This agent demonstrates the new **JSON Schema format** for AgentHub persistent agents. It shows how to define clear input and output schemas using the flat JSON Schema structure while maintaining the persistent agent lifecycle.
 
-## 🚀 New Persistent Agent Architecture
+## 🆕 What's New: JSON Schema Format
 
-This agent demonstrates the new persistent agent capabilities in AgentHub:
+The JSON Schema format provides:
+- **Clear Input/Output Contracts**: Define exactly what your agent expects and returns
+- **Runtime Validation**: Automatic validation of inputs and outputs during execution
+- **Better Developer Experience**: Clear documentation of agent capabilities
+- **JSON Schema Compatibility**: Works with standard JSON Schema tools and validators
 
-### **Key Features**
-- **Separate Initialization and Execution**: Expensive setup happens once, not per execution
-- **Persistent State**: Agent state persists between executions
-- **Resource Efficiency**: Better memory and resource management
-- **Backward Compatibility**: Works with existing AgentHub infrastructure
+## 📋 Schema Structure
 
-### **Lifecycle Phases**
-
-1. **Initialization Phase** (`initialize_rag`)
-   - Load and index website content
-   - Create vector embeddings
-   - Setup LLM and QA chain
-   - Save state to persistent storage
-
-2. **Execution Phase** (`execute_rag`)
-   - Load existing state
-   - Execute RAG queries
-   - Return answers based on indexed content
-
-3. **Cleanup Phase** (`cleanup_rag`)
-   - Clean up resources
-   - Remove persistent state
-   - Free memory
-
-## 📋 Usage
-
-### **With AgentHub CLI**
-
-```bash
-# 1. Initialize the agent (happens once)
-agenthub hire agent <agent_id> --init-config '{"website_url": "https://example.com", "model_name": "gpt-4"}'
-
-# 2. Execute queries (can be called multiple times)
-agenthub execute <hiring_id> --input '{"question": "What is this website about?"}'
-agenthub execute <hiring_id> --input '{"question": "What are the main features?"}'
-
-# 3. Clean up when done
-agenthub terminate <hiring_id>
-```
-
-### **With API**
-
-```python
-# 1. Initialize
-POST /agents/{agent_id}/initialize
-{
-  "config": {
-    "website_url": "https://example.com",
-    "model_name": "gpt-4",
-    "temperature": 0
-  }
-}
-
-# 2. Execute
-POST /execution/{execution_id}/run
-{
-  "input_data": {
-    "question": "What is this website about?"
-  }
-}
-
-# 3. Clean up
-DELETE /hiring/{hiring_id}
-```
-
-### **Direct Usage**
-
-```python
-from persistent_rag_agent import main
-
-# Initialize
-init_result = main(
-    {"website_url": "https://example.com"}, 
-    {"agent_id": "my_rag_agent"}
-)
-
-# Execute queries
-exec_result = main(
-    {"question": "What is this website about?"}, 
-    {"agent_id": "my_rag_agent"}
-)
-
-# Clean up
-cleanup_result = main(
-    {"action": "cleanup"}, 
-    {"agent_id": "my_rag_agent"}
-)
-```
-
-## 🏗️ Architecture
-
-### **State Management**
-- **File-based Storage**: State stored in `/tmp/agenthub_agent_states/`
-- **Serialization**: Uses pickle for state persistence
-- **Vectorstore**: FAISS embeddings stored separately
-- **Automatic Cleanup**: Resources cleaned up on termination
-
-### **Configuration Schema**
-The agent supports different configuration schemas for each phase:
+The agent uses a flat JSON Schema structure in `config_schema` for the main execution interface:
 
 ```json
 {
   "config_schema": {
-    "initialize": {
-      "website_url": "string (required)",
-      "model_name": "choice",
-      "temperature": "number",
-      "chunk_size": "integer",
-      "chunk_overlap": "integer"
+    "name": "persistent_rag_agent",
+    "description": "A RAG agent with document indexing and querying capabilities",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "question": {
+          "type": "string",
+          "description": "Question to ask about the indexed content",
+          "minLength": 1,
+          "maxLength": 1000
+        }
+      },
+      "required": ["question"]
     },
-    "execute": {
-      "question": "string (required)"
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "answer": {"type": "string"},
+        "question": {"type": "string"},
+        "website_url": {"type": "string"},
+        "index_size": {"type": "integer"}
+      },
+      "required": ["answer", "question"]
     }
   }
 }
 ```
 
-### **Backward Compatibility**
-The agent maintains full backward compatibility with existing AgentHub agents:
+## 🔄 Persistent Agent Lifecycle
 
-- Single `main()` function entry point
-- Automatic phase detection based on input
-- Fallback to legacy execution mode
+This agent follows the persistent agent lifecycle with separate initialization and execution phases:
 
-## 🔧 Configuration Options
+### 1. **Initialization Phase**
+- **Method**: `initialize(config)`
+- **Purpose**: Set up the agent with document indexing
+- **Configuration**: Uses `initialization_config` for setup parameters
+- **State**: Stores indexed content and configuration in persistent state
 
-### **Initialization Parameters**
-- `website_url`: URL to index (required)
-- `model_name`: OpenAI model to use (gpt-3.5-turbo, gpt-4, gpt-4o)
-- `temperature`: Response creativity (0-2)
-- `chunk_size`: Text chunk size for processing (100-4000)
-- `chunk_overlap`: Overlap between chunks (0-1000)
+### 2. **Execution Phase**
+- **Method**: `execute(input_data)`
+- **Purpose**: Process RAG queries against indexed content
+- **Input**: Validated against `inputSchema` from `config_schema`
+- **Output**: Validated against `outputSchema` from `config_schema`
 
-### **Execution Parameters**
-- `question`: Question to ask about indexed content (required)
+### 3. **Cleanup Phase**
+- **Method**: `cleanup()`
+- **Purpose**: Clean up resources when agent is no longer needed
 
-## 📊 Performance Benefits
+## 🚀 Key Features
 
-### **Before (Traditional Agent)**
-```
-Execution 1: Load website → Create embeddings → Query → Answer (30s)
-Execution 2: Load website → Create embeddings → Query → Answer (30s)
-Execution 3: Load website → Create embeddings → Query → Answer (30s)
-Total: 90 seconds
-```
+### 1. **Input Validation**
+- Validates all input parameters against the `inputSchema`
+- Ensures required fields are present
+- Checks data types and constraints
 
-### **After (Persistent Agent)**
-```
-Initialization: Load website → Create embeddings → Save state (30s)
-Execution 1: Load state → Query → Answer (2s)
-Execution 2: Load state → Query → Answer (2s)
-Execution 3: Load state → Query → Answer (2s)
-Total: 36 seconds (60% improvement)
-```
+### 2. **Output Validation**
+- Validates agent outputs against the `outputSchema`
+- Ensures consistent response format
+- Catches unexpected output structures
 
-## 🛠️ Development
+### 3. **Runtime Safety**
+- Prevents invalid inputs from reaching your agent
+- Ensures outputs match expected format
+- Better error handling and debugging
 
-### **Adding New Persistent Agents**
+### 4. **Persistent State Management**
+- Maintains indexed content across executions
+- Stores configuration and metadata
+- Platform handles persistence automatically
 
-1. **Create agent class**:
-```python
-class MyPersistentAgent:
-    def initialize(self, config, agent_id):
-        # Setup expensive resources
-        pass
-    
-    def execute(self, input_data, config, agent_id):
-        # Use existing resources
-        pass
-    
-    def cleanup(self, config, agent_id):
-        # Clean up resources
-        pass
+## 📝 Usage Examples
+
+### Initialization
+```bash
+# Initialize the agent with a website
+agenthub hired initialize <hiring_id> --config '{
+  "website_url": "https://example.com",
+  "model_name": "gpt-4",
+  "temperature": 0,
+  "chunk_size": 1000
+}'
 ```
 
-2. **Define lifecycle functions**:
-```python
-def initialize_my_agent(config, agent_id):
-    return agent.initialize(config, agent_id)
-
-def execute_my_agent(input_data, config, agent_id):
-    return agent.execute(input_data, config, agent_id)
-
-def cleanup_my_agent(config, agent_id):
-    return agent.cleanup(config, agent_id)
+### Execution
+```bash
+# Execute a RAG query
+agenthub execute hiring <hiring_id> --input '{
+  "question": "What is this website about?"
+}'
 ```
 
-3. **Update config.json**:
+### Expected Output
 ```json
 {
-  "agent_type": "persistent",
-  "lifecycle": {
-    "initialize": "initialize_my_agent",
-    "execute": "execute_my_agent",
-    "cleanup": "cleanup_my_agent"
+  "answer": "This website is about artificial intelligence and machine learning technologies...",
+  "question": "What is this website about?",
+  "website_url": "https://example.com",
+  "index_size": 150
+}
+```
+
+## 🔧 Testing
+
+### Local Testing
+```bash
+cd agenthub-sdk/templates/persistent_rag_agent
+python persistent_rag_agent.py
+```
+
+### CLI Validation
+```bash
+agenthub agent validate --directory agenthub-sdk/templates/persistent_rag_agent
+```
+
+### Platform Testing
+```bash
+# Submit the agent
+agenthub agent publish --directory agenthub-sdk/templates/persistent_rag_agent
+
+# Test initialization
+agenthub hired initialize <hiring_id> --config '{"website_url": "https://example.com"}'
+
+# Test execution
+agenthub execute hiring <hiring_id> --input '{"question": "What is this about?"}'
+```
+
+## 📚 Schema Benefits
+
+### For Agent Creators
+- **Clear Documentation**: Input/output requirements are explicit
+- **Better Testing**: Validate schemas before deployment
+- **Error Prevention**: Catch issues early in development
+- **Lifecycle Management**: Clear separation of initialization and execution
+
+### For Agent Users
+- **Predictable Interface**: Know exactly what to send and expect
+- **Better Integration**: Easy to integrate with other systems
+- **Error Handling**: Clear error messages for invalid inputs
+- **State Persistence**: No need to re-index documents for each query
+
+### For Platform
+- **Quality Assurance**: Ensures agent reliability
+- **API Consistency**: Standardized input/output formats
+- **Monitoring**: Track validation success/failure rates
+- **Resource Management**: Efficient handling of persistent state
+
+## 🔄 Migration from Old Format
+
+If you have existing persistent agents, you can migrate them to JSON Schema format:
+
+### Old Format (UI Forms)
+```json
+{
+  "config_schema": {
+    "execute": {
+      "question": {
+        "type": "string",
+        "description": "Question to ask"
+      }
+    }
   }
 }
 ```
 
-## 🔍 Troubleshooting
-
-### **Common Issues**
-
-1. **State not found**: Ensure agent was properly initialized
-2. **Memory issues**: Check available RAM for large documents
-3. **API rate limits**: Monitor OpenAI API usage
-4. **File permissions**: Ensure write access to `/tmp/agenthub_agent_states/`
-
-### **Debug Mode**
-Enable debug logging by setting environment variable:
-```bash
-export AGENTHUB_DEBUG=1
+### New JSON Schema Format
+```json
+{
+  "config_schema": {
+    "name": "my_agent",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "question": {
+          "type": "string",
+          "description": "Question to ask"
+        }
+      },
+      "required": ["question"]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "answer": {"type": "string"}
+      },
+      "required": ["answer"]
+    }
+  }
+}
 ```
 
-## 📈 Future Enhancements
+## 🎯 Best Practices
 
-- **Database-backed state storage**
-- **Distributed state management**
-- **State versioning and rollback**
-- **Automatic state cleanup**
-- **State sharing between agents**
+1. **Be Specific**: Define detailed property descriptions
+2. **Use Constraints**: Add `minLength`, `maxLength`, `enum` where appropriate
+3. **Required Fields**: Only mark truly required fields as required
+4. **Examples**: Include realistic input/output examples
+5. **Validation**: Test your schemas with various inputs
+6. **Lifecycle Separation**: Keep initialization and execution concerns separate
+7. **State Management**: Use platform state management methods
 
-## 🤝 Contributing
+## 🚨 Common Issues
 
-This agent serves as a reference implementation for the new persistent agent architecture. Contributions are welcome to improve the implementation and add new features. 
+### Schema Validation Errors
+- Check that `inputSchema` and `outputSchema` are present
+- Ensure all required fields are marked correctly
+- Verify JSON Schema syntax is valid
+
+### Runtime Validation Failures
+- Input data doesn't match `inputSchema`
+- Output data doesn't match `outputSchema`
+- Missing required fields or wrong data types
+
+### Persistent Agent Issues
+- Agent not initialized before execution
+- State not properly managed between calls
+- Initialization configuration missing required fields
+
+## 📖 Learn More
+
+- [JSON Schema Specification](../AGENT_JSON_SCHEMA_SPECIFICATION.md)
+- [AgentHub Documentation](../../../documentation/)
+- [JSON Schema Reference](https://json-schema.org/)
+- [Persistent Agent Guide](../../../documentation/PERSISTENT_AGENT_GUIDE.md) 

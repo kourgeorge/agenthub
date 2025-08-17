@@ -118,6 +118,17 @@ async def submit_agent(
         tags_list = json.loads(tags) if tags else None
         acp_manifest_dict = json.loads(acp_manifest) if acp_manifest else None
         
+        # Validate JSON Schema format if config_schema is provided
+        if config_schema_dict:
+            from ..services.json_schema_validation_service import JSONSchemaValidationService
+            json_schema_validator = JSONSchemaValidationService()
+            if not json_schema_validator.validate_agent_config_schema(config_schema_dict):
+                raise HTTPException(
+                    status_code=400,
+                    detail={"message": "Invalid JSON Schema format in config_schema", "errors": "Schema must follow JSON Schema format with inputSchema and outputSchema"}
+                )
+            logger.info(f"✅ JSON Schema validation passed for agent {name}")
+        
         # Create agent data
         agent_data = AgentCreateRequest(
             name=name,
