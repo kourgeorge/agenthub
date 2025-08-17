@@ -254,7 +254,7 @@ async def run_execution(
 
 
 @router.get("/agent/{agent_id}", response_model=List[dict])
-def get_agent_executions(
+async def get_agent_executions(
     agent_id: str,
     limit: int = 100,
     current_user = Depends(get_current_user),
@@ -280,7 +280,7 @@ def get_agent_executions(
 
 
 @router.get("/user/{user_id}", response_model=List[dict])
-def get_user_executions(
+async def get_user_executions(
     user_id: int,
     limit: int = 100,
     current_user = Depends(get_current_user),
@@ -311,7 +311,7 @@ def get_user_executions(
 
 
 @router.get("/hiring/{hiring_id}", response_model=List[dict])
-def get_hiring_executions(
+async def get_hiring_executions(
     hiring_id: int,
     limit: int = 100,
     current_user = Depends(get_current_user),
