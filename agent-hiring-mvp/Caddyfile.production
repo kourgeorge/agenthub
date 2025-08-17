@@ -3,7 +3,8 @@
 # External access: HTTPS on standard port 443
 # Cross-platform compatible (macOS, Windows, Linux)
 
-avi.kour.me {
+# Web UI - accessible at https://theagenthub.cloud
+theagenthub.cloud {
     # Reverse proxy to the web UI running on host
     reverse_proxy host.docker.internal:8080 {
         # Health checks
@@ -35,12 +36,36 @@ avi.kour.me {
         format json
         level INFO
     }
+}
+
+# API Server - accessible at https://theagenthub.cloud/api
+theagenthub.cloud/api/* {
+    # Reverse proxy to the FastAPI server running on host
+    reverse_proxy host.docker.internal:8002 {
+        # Health checks
+        health_uri /health
+        health_interval 30s
+        health_timeout 10s
+        health_status 200
+    }
     
-    # Rate limiting (optional)
-    # rate_limit {
-    #     zone api
-    #     rate 100r/10s
-    # }
+    # Security headers for API
+    header {
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy strict-origin-when-cross-origin
+        
+        # Remove server header
+        -Server
+    }
+    
+    # Logging
+    log {
+        output stdout
+        format json
+        level INFO
+    }
 }
 
 # HTTP to HTTPS redirect (port 80)
