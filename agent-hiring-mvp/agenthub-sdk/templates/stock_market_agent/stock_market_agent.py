@@ -1284,7 +1284,7 @@ class StockMarketAgent:
         
         return report
 
-def main(input_data: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+def execute(input_data: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
     """
     Main function for the Stock Market Research Agent.
     
@@ -1434,5 +1434,5 @@ if __name__ == "__main__":
         'investment_amount': 10000
     }
     
-    result = main(test_input, {})
+    result = execute(test_input, {})
     print(json.dumps(result, indent=2, cls=NumpyEncoder)) 

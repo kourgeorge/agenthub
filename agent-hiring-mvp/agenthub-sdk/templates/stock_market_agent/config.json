@@ -3,7 +3,7 @@
   "description": "A comprehensive stock market research agent that analyzes stocks, fetches news, identifies trends, and provides specific recommendations and predictions.",
   "version": "1.0.0",
   "author": "AgentHub",
-  "entry_point": "stock_market_agent.py",
+  "entry_point": "stock_market_agent.py:execute",
   "agent_type": "function",
   "email": "team@agenthub.com",
   "pricing_model": "per_use",
