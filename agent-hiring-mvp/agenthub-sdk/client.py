@@ -26,6 +26,37 @@ from .agent import Agent, AgentConfig
 logger = logging.getLogger(__name__)
 
 
+class AgentHubError(Exception):
+    """Custom exception for AgentHub client errors."""
+    
+    def __init__(self, message: str, status_code: Optional[int] = None, response_body: Optional[str] = None, operation: Optional[str] = None):
+        self.message = message
+        self.status_code = status_code
+        self.response_body = response_body
+        self.operation = operation
+        
+        # Build a more informative error message
+        error_msg = f"AgentHub Error: {message}"
+        if operation:
+            error_msg += f" (Operation: {operation})"
+        if status_code:
+            error_msg += f" (HTTP {status_code})"
+        if response_body:
+            try:
+                # Try to parse JSON response for better error details
+                error_data = json.loads(response_body)
+                if "detail" in error_data:
+                    error_msg += f" - {error_data['detail']}"
+                elif "message" in error_data:
+                    error_msg += f" - {error_data['message']}"
+                else:
+                    error_msg += f" - Response: {response_body}"
+            except json.JSONDecodeError:
+                error_msg += f" - Response: {response_body}"
+        
+        super().__init__(error_msg)
+
+
 class AgentHubClient:
     """Complete client for AgentHub platform interactions."""
     
@@ -461,7 +492,49 @@ class AgentHubClient:
                 }
             else:
                 error_text = await response.text()
-                raise Exception(f"Failed to hire agent: {error_text}")
+                # Provide more specific error messages based on status code
+                if response.status == 401:
+                    raise AgentHubError(
+                        "Authentication failed. Please check your API key.",
+                        status_code=response.status,
+                        response_body=error_text,
+                        operation="hire_agent"
+                    )
+                elif response.status == 403:
+                    raise AgentHubError(
+                        "Access denied. You may not have permission to hire this agent.",
+                        status_code=response.status,
+                        response_body=error_text,
+                        operation="hire_agent"
+                    )
+                elif response.status == 404:
+                    raise AgentHubError(
+                        "Agent not found. Please check the agent ID.",
+                        status_code=response.status,
+                        response_body=error_text,
+                        operation="hire_agent"
+                    )
+                elif response.status == 422:
+                    raise AgentHubError(
+                        "Invalid request data. Please check your input parameters.",
+                        status_code=response.status,
+                        response_body=error_text,
+                        operation="hire_agent"
+                    )
+                elif response.status >= 500:
+                    raise AgentHubError(
+                        "Server error occurred. Please try again later or contact support.",
+                        status_code=response.status,
+                        response_body=error_text,
+                        operation="hire_agent"
+                    )
+                else:
+                    raise AgentHubError(
+                        f"Failed to hire agent (HTTP {response.status})",
+                        status_code=response.status,
+                        response_body=error_text,
+                        operation="hire_agent"
+                    )
     
     async def list_hired_agents(self, user_id: Optional[int] = None, status: Optional[str] = None) -> Dict[str, Any]:
         """List hired agents."""
@@ -503,7 +576,27 @@ class AgentHubClient:
                 }
             else:
                 error_text = await response.text()
-                raise Exception(f"Failed to list hired agents: {error_text}")
+                if response.status == 401:
+                    raise AgentHubError(
+                        "Authentication failed. Please check your API key.",
+                        status_code=response.status,
+                        response_body=error_text,
+                        operation="list_hired_agents"
+                    )
+                elif response.status == 404:
+                    raise AgentHubError(
+                        "User not found or no access to user data.",
+                        status_code=response.status,
+                        response_body=error_text,
+                        operation="list_hired_agents"
+                    )
+                else:
+                    raise AgentHubError(
+                        f"Failed to list hired agents (HTTP {response.status})",
+                        status_code=response.status,
+                        response_body=error_text,
+                        operation="list_hired_agents"
+                    )
 
     async def get_hiring_details(self, hiring_id: int) -> Dict[str, Any]:
         """Get hiring information."""
@@ -518,15 +611,35 @@ class AgentHubClient:
                 return await response.json()
             else:
                 error_text = await response.text()
-                raise Exception(f"Failed to get hiring details: {error_text}")
+                if response.status == 401:
+                    raise AgentHubError(
+                        "Authentication failed. Please check your API key.",
+                        status_code=response.status,
+                        response_body=error_text,
+                        operation="get_hiring_details"
+                    )
+                elif response.status == 404:
+                    raise AgentHubError(
+                        "Hiring not found. Please check the hiring ID.",
+                        status_code=response.status,
+                        response_body=error_text,
+                        operation="get_hiring_details"
+                    )
+                else:
+                    raise AgentHubError(
+                        f"Failed to get hiring details (HTTP {response.status})",
+                        status_code=response.status,
+                        response_body=error_text,
+                        operation="get_hiring_details"
+                    )
     
     async def cancel_hiring(self, hiring_id: int, notes: Optional[str] = None, timeout: Optional[int] = 60) -> Dict[str, Any]:
         """Cancel a hiring."""
         if not self.session:
             raise RuntimeError("Client not initialized. Use async context manager.")
         
-        async with self.session.delete(
-            f"{self.api_base}/hiring/{hiring_id}",
+        async with self.session.put(
+            f"{self.api_base}/hiring/{hiring_id}/cancel",
             json={"notes": notes, "timeout": timeout},
             headers=self._get_headers(),
         ) as response:
@@ -534,7 +647,34 @@ class AgentHubClient:
                 return await response.json()
             else:
                 error_text = await response.text()
-                raise Exception(f"Failed to cancel hiring: {error_text}")
+                if response.status == 401:
+                    raise AgentHubError(
+                        "Authentication failed. Please check your API key.",
+                        status_code=response.status,
+                        response_body=error_text,
+                        operation="cancel_hiring"
+                    )
+                elif response.status == 404:
+                    raise AgentHubError(
+                        "Hiring not found. Please check the hiring ID.",
+                        status_code=response.status,
+                        response_body=error_text,
+                        operation="cancel_hiring"
+                    )
+                elif response.status == 409:
+                    raise AgentHubError(
+                        "Cannot cancel hiring. It may already be completed or in an invalid state.",
+                        status_code=response.status,
+                        response_body=error_text,
+                        operation="cancel_hiring"
+                    )
+                else:
+                    raise AgentHubError(
+                        f"Failed to cancel hiring (HTTP {response.status})",
+                        status_code=response.status,
+                        response_body=error_text,
+                        operation="cancel_hiring"
+                    )
 
     async def suspend_hiring(self, hiring_id: int, notes: Optional[str] = None) -> Dict[str, Any]:
         """Suspend a hiring."""
@@ -554,7 +694,34 @@ class AgentHubClient:
                 return await response.json()
             else:
                 error_text = await response.text()
-                raise Exception(f"Failed to suspend hiring: {error_text}")
+                if response.status == 401:
+                    raise AgentHubError(
+                        "Authentication failed. Please check your API key.",
+                        status_code=response.status,
+                        response_body=error_text,
+                        operation="suspend_hiring"
+                    )
+                elif response.status == 404:
+                    raise AgentHubError(
+                        "Hiring not found. Please check the hiring ID.",
+                        status_code=response.status,
+                        response_body=error_text,
+                        operation="suspend_hiring"
+                    )
+                elif response.status == 409:
+                    raise AgentHubError(
+                        "Cannot suspend hiring. It may already be suspended or in an invalid state.",
+                        status_code=response.status,
+                        response_body=error_text,
+                        operation="suspend_hiring"
+                    )
+                else:
+                    raise AgentHubError(
+                        f"Failed to suspend hiring (HTTP {response.status})",
+                        status_code=response.status,
+                        response_body=error_text,
+                        operation="suspend_hiring"
+                    )
 
     async def activate_hiring(self, hiring_id: int, notes: Optional[str] = None) -> Dict[str, Any]:
         """Activate a hiring."""
@@ -574,7 +741,34 @@ class AgentHubClient:
                 return await response.json()
             else:
                 error_text = await response.text()
-                raise Exception(f"Failed to activate hiring: {error_text}")
+                if response.status == 401:
+                    raise AgentHubError(
+                        "Authentication failed. Please check your API key.",
+                        status_code=response.status,
+                        response_body=error_text,
+                        operation="activate_hiring"
+                    )
+                elif response.status == 404:
+                    raise AgentHubError(
+                        "Hiring not found. Please check the hiring ID.",
+                        status_code=response.status,
+                        response_body=error_text,
+                        operation="activate_hiring"
+                    )
+                elif response.status == 409:
+                    raise AgentHubError(
+                        "Cannot activate hiring. It may already be active or in an invalid state.",
+                        status_code=response.status,
+                        response_body=error_text,
+                        operation="activate_hiring"
+                    )
+                else:
+                    raise AgentHubError(
+                        f"Failed to activate hiring (HTTP {response.status})",
+                        status_code=response.status,
+                        response_body=error_text,
+                        operation="activate_hiring"
+                    )
     
     # =============================================================================
     # AGENT EXECUTION
@@ -603,7 +797,29 @@ class AgentHubClient:
                 return await response.json()
             else:
                 error_text = await response.text()
-                raise Exception(f"Failed to get execution status: {error_text}")
+                if response.status == 401:
+                    raise AgentHubError(
+                        "Authentication failed. Please check your API key.",
+                        status_code=response.status,
+                        response_body=error_text,
+                        operation="get_execution_status"
+                    )
+                elif response.status == 404:
+                    raise AgentHubError(
+                        "Execution not found. Please check the execution ID.",
+                        status_code=response.status,
+                        response_body=error_text,
+                        operation="get_execution_status"
+                    )
+                else:
+                    raise AgentHubError(
+                        f"Failed to get execution status (HTTP {response.status})",
+                        status_code=response.status,
+                        response_body=error_text,
+                        operation="get_execution_status"
+                    )
+    
+
     
     async def run_agent(
         self,
@@ -686,9 +902,6 @@ class AgentHubClient:
         if not execution_id:
             raise Exception("No execution ID returned")
         
-        # Small delay to ensure execution is ready
-        await asyncio.sleep(0.5)
-        
         logger.debug(f"Triggering execution {execution_id}")
         async with self.session.post(
             f"{self.api_base}/execution/{execution_id}/run",
@@ -698,11 +911,30 @@ class AgentHubClient:
                 # Return the execution result for immediate executions
                 execution_result = await response.json()
                 logger.debug(f"Execution triggered successfully")
+                
+                # Check if the execution failed
+                if execution_result.get("status") == "error":
+                    return {
+                        "execution_id": execution_id,
+                        "status": "error",
+                        "error": execution_result.get("error", "Execution failed"),
+                        "message": "Execution failed"
+                    }
+                
+                # Check if execution started successfully
+                if execution_result.get("status") == "started":
+                    return {
+                        "execution_id": execution_id,
+                        "status": "started",
+                        "message": execution_result.get("message", "Execution started successfully")
+                    }
+                
+                # Fallback for other statuses
                 return {
                     "execution_id": execution_id,
-                    "status": "running",
+                    "status": execution_result.get("status", "unknown"),
                     "result": execution_result.get("result"),
-                    "message": "Execution triggered successfully"
+                    "message": execution_result.get("message", "Execution triggered")
                 }
             else:
                 error_text = await response.text()

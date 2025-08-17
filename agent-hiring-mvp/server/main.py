@@ -302,10 +302,34 @@ async def refresh_database():
 async def global_exception_handler(request, exc):
     """Global exception handler."""
     logger.error(f"Unhandled exception: {exc}")
-    return JSONResponse(
-        status_code=500,
-        content={"detail": "Internal server error"},
-    )
+    
+    # Provide more specific error messages for common exceptions
+    if isinstance(exc, ValueError):
+        return JSONResponse(
+            status_code=400,
+            content={"detail": str(exc)},
+        )
+    elif isinstance(exc, KeyError):
+        return JSONResponse(
+            status_code=400,
+            content={"detail": f"Missing required field: {str(exc)}"},
+        )
+    elif isinstance(exc, AttributeError):
+        return JSONResponse(
+            status_code=400,
+            content={"detail": f"Invalid attribute: {str(exc)}"},
+        )
+    elif isinstance(exc, TypeError):
+        return JSONResponse(
+            status_code=400,
+            content={"detail": f"Type error: {str(exc)}"},
+        )
+    else:
+        # For other exceptions, provide a generic message but log the actual error
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Internal server error"},
+        )
 
 
 def main():

@@ -1311,6 +1311,40 @@ def execute_hiring_cmd(ctx, hiring_id, input, config, user_id, wait, timeout, ba
         
         result = asyncio.run(execute_agent())
         
+        # Check if execution failed
+        if result.get('status') == 'error':
+            echo(style("❌ Agent execution failed!", fg='red'))
+            echo(f"  Execution ID: {result.get('execution_id')}")
+            echo(f"  Error: {result.get('error', 'Unknown error')}")
+            if verbose:
+                echo("\nFull response:")
+                echo(json.dumps(result, indent=2))
+            sys.exit(1)
+        
+        # Check if execution started successfully (non-waiting mode)
+        if result.get('status') == 'started':
+            echo(style("🚀 Agent execution started!", fg='green'))
+            echo(f"  Execution ID: {result.get('execution_id')}")
+            echo(f"  Status: {result.get('status')}")
+            echo(f"  Message: {result.get('message', 'Execution started successfully')}")
+            echo()
+            echo(style("💡 To check status, use:", fg='cyan'))
+            echo(f"  agenthub jobs status {result.get('execution_id')}")
+            echo()
+            echo(style("💡 To wait for completion, use:", fg='cyan'))
+            echo(f"  agenthub execute hiring {hiring_id} --input '{input}' --wait")
+            return
+        
+        # Check if execution completed but failed
+        if result.get('status') == 'failed':
+            echo(style("❌ Agent execution failed!", fg='red'))
+            echo(f"  Execution ID: {result.get('execution_id')}")
+            echo(f"  Error: {result.get('error_message', result.get('error', 'Execution failed'))}")
+            if verbose:
+                echo("\nFull response:")
+                echo(json.dumps(result, indent=2))
+            sys.exit(1)
+        
         echo(style("✅ Agent execution completed!", fg='green'))
         echo(f"  Execution ID: {result.get('execution_id')}")
         echo(f"  Status: {result.get('status')}")
