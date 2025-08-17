@@ -412,21 +412,31 @@ def validate(ctx, directory):
         if verbose:
             echo(style("Step 6: Checking entry point file...", fg='cyan'))
         
-        entry_point = agent_dir / config.get('entry_point', 'agent.py')
-        if not entry_point.exists():
+        # Parse entry point to handle extended format (file.py:function_name)
+        entry_point_raw = config.get('entry_point', 'agent.py')
+        if ':' in entry_point_raw:
+            file_name, function_name = entry_point_raw.split(':', 1)
+        else:
+            file_name = entry_point_raw
+            function_name = 'main'
+        
+        entry_point_file = agent_dir / file_name
+        if not entry_point_file.exists():
             if verbose:
-                echo(style(f"  ❌ FAILED: Entry point file not found: {config.get('entry_point', 'agent.py')}", fg='red'))
-            echo(style(f"✗ Entry point file not found: {config.get('entry_point', 'agent.py')}", fg='red'))
+                echo(style(f"  ❌ FAILED: Entry point file not found: {file_name}", fg='red'))
+            echo(style(f"✗ Entry point file not found: {file_name}", fg='red'))
             sys.exit(1)
         
         if verbose:
-            echo(style(f"  ✅ PASSED: Entry point file found: {config.get('entry_point', 'agent.py')}", fg='green'))
+            echo(style(f"  ✅ PASSED: Entry point file found: {file_name}", fg='green'))
+            if function_name != 'main':
+                echo(f"    Function to execute: {function_name}")
         
         # Step 8: Validate main function (static analysis)
         if verbose:
             echo(style("Step 8: Validating main function (static analysis)...", fg='cyan'))
         
-        main_errors = _validate_main_function(agent_dir, config)
+        main_errors = _validate_main_function(agent_dir, config, function_name)
         if main_errors:
             if verbose:
                 echo(style("  ❌ FAILED: Main function validation errors found", fg='red'))
@@ -439,7 +449,7 @@ def validate(ctx, directory):
         
         if verbose:
             echo(style("  ✅ PASSED: Main function validation (static analysis)", fg='green'))
-            echo("    ✓ Main function exists")
+            echo(f"    ✓ {function_name} function exists")
             echo("    ✓ Correct function signature")
             echo("    ✓ Synchronous function (not async)")
             echo("    ✓ Basic syntax validation")
@@ -623,8 +633,16 @@ def publish(ctx, directory, base_url, dry_run):
                 echo(f"  - {error}")
             sys.exit(1)
         
+        # Parse entry point to handle extended format (file.py:function_name)
+        entry_point_raw = config_data.get('entry_point', 'agent.py')
+        if ':' in entry_point_raw:
+            file_name, function_name = entry_point_raw.split(':', 1)
+        else:
+            file_name = entry_point_raw
+            function_name = 'main'
+        
         # Validate main function
-        main_errors = _validate_main_function(agent_dir, config_data)
+        main_errors = _validate_main_function(agent_dir, config_data, function_name)
         if main_errors:
             echo(style("✗ Main function validation failed:", fg='red'))
             for error in main_errors:
@@ -3499,15 +3517,22 @@ temp/
 """
 
 
-def _validate_main_function(agent_dir: Path, config: Dict[str, Any]) -> List[str]:
+def _validate_main_function(agent_dir: Path, config: Dict[str, Any], function_name: str) -> List[str]:
     """Validate that the agent has the correct structure for its type."""
     errors = []
     
     try:
+        # Parse entry point to handle extended format (file.py:function_name)
+        entry_point_raw = config.get('entry_point', 'agent.py')
+        if ':' in entry_point_raw:
+            file_name, _ = entry_point_raw.split(':', 1)
+        else:
+            file_name = entry_point_raw
+        
         # Check if entry point file exists
-        entry_point = agent_dir / config.get('entry_point', 'agent.py')
+        entry_point = agent_dir / file_name
         if not entry_point.exists():
-            errors.append(f"Entry point file not found: {config.get('entry_point', 'agent.py')}")
+            errors.append(f"Entry point file not found: {file_name}")
             return errors
         
         # Read the file content for static analysis
@@ -3553,36 +3578,36 @@ def _validate_main_function(agent_dir: Path, config: Dict[str, Any]) -> List[str
                     return errors
             
         else:
-            # For function agents, validate the main function exists
+            # For function agents, validate the specified function exists
             import re
             
-            # Look for main function definition - handle type annotations
-            main_pattern = r'def\s+main\s*\('
-            if not re.search(main_pattern, content):
-                errors.append(f"Main function 'main' not found in {config.get('entry_point', 'agent.py')}")
+            # Look for the specified function definition - handle type annotations
+            function_pattern = rf'def\s+{function_name}\s*\('
+            if not re.search(function_pattern, content):
+                errors.append(f"Function '{function_name}' not found in {file_name}")
                 return errors
             
-            # Check for async def main (should not be async)
-            async_main_pattern = r'async\s+def\s+main\s*\('
-            if re.search(async_main_pattern, content):
-                errors.append(f"Main function should be synchronous, not async. Use a synchronous wrapper for async operations.")
+            # Check for async def (should not be async)
+            async_function_pattern = rf'async\s+def\s+{function_name}\s*\('
+            if re.search(async_function_pattern, content):
+                errors.append(f"Function '{function_name}' should be synchronous, not async. Use a synchronous wrapper for async operations.")
                 return errors
             
-            # Find the main function definition line
+            # Find the function definition line
             lines = content.split('\n')
-            main_line = None
+            function_line = None
             for i, line in enumerate(lines):
-                if re.search(main_pattern, line):
-                    main_line = line.strip()
+                if re.search(function_pattern, line):
+                    function_line = line.strip()
                     break
             
-            if not main_line:
-                errors.append(f"Could not find main function definition line in {config.get('entry_point', 'agent.py')}")
+            if not function_line:
+                errors.append(f"Could not find {function_name} function definition line in {file_name}")
                 return errors
             
-            # Extract parameters from the main function line
+            # Extract parameters from the function line
             # Handle complex signatures with type annotations
-            param_match = re.search(r'def\s+main\s*\(([^)]*)\)', main_line)
+            param_match = re.search(rf'def\s+{function_name}\s*\(([^)]*)\)', function_line)
             
             if param_match:
                 params_str = param_match.group(1).strip()
@@ -3620,12 +3645,12 @@ def _validate_main_function(agent_dir: Path, config: Dict[str, Any]) -> List[str
                     
                     # Check if it has exactly 2 parameters
                     if len(params) != 2:
-                        errors.append(f"Main function should have exactly 2 parameters (input_data, context), found {len(params)}: {params}")
+                        errors.append(f"Function '{function_name}' should have exactly 2 parameters (input_data, context), found {len(params)}: {params}")
                     # If len(params) == 2, that's correct - no error to add
                 else:
-                    errors.append(f"Main function should have exactly 2 parameters (input_data, context), found 0")
+                    errors.append(f"Function '{function_name}' should have exactly 2 parameters (input_data, context), found 0")
             else:
-                errors.append(f"Could not parse main function parameters in {config.get('entry_point', 'agent.py')}")
+                errors.append(f"Could not parse {function_name} function parameters in {file_name}")
         
         # Note: Removed compile() syntax check to avoid import resolution issues
         # Static analysis above is sufficient for validation
@@ -3641,8 +3666,16 @@ def _run_agent_locally(agent_dir: Path, config: AgentConfig, test_input: Dict[st
     import subprocess
     import sys
     
+    # Parse entry point to handle extended format (file.py:function_name)
+    entry_point_raw = config.entry_point
+    if ':' in entry_point_raw:
+        file_name, function_name = entry_point_raw.split(':', 1)
+    else:
+        file_name = entry_point_raw
+        function_name = 'main'
+    
     # Run the agent script
-    entry_point = agent_dir / config.entry_point
+    entry_point = agent_dir / file_name
     
     # Create a temporary script to run the agent with input
     test_script = f"""
@@ -3650,12 +3683,12 @@ import sys
 sys.path.insert(0, '{agent_dir}')
 
 import json
-from {config.entry_point.replace('.py', '')} import main
+from {file_name.replace('.py', '')} import {function_name}
 
 input_data = {json.dumps(test_input)}
 config_data = {json.dumps(test_config)}
 
-result = main(input_data, config_data)
+result = {function_name}(input_data, config_data)
 print(json.dumps(result, indent=2))
 """
     

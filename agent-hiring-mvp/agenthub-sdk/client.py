@@ -197,10 +197,18 @@ class AgentHubClient:
         errors = []
         
         try:
-            entry_point_path = os.path.join(code_directory, config.entry_point)
+            # Parse entry point to handle extended format (file.py:function_name)
+            entry_point_raw = config.entry_point
+            if ':' in entry_point_raw:
+                file_name, function_name = entry_point_raw.split(':', 1)
+            else:
+                file_name = entry_point_raw
+                function_name = 'main'
+            
+            entry_point_path = os.path.join(code_directory, file_name)
             
             if not os.path.exists(entry_point_path):
-                errors.append(f"Entry point file not found: {config.entry_point}")
+                errors.append(f"Entry point file not found: {file_name}")
                 return errors
             
             # Read the file content for static analysis
@@ -246,36 +254,36 @@ class AgentHubClient:
                         return errors
                 
             else:
-                # For function agents, validate the main function exists
+                # For function agents, validate the specified function exists
                 import re
                 
-                # Look for main function definition - handle type annotations
-                main_pattern = r'def\s+main\s*\('
-                if not re.search(main_pattern, content):
-                    errors.append(f"Main function 'main' not found in {config.entry_point}")
+                # Look for the specified function definition - handle type annotations
+                function_pattern = rf'def\s+{function_name}\s*\('
+                if not re.search(function_pattern, content):
+                    errors.append(f"Function '{function_name}' not found in {file_name}")
                     return errors
             
-                # Check for async def main (should not be async)
-                async_main_pattern = r'async\s+def\s+main\s*\('
-                if re.search(async_main_pattern, content):
-                    errors.append(f"Main function should be synchronous, not async. Use a synchronous wrapper for async operations.")
+                # Check for async def (should not be async)
+                async_function_pattern = rf'async\s+def\s+{function_name}\s*\('
+                if re.search(async_function_pattern, content):
+                    errors.append(f"Function '{function_name}' should be synchronous, not async. Use a synchronous wrapper for async operations.")
                     return errors
                 
-                # Find the main function definition line
+                # Find the function definition line
                 lines = content.split('\n')
-                main_line = None
+                function_line = None
                 for i, line in enumerate(lines):
-                    if re.search(main_pattern, line):
-                        main_line = line.strip()
+                    if re.search(function_pattern, line):
+                        function_line = line.strip()
                         break
                 
-                if not main_line:
-                    errors.append(f"Could not find main function definition line in {config.entry_point}")
+                if not function_line:
+                    errors.append(f"Could not find {function_name} function definition line in {file_name}")
                     return errors
                 
-                # Extract parameters from the main function line
+                # Extract parameters from the function line
                 # Handle complex signatures with type annotations
-                param_match = re.search(r'def\s+main\s*\(([^)]*)\)', main_line)
+                param_match = re.search(rf'def\s+{function_name}\s*\(([^)]*)\)', function_line)
                 
                 if param_match:
                     params_str = param_match.group(1).strip()
@@ -313,12 +321,12 @@ class AgentHubClient:
                         
                         # Check if it has exactly 2 parameters
                         if len(params) != 2:
-                            errors.append(f"Main function should have exactly 2 parameters (input_data, context), found {len(params)}: {params}")
+                            errors.append(f"Function '{function_name}' should have exactly 2 parameters (input_data, context), found {len(params)}: {params}")
                         # If len(params) == 2, that's correct - no error to add
                     else:
-                        errors.append(f"Main function should have exactly 2 parameters (input_data, context), found 0")
+                        errors.append(f"Function '{function_name}' should have exactly 2 parameters (input_data, context), found 0")
                 else:
-                    errors.append(f"Could not parse main function parameters in {config.entry_point}")
+                    errors.append(f"Could not parse {function_name} function parameters in {file_name}")
             
             # Note: Removed compile() syntax check to avoid import resolution issues
             # Static analysis above is sufficient for validation
