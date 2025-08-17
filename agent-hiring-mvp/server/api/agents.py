@@ -459,7 +459,7 @@ async def reject_agent(
 ):
     """Reject an agent (admin only)."""
     agent_service = AgentService(db)
-    agent = agent_service.reject_agent(agent_id, reason)
+    agent = await agent_service.reject_agent(agent_id, reason)
     
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
