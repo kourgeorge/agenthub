@@ -1,5 +1,6 @@
 """Execution API endpoints."""
 
+import asyncio
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -203,41 +204,28 @@ async def run_execution(
         execution_service.update_execution_status(execution_id, ExecutionStatus.RUNNING)
         logger.info(f"🚀 Execution {execution_id} status set to RUNNING")
 
-        # Execute and wait for completion instead of running in background
+        # Start execution in background (non-blocking)
         try:
-            logger.info(f"🚀 Starting execution for {execution_id}")
+            logger.info(f"🚀 Starting execution for {execution_id} in background")
 
+            # Create background task for execution
             if execution.execution_type == "initialize":
-                logger.info(f"Running initialization for execution {execution_id}")
-                result = await execution_service.execute_initialization(execution_id, user_id=current_user.id)
+                logger.info(f"Starting initialization for execution {execution_id}")
+                asyncio.create_task(execution_service.execute_initialization(execution_id, user_id=current_user.id))
             else:
-                logger.info(f"⚙Running agent execution for execution {execution_id}")
-                result = await execution_service.execute_agent(execution_id, user_id=current_user.id)
+                logger.info(f"Starting agent execution for execution {execution_id}")
+                asyncio.create_task(execution_service.execute_agent(execution_id, user_id=current_user.id))
 
-            logger.info(f"Execution completed for {execution_id}")
-
-            # Return the execution result
-            if result.get("status") == "success":
-                return {
-                    "status": "success",
-                    "execution_id": execution_id,
-                    "result": result.get("result", {}),
-                    "message": f"Execution completed successfully",
-                    "execution_type": execution.execution_type,
-                    "execution_time": result.get("execution_time", 0),
-                    "usage_summary": result.get("usage_summary", {})
-                }
-            else:
-                # Return error result
-                return {
-                    "status": "error",
-                    "execution_id": execution_id,
-                    "error": result.get("error", "Execution failed"),
-                    "execution_type": execution.execution_type
-                }
+            # Return immediately - execution is running in background
+            return {
+                "status": "started",
+                "execution_id": execution_id,
+                "message": f"{execution.execution_type.capitalize()} execution started successfully",
+                "execution_type": execution.execution_type
+            }
 
         except Exception as e:
-            logger.error(f"Execution failed for {execution_id}: {e}")
+            logger.error(f"Failed to start execution for {execution_id}: {e}")
             # Update status to failed
             try:
                 execution_service.update_execution_status(execution_id, ExecutionStatus.FAILED, error_message=str(e))
@@ -245,11 +233,13 @@ async def run_execution(
             except Exception as update_error:
                 logger.error(f"Failed to update execution status for {execution_id}: {update_error}")
             
-            # Re-raise the error to return it to the client
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Execution failed: {str(e)}"
-            )
+            # Return error response instead of raising exception
+            return {
+                "status": "error",
+                "execution_id": execution_id,
+                "error": f"Failed to start execution: {str(e)}",
+                "execution_type": execution.execution_type
+            }
 
     except HTTPException:
         raise
