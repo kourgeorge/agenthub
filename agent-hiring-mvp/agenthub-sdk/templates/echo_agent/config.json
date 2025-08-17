@@ -18,15 +18,51 @@
   "pricing_model": "free",
   "requirements": [],
   "config_schema": {
-    "message": {
-      "type": "string",
-      "description": "The message to echo back",
-      "default": "Helloworld"
-    },
-    "prefix": {
-      "type": "string",
-      "description": "Prefix to add before the echoed message",
-      "default": "Echo: "
-    }
+    "functions": [
+      {
+        "name": "execute",
+        "description": "Echo back the input message with optional prefix",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "message": {
+              "type": "string",
+              "description": "The message to echo back",
+              "default": "Helloworld"
+            },
+            "prefix": {
+              "type": "string",
+              "description": "Prefix to add before the echoed message",
+              "default": "Echo: "
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "response": {
+              "type": "string",
+              "description": "The echoed message with prefix"
+            },
+            "original_message": {
+              "type": "string",
+              "description": "The original input message"
+            },
+            "timestamp": {
+              "type": "string",
+              "description": "ISO timestamp of when the response was generated"
+            },
+            "agent_type": {
+              "type": "string",
+              "description": "Type of agent that processed the request"
+            }
+          },
+          "required": ["response", "original_message", "timestamp", "agent_type"],
+          "additionalProperties": false
+        }
+      }
+    ]
   }
 } 

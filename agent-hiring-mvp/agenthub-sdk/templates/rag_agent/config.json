@@ -30,90 +30,108 @@
     "pypdf"
   ],
   "config_schema": {
-    "document_source": {
-      "type": "string",
-      "description": "URL or path to the document to analyze (optional if pasting content in questions field)",
-      "default": "https://kour.me",
-      "required": false
-    },
-    "questions": {
-      "type": "textarea",
-      "description": "Questions to ask about the document content (one per line), OR paste document content directly here if no document_source is provided",
-      "default": "Who were the master's supervisors?\nWhat is the main research area?",
-      "required": true,
-      "placeholder": "Enter your questions here (one per line), OR paste document content directly..."
-    },
-    "model_name": {
-      "type": "choice",
-      "default": "gpt-3.5-turbo",
-      "description": "OpenAI model to use for LLM",
-      "options": [
-        {
-          "value": "gpt-3.5-turbo",
-          "label": "GPT-3.5 Turbo (Fast & Cost-effective)"
+    "functions": [
+      {
+        "name": "execute",
+        "description": "Process RAG queries against a document source",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "document_source": {
+              "type": "string",
+              "description": "URL or path to the document to analyze (optional if pasting content in questions field)"
+            },
+            "questions": {
+              "type": "string",
+              "description": "Questions to ask about the document content (one per line), OR paste document content directly here if no document_source is provided"
+            },
+            "model_name": {
+              "type": "string",
+              "description": "OpenAI model to use for LLM",
+              "enum": ["gpt-3.5-turbo", "gpt-4", "gpt-4o"],
+              "default": "gpt-3.5-turbo"
+            },
+            "embedding_model": {
+              "type": "string",
+              "description": "OpenAI model to use for embeddings",
+              "enum": ["text-embedding-ada-002", "text-embedding-3-small", "text-embedding-3-large"],
+              "default": "text-embedding-ada-002"
+            },
+            "temperature": {
+              "type": "number",
+              "description": "Temperature for LLM responses",
+              "default": 0
+            },
+            "chunk_size": {
+              "type": "string",
+              "description": "Size of text chunks for processing",
+              "enum": ["512", "1024", "2048"],
+              "default": "1024"
+            },
+            "chunk_overlap": {
+              "type": "integer",
+              "description": "Overlap between text chunks",
+              "default": 200
+            },
+            "max_tokens": {
+              "type": "integer",
+              "description": "Maximum tokens for response",
+              "default": 1000
+            }
+          },
+          "required": ["questions"],
+          "additionalProperties": false
         },
-        {
-          "value": "gpt-4",
-          "label": "GPT-4 (High Quality)"
-        },
-        {
-          "value": "gpt-4o",
-          "label": "GPT-4o (Latest & Most Capable)"
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "answers": {
+              "type": "array",
+              "description": "List of answers to the questions",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "question": {"type": "string"},
+                  "answer": {"type": "string"},
+                  "confidence": {"type": "number"},
+                  "sources": {"type": "array", "items": {"type": "string"}}
+                }
+              }
+            },
+            "document_source": {
+              "type": "string",
+              "description": "The document source that was analyzed"
+            },
+            "questions": {
+              "type": "array",
+              "description": "List of questions that were asked",
+              "items": {"type": "string"}
+            },
+            "total_questions": {
+              "type": "integer",
+              "description": "Total number of questions processed"
+            },
+            "model_used": {
+              "type": "string",
+              "description": "LLM model that was used for processing"
+            },
+            "embedding_model": {
+              "type": "string",
+              "description": "Embedding model that was used"
+            },
+            "chunk_size": {
+              "type": "string",
+              "description": "Chunk size used for processing"
+            },
+            "chunk_overlap": {
+              "type": "integer",
+              "description": "Chunk overlap used for processing"
+            }
+          },
+          "required": ["answers", "document_source", "questions", "total_questions"],
+          "additionalProperties": false
         }
-      ]
-    },
-    "embedding_model": {
-      "type": "choice",
-      "default": "text-embedding-ada-002",
-      "description": "OpenAI model to use for embeddings",
-      "options": [
-        {
-          "value": "text-embedding-ada-002",
-          "label": "text-embedding-ada-002 (Fast & Reliable)"
-        },
-        {
-          "value": "text-embedding-3-small",
-          "label": "text-embedding-3-small (Latest Small Model)"
-        },
-        {
-          "value": "text-embedding-3-large",
-          "label": "text-embedding-3-large (Highest Quality)"
-        }
-      ]
-    },
-    "temperature": {
-      "type": "number",
-      "default": 0,
-      "description": "Temperature for LLM responses"
-    },
-    "chunk_size": {
-      "type": "choice",
-      "default": "1024",
-      "description": "Size of text chunks for processing",
-      "options": [
-        {
-          "value": "512",
-          "label": "512 tokens (Small chunks, more precise)"
-        },
-        {
-          "value": "1024",
-          "label": "1024 tokens (Medium chunks, balanced)"
-        },
-        {
-          "value": "2048",
-          "label": "2048 tokens (Large chunks, more context)"
-        }
-      ]
-    },
-    "chunk_overlap": {
-      "type": "integer",
-      "default": 200,
-      "description": "Overlap between text chunks"
-    },
-    "max_tokens": {
-      "type": "integer",
-      "default": 1000,
-      "description": "Maximum tokens for response"
-    }
+      }
+    ]
   }
 } 

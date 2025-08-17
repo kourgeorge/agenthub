@@ -10,158 +10,192 @@
   "price_per_use": 0.6,
   "requirements": [],
   "config_schema": {
-    "research_query": {
-      "type": "string",
-      "description": "The research question or topic to investigate",
-      "required": true
-    },
-    "research_depth": {
-      "type": "choice",
-      "description": "Level of research depth",
-      "default": "moderate",
-      "options": [
-        {"value": "shallow", "label": "Shallow"},
-        {"value": "moderate", "label": "Moderate"},
-        {"value": "deep", "label": "Deep"},
-        {"value": "comprehensive", "label": "Comprehensive"}
-      ]
-    },
-    "max_iterations": {
-      "type": "integer",
-      "description": "Maximum number of research iterations",
-      "minimum": 1,
-      "maximum": 10,
-      "default": 3
-    },
-    "max_concurrent_research": {
-      "type": "integer",
-      "description": "Maximum concurrent research units",
-      "minimum": 1,
-      "maximum": 20,
-      "default": 5
-    },
-    "max_tool_calls": {
-      "type": "integer",
-      "description": "Maximum tool calls per research step",
-      "minimum": 1,
-      "maximum": 30,
-      "default": 5
-    },
-    "search_api": {
-      "type": "choice",
-      "description": "Search API to use for research. Options: tavily (comprehensive search), serper (Google search), openai, anthropic, none",
-      "default": "serper",
-      "options": [
-        {"value": "tavily", "label": "Tavily (Comprehensive Search)"},
-        {"value": "serper", "label": "Serper (Google Search)"},
-        {"value": "openai", "label": "OpenAI"},
-        {"value": "anthropic", "label": "Anthropic"},
-        {"value": "none", "label": "None"}
-      ]
-    },
-    "include_sources": {
-      "type": "boolean",
-      "description": "Whether to include source citations in the output",
-      "default": true
-    },
-    "allow_clarification": {
-      "type": "boolean",
-      "description": "Whether to ask clarifying questions before starting research",
-      "default": true
-    },
-    "research_model": {
-      "type": "choice",
-      "description": "Model for conducting research",
-      "default": "openai:gpt-4o",
-      "options": [
-        {"value": "openai:gpt-4o", "label": "OpenAI GPT-4o (Latest & Most Capable)"},
-        {"value": "openai:gpt-4o-mini", "label": "OpenAI GPT-4o Mini (Fast & Cost-effective)"},
-        {"value": "openai:gpt-4-turbo", "label": "OpenAI GPT-4 Turbo (Balanced)"},
-        {"value": "openai:gpt-3.5-turbo", "label": "OpenAI GPT-3.5 Turbo (Fast & Reliable)"},
-        {"value": "anthropic:claude-3-5-sonnet", "label": "Anthropic Claude 3.5 Sonnet (High Quality)"},
-        {"value": "anthropic:claude-3-haiku", "label": "Anthropic Claude 3 Haiku (Fast)"}
-      ]
-    },
-    "research_model_max_tokens": {
-      "type": "integer",
-      "description": "Maximum output tokens for research model",
-      "minimum": 1000,
-      "maximum": 100000,
-      "default": 10000
-    },
-    "compression_model": {
-      "type": "choice",
-      "description": "Model for compressing research findings",
-      "default": "openai:gpt-4o-mini",
-      "options": [
-        {"value": "openai:gpt-4o-mini", "label": "OpenAI GPT-4o Mini (Fast & Cost-effective)"},
-        {"value": "openai:gpt-4o", "label": "OpenAI GPT-4o (High Quality)"},
-        {"value": "openai:gpt-3.5-turbo", "label": "OpenAI GPT-3.5 Turbo (Fast & Reliable)"},
-        {"value": "anthropic:claude-3-haiku", "label": "Anthropic Claude 3 Haiku (Fast)"},
-        {"value": "anthropic:claude-3-5-sonnet", "label": "Anthropic Claude 3.5 Sonnet (High Quality)"}
-      ]
-    },
-    "compression_model_max_tokens": {
-      "type": "integer",
-      "description": "Maximum output tokens for compression model",
-      "minimum": 1000,
-      "maximum": 100000,
-      "default": 8192
-    },
-    "final_report_model": {
-      "type": "choice",
-      "description": "Model for writing the final report",
-      "default": "openai:gpt-4o",
-      "options": [
-        {"value": "openai:gpt-4o", "label": "OpenAI GPT-4o (Latest & Most Capable)"},
-        {"value": "openai:gpt-4o-mini", "label": "OpenAI GPT-4o Mini (Fast & Cost-effective)"},
-        {"value": "openai:gpt-4-turbo", "label": "OpenAI GPT-4 Turbo (Balanced)"},
-        {"value": "openai:gpt-3.5-turbo", "label": "OpenAI GPT-3.5 Turbo (Fast & Reliable)"},
-        {"value": "anthropic:claude-3-5-sonnet", "label": "Anthropic Claude 3.5 Sonnet (High Quality)"},
-        {"value": "anthropic:claude-3-haiku", "label": "Anthropic Claude 3 Haiku (Fast)"}
-      ]
-    },
-    "final_report_model_max_tokens": {
-      "type": "integer",
-      "description": "Maximum output tokens for final report model",
-      "minimum": 1000,
-      "maximum": 100000,
-      "default": 10000
-    },
-    "max_retries": {
-      "type": "integer",
-      "description": "Maximum number of retries for structured output calls",
-      "minimum": 1,
-      "maximum": 10,
-      "default": 3
-    },
-    "mcp_config": {
-      "type": "object",
-      "description": "MCP server configuration (optional)",
-      "properties": {
-        "url": {
-          "type": "string",
-          "description": "The URL of the MCP server"
-        },
-        "tools": {
-          "type": "array",
-          "items": {
-            "type": "string"
+    "functions": [
+      {
+        "name": "execute",
+        "description": "Conduct comprehensive research on a given topic",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "research_query": {
+              "type": "string",
+              "description": "The research question or topic to investigate"
+            },
+            "research_depth": {
+              "type": "string",
+              "description": "Level of research depth",
+              "enum": ["shallow", "moderate", "deep", "comprehensive"],
+              "default": "moderate"
+            },
+            "max_iterations": {
+              "type": "integer",
+              "description": "Maximum number of research iterations",
+              "minimum": 1,
+              "maximum": 10,
+              "default": 3
+            },
+            "max_concurrent_research": {
+              "type": "integer",
+              "description": "Maximum concurrent research units",
+              "minimum": 1,
+              "maximum": 20,
+              "default": 5
+            },
+            "max_tool_calls": {
+              "type": "integer",
+              "description": "Maximum tool calls per research step",
+              "minimum": 1,
+              "maximum": 30,
+              "default": 5
+            },
+            "search_api": {
+              "type": "string",
+              "description": "Search API to use for research",
+              "enum": ["tavily", "serper", "openai", "anthropic", "none"],
+              "default": "serper"
+            },
+            "include_sources": {
+              "type": "boolean",
+              "description": "Whether to include source citations in the output",
+              "default": true
+            },
+            "allow_clarification": {
+              "type": "boolean",
+              "description": "Whether to ask clarifying questions before starting research",
+              "default": true
+            },
+            "research_model": {
+              "type": "string",
+              "description": "Model for conducting research",
+              "enum": ["openai:gpt-4o", "openai:gpt-4o-mini", "openai:gpt-4-turbo", "openai:gpt-3.5-turbo", "anthropic:claude-3-5-sonnet", "anthropic:claude-3-haiku"],
+              "default": "openai:gpt-4o"
+            },
+            "research_model_max_tokens": {
+              "type": "integer",
+              "description": "Maximum output tokens for research model",
+              "minimum": 1000,
+              "maximum": 100000,
+              "default": 10000
+            },
+            "compression_model": {
+              "type": "string",
+              "description": "Model for compressing research findings",
+              "enum": ["openai:gpt-4o-mini", "openai:gpt-4o", "openai:gpt-3.5-turbo", "anthropic:claude-3-haiku", "anthropic:claude-3-5-sonnet"],
+              "default": "openai:gpt-4o-mini"
+            },
+            "compression_model_max_tokens": {
+              "type": "integer",
+              "description": "Maximum output tokens for compression model",
+              "minimum": 1000,
+              "maximum": 100000,
+              "default": 8192
+            },
+            "final_report_model": {
+              "type": "string",
+              "description": "Model for writing the final report",
+              "enum": ["openai:gpt-4o", "openai:gpt-4o-mini", "openai:gpt-4-turbo", "openai:gpt-3.5-turbo", "anthropic:claude-3-5-sonnet", "anthropic:claude-3-haiku"],
+              "default": "openai:gpt-4o"
+            },
+            "final_report_model_max_tokens": {
+              "type": "integer",
+              "description": "Maximum output tokens for final report model",
+              "minimum": 1000,
+              "maximum": 100000,
+              "default": 10000
+            },
+            "max_retries": {
+              "type": "integer",
+              "description": "Maximum number of retries for structured output calls",
+              "minimum": 1,
+              "maximum": 10,
+              "default": 3
+            },
+            "mcp_config": {
+              "type": "object",
+              "description": "MCP server configuration (optional)",
+              "properties": {
+                "url": {
+                  "type": "string",
+                  "description": "The URL of the MCP server"
+                },
+                "tools": {
+                  "type": "array",
+                  "items": {"type": "string"},
+                  "description": "The tools to make available to the LLM"
+                },
+                "auth_required": {
+                  "type": "string",
+                  "description": "Whether the MCP server requires authentication",
+                  "enum": ["true", "false"],
+                  "default": "false"
+                }
+              }
+            }
           },
-          "description": "The tools to make available to the LLM"
+          "required": ["research_query"],
+          "additionalProperties": false
         },
-        "auth_required": {
-          "type": "choice",
-          "description": "Whether the MCP server requires authentication",
-          "default": "false",
-          "options": [
-            {"value": "true", "label": "Yes (Authentication Required)"},
-            {"value": "false", "label": "No (No Authentication Required)"}
-          ]
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "research_query": {
+              "type": "string",
+              "description": "The original research query"
+            },
+            "research_depth": {
+              "type": "string",
+              "description": "The depth level used for research"
+            },
+            "final_report": {
+              "type": "string",
+              "description": "Comprehensive research report with findings and analysis"
+            },
+            "sources": {
+              "type": "array",
+              "description": "List of sources used in the research",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "title": {"type": "string"},
+                  "url": {"type": "string"},
+                  "content": {"type": "string"},
+                  "relevance_score": {"type": "number"}
+                }
+              }
+            },
+            "research_steps": {
+              "type": "array",
+              "description": "List of research steps taken",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "step": {"type": "string"},
+                  "description": {"type": "string"},
+                  "tools_used": {"type": "array", "items": {"type": "string"}},
+                  "findings": {"type": "string"}
+                }
+              }
+            },
+            "execution_summary": {
+              "type": "object",
+              "description": "Summary of execution details",
+              "properties": {
+                "total_iterations": {"type": "integer"},
+                "total_tool_calls": {"type": "integer"},
+                "execution_time": {"type": "number"},
+                "models_used": {"type": "array", "items": {"type": "string"}}
+              }
+            },
+            "timestamp": {
+              "type": "string",
+              "description": "ISO timestamp of when research was completed"
+            }
+          },
+          "required": ["research_query", "final_report", "sources", "timestamp"],
+          "additionalProperties": false
         }
-      },
-      "required": false
-    }
+      }
+    ]
   },
   "tags": [
     "research",

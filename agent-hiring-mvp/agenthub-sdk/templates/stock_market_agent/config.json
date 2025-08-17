@@ -9,97 +9,189 @@
   "pricing_model": "per_use",
   "price_per_use": 1,
   "config_schema": {
-    "stock_symbols": {
-      "type": "string",
-      "description": "Comma-separated list of stock symbols to analyze (e.g., AAPL,MSFT,GOOGL)",
-      "required": true,
-      "placeholder": "AAPL,MSFT,GOOGL"
-    },
-    "analysis_depth": {
-      "type": "choice",
-      "description": "Depth of analysis to perform",
-      "required": true,
-      "default": "comprehensive",
-      "options": [
-        {"value": "basic", "label": "Basic"},
-        {"value": "standard", "label": "Standard"},
-        {"value": "comprehensive", "label": "Comprehensive"},
-        {"value": "expert", "label": "Expert"}
-      ]
-    },
-    "prediction_timeframe": {
-      "type": "choice",
-      "description": "Timeframe for predictions",
-      "required": true,
-      "default": "3months",
-      "options": [
-        {"value": "1week", "label": "1 Week"},
-        {"value": "1month", "label": "1 Month"},
-        {"value": "3months", "label": "3 Months"},
-        {"value": "6months", "label": "6 Months"},
-        {"value": "1year", "label": "1 Year"}
-      ]
-    },
-    "include_news": {
-      "type": "boolean",
-      "description": "Include news analysis in the report",
-      "default": true
-    },
-    "include_technical_analysis": {
-      "type": "boolean",
-      "description": "Include technical analysis (charts, indicators, patterns)",
-      "default": true
-    },
-    "include_fundamental_analysis": {
-      "type": "boolean",
-      "description": "Include fundamental analysis (financial ratios, earnings, etc.)",
-      "default": true
-    },
-    "include_sentiment_analysis": {
-      "type": "boolean",
-      "description": "Include sentiment analysis of news and social media",
-      "default": true
-    },
-    "include_competitor_analysis": {
-      "type": "boolean",
-      "description": "Include analysis of competitors and industry peers",
-      "default": true
-    },
-    "include_market_trends": {
-      "type": "boolean",
-      "description": "Include broader market trend analysis",
-      "default": true
-    },
-    "risk_tolerance": {
-      "type": "choice",
-      "description": "Risk tolerance level for recommendations",
-      "required": true,
-      "default": "moderate",
-      "options": [
-        {"value": "conservative", "label": "Conservative"},
-        {"value": "moderate", "label": "Moderate"},
-        {"value": "aggressive", "label": "Aggressive"}
-      ]
-    },
-    "investment_amount": {
-      "type": "float",
-      "description": "Investment amount to consider for recommendations (in USD)",
-      "default": 10000
-    },
-    "api_key_alpha_vantage": {
-      "type": "string",
-      "description": "Alpha Vantage API key for stock data (optional)",
-      "required": false,
-      "placeholder": "Your Alpha Vantage API key"
-    },
-    "api_key_news": {
-      "type": "string",
-      "description": "News API key for financial news (optional)",
-      "required": false,
-      "placeholder": "Your News API key"
-    }
+    "functions": [
+      {
+        "name": "execute",
+        "description": "Analyze stocks and provide comprehensive market analysis",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "stock_symbols": {
+              "type": "string",
+              "description": "Comma-separated list of stock symbols to analyze (e.g., AAPL,MSFT,GOOGL)"
+            },
+            "analysis_depth": {
+              "type": "string",
+              "description": "Depth of analysis to perform",
+              "enum": ["basic", "standard", "comprehensive", "expert"],
+              "default": "comprehensive"
+            },
+            "prediction_timeframe": {
+              "type": "string",
+              "description": "Timeframe for predictions",
+              "enum": ["1week", "1month", "3months", "6months", "1year"],
+              "default": "3months"
+            },
+            "include_news": {
+              "type": "boolean",
+              "description": "Include news analysis in the report",
+              "default": true
+            },
+            "include_technical_analysis": {
+              "type": "boolean",
+              "description": "Include technical analysis (charts, indicators, patterns)",
+              "default": true
+            },
+            "include_fundamental_analysis": {
+              "type": "boolean",
+              "description": "Include fundamental analysis (financial ratios, earnings, etc.)",
+              "default": true
+            },
+            "include_sentiment_analysis": {
+              "type": "boolean",
+              "description": "Include sentiment analysis of news and social media",
+              "default": true
+            },
+            "include_competitor_analysis": {
+              "type": "boolean",
+              "description": "Include analysis of competitors and industry peers",
+              "default": true
+            },
+            "include_market_trends": {
+              "type": "boolean",
+              "description": "Include broader market trend analysis",
+              "default": true
+            },
+            "risk_tolerance": {
+              "type": "string",
+              "description": "Risk tolerance level for recommendations",
+              "enum": ["conservative", "moderate", "aggressive"],
+              "default": "moderate"
+            },
+            "investment_amount": {
+              "type": "number",
+              "description": "Investment amount to consider for recommendations (in USD)",
+              "default": 10000
+            },
+            "api_key_alpha_vantage": {
+              "type": "string",
+              "description": "Alpha Vantage API key for stock data (optional)"
+            },
+            "api_key_news": {
+              "type": "string",
+              "description": "News API key for financial news (optional)"
+            }
+          },
+          "required": ["stock_symbols"],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "description": "Analysis status (success or error)",
+              "enum": ["success", "error"]
+            },
+            "stock_symbols": {
+              "type": "array",
+              "description": "List of stock symbols analyzed",
+              "items": {"type": "string"}
+            },
+            "analysis_timestamp": {
+              "type": "string",
+              "description": "ISO timestamp of when analysis was performed"
+            },
+            "market_overview": {
+              "type": "object",
+              "description": "Overall market conditions and trends",
+              "properties": {
+                "market_sentiment": {"type": "string"},
+                "trending_sectors": {"type": "array", "items": {"type": "string"}},
+                "market_volatility": {"type": "string"}
+              }
+            },
+            "stock_analyses": {
+              "type": "array",
+              "description": "Detailed analysis for each stock",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "symbol": {"type": "string"},
+                  "company_name": {"type": "string"},
+                  "current_price": {"type": "number"},
+                  "price_change": {"type": "number"},
+                  "price_change_percent": {"type": "number"},
+                  "technical_analysis": {
+                    "type": "object",
+                    "properties": {
+                      "trend": {"type": "string"},
+                      "support_levels": {"type": "array", "items": {"type": "number"}},
+                      "resistance_levels": {"type": "array", "items": {"type": "number"}},
+                      "indicators": {"type": "object"}
+                    }
+                  },
+                  "fundamental_analysis": {
+                    "type": "object",
+                    "properties": {
+                      "pe_ratio": {"type": "number"},
+                      "market_cap": {"type": "number"},
+                      "dividend_yield": {"type": "number"},
+                      "earnings_growth": {"type": "number"}
+                    }
+                  },
+                  "news_sentiment": {
+                    "type": "object",
+                    "properties": {
+                      "overall_sentiment": {"type": "string"},
+                      "sentiment_score": {"type": "number"},
+                      "key_news": {"type": "array", "items": {"type": "string"}}
+                    }
+                  },
+                  "recommendation": {
+                    "type": "object",
+                    "properties": {
+                      "action": {"type": "string"},
+                      "confidence": {"type": "number"},
+                      "reasoning": {"type": "string"},
+                      "target_price": {"type": "number"},
+                      "timeframe": {"type": "string"}
+                    }
+                  }
+                }
+              }
+            },
+            "portfolio_recommendations": {
+              "type": "object",
+              "description": "Portfolio-level recommendations",
+              "properties": {
+                "allocation": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "symbol": {"type": "string"},
+                      "percentage": {"type": "number"},
+                      "reasoning": {"type": "string"}
+                    }
+                  }
+                },
+                "risk_assessment": {"type": "string"},
+                "expected_return": {"type": "number"},
+                "diversification_score": {"type": "number"}
+              }
+            },
+            "error": {
+              "type": "string",
+              "description": "Error message when status is error"
+            }
+          },
+          "required": ["status", "stock_symbols"],
+          "additionalProperties": false
+        }
+      }
+    ]
   },
- 
   "requirements": [
     "yfinance",
     "pandas",

@@ -11,74 +11,192 @@
   "tags": ["finance", "sec", "edgar", "financial-analysis", "xbrl", "regulatory", "data-extraction"],
   "category": "Financial Analysis",
   "config_schema": {
-    "operation": {
-      "type": "choice",
-      "description": "Type of SEC EDGAR operation to perform",
-      "default": "company_info",
-      "options": [
-        {"value": "company_info", "label": "Company Information"},
-        {"value": "financial_analysis", "label": "Financial Analysis"},
-        {"value": "company_facts", "label": "Company Facts"},
-        {"value": "company_concept", "label": "Company Concept"},
-        {"value": "frame_data", "label": "Frame Data"},
-        {"value": "search_companies", "label": "Search Companies"},
-        {"value": "compare_companies", "label": "Compare Companies"},
-        {"value": "generate_report", "label": "Generate Report"}
-      ]
-    },
-    "cik": {
-      "type": "string",
-      "description": "Company CIK number (10-digit identifier) for single company operations",
-      "default": ""
-    },
-    "ciks": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      },
-      "description": "List of CIK numbers for comparison operations",
-      "default": []
-    },
-    "query": {
-      "type": "string",
-      "description": "Search query for company search operations",
-      "default": ""
-    },
-    "concept": {
-      "type": "string",
-      "description": "XBRL concept to analyze (e.g., NetIncomeLoss, Assets, Revenues)",
-      "default": "NetIncomeLoss"
-    },
-    "taxonomy": {
-      "type": "string",
-      "description": "XBRL taxonomy to use (us-gaap, ifrs-full, dei, srt)",
-      "default": "us-gaap"
-    },
-    "unit": {
-      "type": "string",
-      "description": "Unit of measure for frame data (USD, shares, etc.)",
-      "default": "USD"
-    },
-    "period": {
-      "type": "string",
-      "description": "Time period for frame data (e.g., CY2023, CY2023Q1)",
-      "default": "CY2023"
-    },
-    "report_type": {
-      "type": "choice",
-      "description": "Type of financial report to generate",
-      "default": "comprehensive",
-      "options": [
-        {"value": "comprehensive", "label": "Comprehensive"},
-        {"value": "summary", "label": "Summary"},
-        {"value": "detailed", "label": "Detailed"}
-      ]
-    },
-    "include_ai_insights": {
-      "type": "boolean",
-      "description": "Include AI-powered insights in reports",
-      "default": true
-    }
+    "functions": [
+      {
+        "name": "execute",
+        "description": "Extract and analyze SEC EDGAR financial data",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "operation": {
+              "type": "string",
+              "description": "Type of SEC EDGAR operation to perform",
+              "enum": ["company_info", "financial_analysis", "company_facts", "company_concept", "frame_data", "search_companies", "compare_companies", "generate_report"],
+              "default": "company_info"
+            },
+            "cik": {
+              "type": "string",
+              "description": "Company CIK number (10-digit identifier) for single company operations"
+            },
+            "ciks": {
+              "type": "array",
+              "items": {"type": "string"},
+              "description": "List of CIK numbers for comparison operations"
+            },
+            "query": {
+              "type": "string",
+              "description": "Search query for company search operations"
+            },
+            "concept": {
+              "type": "string",
+              "description": "XBRL concept to analyze (e.g., NetIncomeLoss, Assets, Revenues)",
+              "default": "NetIncomeLoss"
+            },
+            "taxonomy": {
+              "type": "string",
+              "description": "XBRL taxonomy to use (us-gaap, ifrs-full, dei, srt)",
+              "default": "us-gaap"
+            },
+            "unit": {
+              "type": "string",
+              "description": "Unit of measure for frame data (USD, shares, etc.)",
+              "default": "USD"
+            },
+            "period": {
+              "type": "string",
+              "description": "Time period for frame data (e.g., CY2023, CY2023Q1)",
+              "default": "CY2023"
+            },
+            "report_type": {
+              "type": "string",
+              "description": "Type of financial report to generate",
+              "enum": ["comprehensive", "summary", "detailed"],
+              "default": "comprehensive"
+            },
+            "include_ai_insights": {
+              "type": "boolean",
+              "description": "Include AI-powered insights in reports",
+              "default": true
+            }
+          },
+          "required": ["operation"],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "description": "Operation status (success or error)",
+              "enum": ["success", "error"]
+            },
+            "operation": {
+              "type": "string",
+              "description": "The operation that was performed"
+            },
+            "timestamp": {
+              "type": "string",
+              "description": "ISO timestamp of when the operation was completed"
+            },
+            "data": {
+              "type": "object",
+              "description": "The extracted or analyzed data based on operation type",
+              "properties": {
+                "company_info": {
+                  "type": "object",
+                  "description": "Company information when operation is company_info",
+                  "properties": {
+                    "cik": {"type": "string"},
+                    "name": {"type": "string"},
+                    "ticker": {"type": "string"},
+                    "sic": {"type": "string"},
+                    "sic_description": {"type": "string"},
+                    "category": {"type": "string"},
+                    "filing_history": {"type": "array", "items": {"type": "object"}}
+                  }
+                },
+                "financial_analysis": {
+                  "type": "object",
+                  "description": "Financial analysis results when operation is financial_analysis",
+                  "properties": {
+                    "key_metrics": {"type": "object"},
+                    "financial_ratios": {"type": "object"},
+                    "trend_analysis": {"type": "object"},
+                    "risk_assessment": {"type": "string"}
+                  }
+                },
+                "company_facts": {
+                  "type": "object",
+                  "description": "Company facts data when operation is company_facts",
+                  "properties": {
+                    "concepts": {"type": "object"},
+                    "units": {"type": "object"}
+                  }
+                },
+                "company_concept": {
+                  "type": "object",
+                  "description": "Concept-specific data when operation is company_concept",
+                  "properties": {
+                    "concept": {"type": "string"},
+                    "taxonomy": {"type": "string"},
+                    "units": {"type": "object"},
+                    "historical_data": {"type": "array", "items": {"type": "object"}}
+                  }
+                },
+                "frame_data": {
+                  "type": "object",
+                  "description": "Frame data when operation is frame_data",
+                  "properties": {
+                    "concept": {"type": "string"},
+                    "period": {"type": "string"},
+                    "unit": {"type": "string"},
+                    "companies": {"type": "array", "items": {"type": "object"}}
+                  }
+                },
+                "search_results": {
+                  "type": "array",
+                  "description": "Search results when operation is search_companies",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "cik": {"type": "string"},
+                      "name": {"type": "string"},
+                      "ticker": {"type": "string"},
+                      "sic": {"type": "string"}
+                    }
+                  }
+                },
+                "comparison_results": {
+                  "type": "object",
+                  "description": "Comparison results when operation is compare_companies",
+                  "properties": {
+                    "companies": {"type": "array", "items": {"type": "object"}},
+                    "comparison_metrics": {"type": "object"},
+                    "analysis": {"type": "string"}
+                  }
+                },
+                "report": {
+                  "type": "object",
+                  "description": "Generated report when operation is generate_report",
+                  "properties": {
+                    "executive_summary": {"type": "string"},
+                    "financial_highlights": {"type": "object"},
+                    "risk_analysis": {"type": "string"},
+                    "ai_insights": {"type": "string"},
+                    "recommendations": {"type": "array", "items": {"type": "string"}}
+                  }
+                }
+              }
+            },
+            "metadata": {
+              "type": "object",
+              "description": "Execution metadata",
+              "properties": {
+                "execution_time": {"type": "number"},
+                "api_calls": {"type": "integer"},
+                "data_sources": {"type": "array", "items": {"type": "string"}}
+              }
+            },
+            "error": {
+              "type": "string",
+              "description": "Error message when status is error"
+            }
+          },
+          "required": ["status", "operation"],
+          "additionalProperties": false
+        }
+      }
+    ]
   },
   "requirements": [
     "requests>=2.31.0",

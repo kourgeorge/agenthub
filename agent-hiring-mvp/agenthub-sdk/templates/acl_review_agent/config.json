@@ -36,52 +36,161 @@
     "semanticscholar"
   ],
   "config_schema": {
-    "paper_url": {
-      "type": "string",
-      "description": "URL to the academic paper (arXiv, ACL Anthology, etc.)",
-      "required": true,
-      "default": ""
-    },
-    "paper_title": {
-      "type": "string",
-      "description": "Title of the paper (if URL is not provided)",
-      "required": false,
-      "default": ""
-    },
-    "review_depth": {
-      "type": "integer",
-      "description": "Depth of literature review and analysis (1-5)",
-      "default": 4,
-      "minimum": 1,
-      "maximum": 5
-    },
-    "include_related_work": {
-      "type": "boolean",
-      "description": "Whether to perform deep literature review"
-    },
-    "novelty_analysis": {
-      "type": "boolean",
-      "description": "Whether to analyze novelty and contributions"
-    },
-    "technical_analysis": {
-      "type": "boolean",
-      "description": "Whether to perform detailed technical analysis"
-    },
-    "experimental_validation": {
-      "type": "boolean",
-      "description": "Whether to validate experimental results"
-    },
-    "openreview_username": {
-      "type": "string",
-      "description": "OpenReview username/email for reviewer style analysis (optional)",
-      "required": false,
-      "default": ""
-    },
-    "openreview_password": {
-      "type": "string",
-      "description": "OpenReview password for reviewer style analysis (optional)",
-      "required": false,
-      "default": ""
-    }
+    "functions": [
+      {
+        "name": "execute",
+        "description": "Generate comprehensive ACL ARR review for an academic paper",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "paper_url": {
+              "type": "string",
+              "description": "URL to the academic paper (arXiv, ACL Anthology, etc.)"
+            },
+            "paper_title": {
+              "type": "string",
+              "description": "Title of the paper (if URL is not provided)"
+            },
+            "review_depth": {
+              "type": "integer",
+              "description": "Depth of literature review and analysis (1-5)",
+              "minimum": 1,
+              "maximum": 5,
+              "default": 4
+            },
+            "include_related_work": {
+              "type": "boolean",
+              "description": "Whether to perform deep literature review",
+              "default": true
+            },
+            "novelty_analysis": {
+              "type": "boolean",
+              "description": "Whether to analyze novelty and contributions",
+              "default": true
+            },
+            "technical_analysis": {
+              "type": "boolean",
+              "description": "Whether to perform detailed technical analysis",
+              "default": true
+            },
+            "experimental_validation": {
+              "type": "boolean",
+              "description": "Whether to validate experimental results",
+              "default": true
+            },
+            "openreview_username": {
+              "type": "string",
+              "description": "OpenReview username/email for reviewer style analysis (optional)"
+            },
+            "openreview_password": {
+              "type": "string",
+              "description": "OpenReview password for reviewer style analysis (optional)"
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "description": "Review generation status",
+              "enum": ["success", "error"]
+            },
+            "paper_info": {
+              "type": "object",
+              "description": "Basic information about the paper",
+              "properties": {
+                "title": {"type": "string"},
+                "authors": {"type": "array", "items": {"type": "string"}},
+                "abstract": {"type": "string"},
+                "url": {"type": "string"},
+                "publication_venue": {"type": "string"},
+                "publication_date": {"type": "string"}
+              }
+            },
+            "arr_review": {
+              "type": "object",
+              "description": "ACL ARR review sections",
+              "properties": {
+                "summary": {"type": "string"},
+                "strengths": {"type": "array", "items": {"type": "string"}},
+                "weaknesses": {"type": "array", "items": {"type": "string"}},
+                "recommendation": {"type": "string"},
+                "confidence": {"type": "string"},
+                "detailed_comments": {"type": "string"}
+              }
+            },
+            "literature_analysis": {
+              "type": "object",
+              "description": "Literature review and related work analysis",
+              "properties": {
+                "related_papers": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "title": {"type": "string"},
+                      "authors": {"type": "array", "items": {"type": "string"}},
+                      "relevance_score": {"type": "number"},
+                      "relationship": {"type": "string"}
+                    }
+                  }
+                },
+                "research_gap": {"type": "string"},
+                "contribution_analysis": {"type": "string"}
+              }
+            },
+            "novelty_assessment": {
+              "type": "object",
+              "description": "Assessment of paper novelty and contributions",
+              "properties": {
+                "novelty_score": {"type": "number"},
+                "key_contributions": {"type": "array", "items": {"type": "string"}},
+                "innovation_areas": {"type": "array", "items": {"type": "string"}},
+                "limitations": {"type": "array", "items": {"type": "string"}}
+              }
+            },
+            "technical_evaluation": {
+              "type": "object",
+              "description": "Technical analysis of the paper",
+              "properties": {
+                "methodology": {"type": "string"},
+                "experimental_design": {"type": "string"},
+                "results_validation": {"type": "string"},
+                "reproducibility": {"type": "string"},
+                "code_quality": {"type": "string"}
+              }
+            },
+            "reviewer_style": {
+              "type": "object",
+              "description": "Reviewer style analysis if OpenReview credentials provided",
+              "properties": {
+                "style_consistency": {"type": "string"},
+                "reviewing_patterns": {"type": "array", "items": {"type": "string"}},
+                "bias_analysis": {"type": "string"}
+              }
+            },
+            "execution_metadata": {
+              "type": "object",
+              "description": "Execution details and timing",
+              "properties": {
+                "execution_time": {"type": "number"},
+                "tools_used": {"type": "array", "items": {"type": "string"}},
+                "api_calls": {"type": "integer"},
+                "timestamp": {"type": "string"}
+              }
+            },
+            "error": {
+              "type": "string",
+              "description": "Error message when status is error"
+            }
+          },
+          "required": ["status"],
+          "additionalProperties": false
+        }
+      }
+    ]
   }
 } 
