@@ -24,9 +24,26 @@ router = APIRouter(prefix="/deployment", tags=["deployment"])
 @router.post("/create/{hiring_id}")
 def create_deployment(
     hiring_id: int,
+    current_user=Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Create a new deployment for a hired ACP agent."""
+    
+    # Load and validate hiring ownership
+    hiring = db.query(Hiring).filter(Hiring.id == hiring_id).first()
+    if not hiring:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Hiring not found"
+        )
+    
+    # Ensure user owns the hiring (or is admin)
+    if hiring.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: You can only create deployments for your own hirings"
+        )
+    
     deployment_service = DeploymentService(db)
     
     # Create deployment record
@@ -60,9 +77,33 @@ def create_deployment(
 @router.get("/status/{deployment_id}")
 def get_deployment_status(
     deployment_id: str,
+    current_user=Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Get deployment status."""
+    # Get deployment to check ownership
+    deployment = db.query(AgentDeployment).filter(AgentDeployment.deployment_id == deployment_id).first()
+    if not deployment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Deployment not found"
+        )
+    
+    # Get hiring to check user ownership
+    hiring = db.query(Hiring).filter(Hiring.id == deployment.hiring_id).first()
+    if not hiring:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Hiring not found"
+        )
+    
+    # Ensure user owns the deployment (or is admin)
+    if hiring.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: You can only check status of your own deployments"
+        )
+    
     deployment_service = DeploymentService(db)
     result = deployment_service.get_deployment_status(deployment_id)
     
@@ -78,10 +119,35 @@ def get_deployment_status(
 @router.post("/stop/{deployment_id}")
 def stop_deployment(
     deployment_id: str,
+    current_user=Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Stop a deployment."""
     deployment_service = DeploymentService(db)
+    
+    # Get deployment to check ownership
+    deployment = db.query(AgentDeployment).filter(AgentDeployment.deployment_id == deployment_id).first()
+    if not deployment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Deployment not found"
+        )
+    
+    # Get hiring to check user ownership
+    hiring = db.query(Hiring).filter(Hiring.id == deployment.hiring_id).first()
+    if not hiring:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Hiring not found"
+        )
+    
+    # Ensure user owns the deployment (or is admin)
+    if hiring.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: You can only stop your own deployments"
+        )
+    
     result = deployment_service.stop_deployment(deployment_id)
     
     if "error" in result:
@@ -97,10 +163,34 @@ def stop_deployment(
 def restart_deployment(
     deployment_id: str,
     background_tasks: BackgroundTasks,
+    current_user=Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Restart a stopped deployment."""
     deployment_service = DeploymentService(db)
+    
+    # Get deployment to check ownership
+    deployment = db.query(AgentDeployment).filter(AgentDeployment.deployment_id == deployment_id).first()
+    if not deployment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Deployment not found"
+        )
+    
+    # Get hiring to check user ownership
+    hiring = db.query(Hiring).filter(Hiring.id == deployment.hiring_id).first()
+    if not hiring:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Hiring not found"
+        )
+    
+    # Ensure user owns the deployment (or is admin)
+    if hiring.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: You can only restart your own deployments"
+        )
     
     # Check if deployment exists and is stopped
     status_result = deployment_service.get_deployment_status(deployment_id)
@@ -126,9 +216,33 @@ def restart_deployment(
 @router.get("/health/{deployment_id}")
 async def health_check(
     deployment_id: str,
+    current_user=Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Perform health check on deployment."""
+    # Get deployment to check ownership
+    deployment = db.query(AgentDeployment).filter(AgentDeployment.deployment_id == deployment_id).first()
+    if not deployment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Deployment not found"
+        )
+    
+    # Get hiring to check user ownership
+    hiring = db.query(Hiring).filter(Hiring.id == deployment.hiring_id).first()
+    if not hiring:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Hiring not found"
+        )
+    
+    # Ensure user owns the deployment (or is admin)
+    if hiring.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: You can only check health of your own deployments"
+        )
+    
     deployment_service = DeploymentService(db)
     result = await deployment_service.health_check(deployment_id)
     
@@ -145,13 +259,24 @@ async def health_check(
 def list_deployments(
     agent_id: Optional[str] = None,
     deployment_status: Optional[str] = None,
+    current_user=Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """List deployments with optional filtering by agent ID and status."""
     deployment_service = DeploymentService(db)
     
     try:
-        deployments = deployment_service.list_deployments(agent_id, deployment_status)
+        # Get all deployments and filter by user ownership
+        all_deployments = deployment_service.list_deployments(agent_id, deployment_status)
+            
+        # Filter to only show user's own deployments
+        user_deployments = []
+        for deployment in all_deployments:
+            # Get hiring to check ownership
+            hiring = db.query(Hiring).filter(Hiring.id == deployment.get('hiring_id')).first()
+            if hiring and hiring.user_id == current_user.id:
+                user_deployments.append(deployment)
+                
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -159,8 +284,8 @@ def list_deployments(
         )
     
     return {
-        "deployments": deployments,
-        "total": len(deployments)
+        "deployments": user_deployments,
+        "total": len(user_deployments)
     }
 
 
@@ -480,18 +605,18 @@ def get_hirings_drilldown(
         }
         
     except Exception as e:
-        logger.error(f"Failed to get hirings drill-down: {e}")
+        logger.error(f"Failed to get hirings diagnostic: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get hirings drill-down: {str(e)}"
+            detail=f"Failed to get hirings diagnostic: {str(e)}"
         )
 
-@router.get("/admin/drilldown/deployments")
-def get_deployments_drilldown(
+@router.get("/admin/diagnostic/deployments")
+def get_deployments_diagnostic(
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Get detailed deployment information for system analysis drill-down (Available to all authenticated users)."""
+    """Get detailed deployment information for system diagnostics (Available to all authenticated users)."""
     try:
         from ..models.hiring import Hiring
         from ..models.agent import Agent
