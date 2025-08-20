@@ -2385,7 +2385,7 @@ def reconcile_deployments(ctx, deployment_id, base_url):
             async def reconcile_single():
                 api_key = ctx.obj.get('api_key') or cli_config.get('api_key')
                 async with AgentHubClient(base_url, api_key=api_key) as client:
-                    result = await client.post(f"/deployment/admin/reconcile/{deployment_id}")
+                    result = await client.post(f"/diagnostic/admin/reconcile/{deployment_id}")
                     return result
             
             result = asyncio.run(reconcile_single())
@@ -2395,7 +2395,7 @@ def reconcile_deployments(ctx, deployment_id, base_url):
             async def reconcile_all():
                 api_key = ctx.obj.get('api_key') or cli_config.get('api_key')
                 async with AgentHubClient(base_url, api_key=api_key) as client:
-                    result = await client.post("/deployment/admin/reconcile")
+                    result = await client.post("/diagnostic/admin/reconcile")
                     return result
             
             result = asyncio.run(reconcile_all())
