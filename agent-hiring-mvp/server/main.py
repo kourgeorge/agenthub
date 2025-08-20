@@ -43,6 +43,7 @@ from .api import (
     billing_router,
     enhanced_billing_router,
     deployment_router,
+    diagnostic_router,
     agent_proxy_router,
     resources_router,
     auth_router,
@@ -226,6 +227,7 @@ app.include_router(users_router, prefix="/api/v1")
 app.include_router(billing_router, prefix="/api/v1")
 app.include_router(enhanced_billing_router, prefix="/api/v1")
 app.include_router(deployment_router, prefix="/api/v1")
+app.include_router(diagnostic_router, prefix="/api/v1")
 app.include_router(agent_proxy_router, prefix="/api/v1")
 app.include_router(resources_router, prefix="/api/v1")
 app.include_router(auth_router, prefix="/api/v1")

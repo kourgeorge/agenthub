@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 from .database.init_db import init_database
 from .api import agents_router, hiring_router, execution_router, acp_router, users_router
 from .api.deployment import router as deployment_router
+from .api.diagnostic import router as diagnostic_router
 from .api.agent_proxy import router as agent_proxy_router
 
 # Configure logging
@@ -64,6 +65,7 @@ app.include_router(execution_router, prefix="/api/v1")
 app.include_router(acp_router, prefix="/api/v1")
 app.include_router(users_router, prefix="/api/v1")
 app.include_router(deployment_router, prefix="/api/v1")
+app.include_router(diagnostic_router, prefix="/api/v1")
 app.include_router(agent_proxy_router, prefix="/api/v1")
 
 
@@ -83,6 +85,7 @@ async def root():
             "execution": "/api/v1/execution",
             "acp": "/api/v1/acp",
             "deployment": "/api/v1/deployment",
+            "diagnostic": "/api/v1/diagnostic",
             "agent_proxy": "/api/v1/agent-proxy"
         }
     }
@@ -123,10 +126,34 @@ async def refresh_database():
 async def global_exception_handler(request, exc):
     """Global exception handler."""
     logger.error(f"Unhandled exception: {exc}")
-    return JSONResponse(
-        status_code=500,
-        content={"detail": "Internal server error"},
-    )
+    
+    # Provide more specific error messages for common exceptions
+    if isinstance(exc, ValueError):
+        return JSONResponse(
+            status_code=400,
+            content={"detail": str(exc)},
+        )
+    elif isinstance(exc, KeyError):
+        return JSONResponse(
+            status_code=400,
+            content={"detail": f"Missing required field: {str(exc)}"},
+        )
+    elif isinstance(exc, AttributeError):
+        return JSONResponse(
+            status_code=400,
+            content={"detail": f"Invalid attribute: {str(exc)}"},
+        )
+    elif isinstance(exc, TypeError):
+        return JSONResponse(
+            status_code=400,
+            content={"detail": f"Type error: {str(exc)}"},
+        )
+    else:
+        # For other exceptions, provide a generic message but log the actual error
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Internal server error"},
+        )
 
 
 def main():
