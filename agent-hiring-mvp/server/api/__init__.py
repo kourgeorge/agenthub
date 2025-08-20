@@ -8,6 +8,7 @@ from .users import router as users_router
 from .billing import router as billing_router
 from .enhanced_billing import router as enhanced_billing_router
 from .deployment import router as deployment_router
+from .diagnostic import router as diagnostic_router
 from .agent_proxy import router as agent_proxy_router
 from .resources import router as resources_router
 from .auth import router as auth_router
@@ -28,6 +29,7 @@ __all__ = [
     "billing_router",
     "enhanced_billing_router",
     "deployment_router",
+    "diagnostic_router",
     "agent_proxy_router",
     "resources_router",
     "auth_router",
