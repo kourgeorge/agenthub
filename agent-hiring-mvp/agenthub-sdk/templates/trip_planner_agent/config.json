@@ -22,196 +22,211 @@
   "price_per_use": 0.3,
   "requirements": [],
   "config_schema": {
-    "destination": {
-      "type": "string",
-      "description": "The travel destination (city, country, or region)",
-      "required": true
-    },
-    "month": {
-      "type": "choice",
-      "description": "Preferred month for the trip (optional - select a month to specify timing, or leave unselected for flexible dates)",
-      "required": false,
-      "options": [
-        {
-          "value": "january",
-          "label": "January"
+    "functions": [
+      {
+        "name": "execute",
+        "description": "Create a comprehensive trip itinerary based on user preferences and requirements",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "destination": {
+              "type": "string",
+              "description": "The travel destination (city, country, or region)",
+              "minLength": 1
+            },
+            "month": {
+              "type": "string",
+              "description": "Preferred month for the trip (optional - select a month to specify timing, or leave unselected for flexible dates)",
+              "enum": [
+                "january",
+                "february",
+                "march",
+                "april",
+                "may",
+                "june",
+                "july",
+                "august",
+                "september",
+                "october",
+                "november",
+                "december"
+              ]
+            },
+            "travel_days": {
+              "type": "integer",
+              "description": "Number of travel days (optional - specify how many days you want to travel, default is 7 days)",
+              "minimum": 1,
+              "maximum": 30,
+              "default": 7
+            },
+            "budget_level": {
+              "type": "string",
+              "description": "Budget level for the trip",
+              "enum": ["budget", "moderate", "luxury"],
+              "default": "moderate"
+            },
+            "trip_type": {
+              "type": "string",
+              "description": "Type of trip",
+              "enum": ["leisure", "business", "adventure", "cultural", "romantic", "family", "solo", "group"],
+              "default": "leisure"
+            },
+            "preferences": {
+              "type": "string",
+              "description": "User preferences and interests (e.g., art, food, nature, history) - one per line"
+            },
+            "group_size": {
+              "type": "integer",
+              "description": "Number of travelers",
+              "minimum": 1,
+              "maximum": 20,
+              "default": 2
+            },
+            "special_requirements": {
+              "type": "string",
+              "description": "Any special requirements or accessibility needs"
+            },
+            "planning_model": {
+              "type": "string",
+              "description": "Model for trip planning and research",
+              "default": "openai:gpt-4o"
+            },
+            "planning_model_max_tokens": {
+              "type": "integer",
+              "description": "Maximum output tokens for planning model",
+              "minimum": 1000,
+              "maximum": 16000,
+              "default": 8000
+            },
+            "final_report_model": {
+              "type": "string",
+              "description": "Model for generating final trip itinerary",
+              "default": "openai:gpt-4o"
+            },
+            "final_report_model_max_tokens": {
+              "type": "integer",
+              "description": "Maximum output tokens for final report model",
+              "minimum": 1000,
+              "maximum": 16000,
+              "default": 12000
+            },
+            "max_retries": {
+              "type": "integer",
+              "description": "Maximum number of retries for model calls",
+              "minimum": 1,
+              "maximum": 10,
+              "default": 3
+            },
+            "include_transportation": {
+              "type": "boolean",
+              "description": "Whether to include transportation recommendations",
+              "default": true
+            },
+            "include_weather_info": {
+              "type": "boolean",
+              "description": "Whether to include weather information",
+              "default": true
+            },
+            "include_safety_tips": {
+              "type": "boolean",
+              "description": "Whether to include safety tips and local customs",
+              "default": true
+            }
+          },
+          "required": ["destination"],
+          "additionalProperties": false
         },
-        {
-          "value": "february",
-          "label": "February"
-        },
-        {
-          "value": "march",
-          "label": "March"
-        },
-        {
-          "value": "april",
-          "label": "April"
-        },
-        {
-          "value": "may",
-          "label": "May"
-        },
-        {
-          "value": "june",
-          "label": "June"
-        },
-        {
-          "value": "july",
-          "label": "July"
-        },
-        {
-          "value": "august",
-          "label": "August"
-        },
-        {
-          "value": "september",
-          "label": "September"
-        },
-        {
-          "value": "october",
-          "label": "October"
-        },
-        {
-          "value": "november",
-          "label": "November"
-        },
-        {
-          "value": "december",
-          "label": "December"
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "itinerary": {
+              "type": "object",
+              "description": "Complete trip itinerary with day-by-day plans"
+            },
+            "destination": {
+              "type": "string",
+              "description": "The travel destination"
+            },
+            "travel_days": {
+              "type": "integer",
+              "description": "Number of travel days"
+            },
+            "budget_level": {
+              "type": "string",
+              "description": "Budget level used for planning"
+            },
+            "trip_type": {
+              "type": "string",
+              "description": "Type of trip planned"
+            },
+            "accommodations": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {"type": "string"},
+                  "type": {"type": "string"},
+                  "location": {"type": "string"},
+                  "price_range": {"type": "string"}
+                }
+              }
+            },
+            "activities": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "day": {"type": "integer"},
+                  "activity": {"type": "string"},
+                  "description": {"type": "string"},
+                  "duration": {"type": "string"},
+                  "location": {"type": "string"}
+                }
+              }
+            },
+            "dining_recommendations": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {"type": "string"},
+                  "cuisine": {"type": "string"},
+                  "location": {"type": "string"},
+                  "price_range": {"type": "string"},
+                  "specialties": {"type": "string"}
+                }
+              }
+            },
+            "transportation": {
+              "type": "object",
+              "description": "Transportation recommendations and options"
+            },
+            "weather_info": {
+              "type": "object",
+              "description": "Weather information for the destination"
+            },
+            "safety_tips": {
+              "type": "array",
+              "items": {"type": "string"},
+              "description": "Safety tips and local customs information"
+            },
+            "total_estimated_cost": {
+              "type": "object",
+              "description": "Estimated total cost breakdown"
+            },
+            "metadata": {
+              "type": "object",
+              "properties": {
+                "processing_time": {"type": "number"},
+                "models_used": {"type": "array", "items": {"type": "string"}},
+                "timestamp": {"type": "string"}
+              }
+            }
+          },
+          "required": ["itinerary", "destination", "travel_days", "activities"],
+          "additionalProperties": false
         }
-      ]
-    },
-    "travel_days": {
-      "type": "integer",
-      "description": "Number of travel days (optional - specify how many days you want to travel, default is 7 days)",
-      "required": false,
-      "minimum": 1,
-      "maximum": 30,
-      "default": 7
-    },
-    "budget_level": {
-      "type": "choice",
-      "description": "Budget level for the trip",
-      "default": "moderate",
-      "options": [
-        {
-          "value": "budget",
-          "label": "Budget"
-        },
-        {
-          "value": "moderate",
-          "label": "Moderate"
-        },
-        {
-          "value": "luxury",
-          "label": "Luxury"
-        }
-      ]
-    },
-    "trip_type": {
-      "type": "choice",
-      "description": "Type of trip",
-      "default": "leisure",
-      "options": [
-        {
-          "value": "leisure",
-          "label": "Leisure"
-        },
-        {
-          "value": "business",
-          "label": "Business"
-        },
-        {
-          "value": "adventure",
-          "label": "Adventure"
-        },
-        {
-          "value": "cultural",
-          "label": "Cultural"
-        },
-        {
-          "value": "romantic",
-          "label": "Romantic"
-        },
-        {
-          "value": "family",
-          "label": "Family"
-        },
-        {
-          "value": "solo",
-          "label": "Solo"
-        },
-        {
-          "value": "group",
-          "label": "Group"
-        }
-      ]
-    },
-    "preferences": {
-      "type": "textarea",
-      "description": "User preferences and interests (e.g., art, food, nature, history) - one per line",
-      "default": "",
-      "multiline": true,
-      "placeholder": "Enter your preferences, one per line..."
-    },
-    "group_size": {
-      "type": "integer",
-      "description": "Number of travelers",
-      "minimum": 1,
-      "maximum": 20,
-      "default": 2
-    },
-    "special_requirements": {
-      "type": "string",
-      "description": "Any special requirements or accessibility needs",
-      "default": ""
-    },
-    "planning_model": {
-      "type": "string",
-      "description": "Model for trip planning and research",
-      "default": "openai:gpt-4o"
-    },
-    "planning_model_max_tokens": {
-      "type": "integer",
-      "description": "Maximum output tokens for planning model",
-      "minimum": 1000,
-      "maximum": 16000,
-      "default": 8000
-    },
-    "final_report_model": {
-      "type": "string",
-      "description": "Model for generating final trip itinerary",
-      "default": "openai:gpt-4o"
-    },
-    "final_report_model_max_tokens": {
-      "type": "integer",
-      "description": "Maximum output tokens for final report model",
-      "minimum": 1000,
-      "maximum": 16000,
-      "default": 12000
-    },
-    "max_retries": {
-      "type": "integer",
-      "description": "Maximum number of retries for model calls",
-      "minimum": 1,
-      "maximum": 10,
-      "default": 3
-    },
-    "include_transportation": {
-      "type": "boolean",
-      "description": "Whether to include transportation recommendations",
-      "default": true
-    },
-    "include_weather_info": {
-      "type": "boolean",
-      "description": "Whether to include weather information",
-      "default": true
-    },
-    "include_safety_tips": {
-      "type": "boolean",
-      "description": "Whether to include safety tips and local customs",
-      "default": true
-    }
+      }
+    ]
   }
 } 
