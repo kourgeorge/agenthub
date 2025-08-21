@@ -69,56 +69,14 @@ class AgentHubClient:
         # Determine if we need to disable SSL verification
         self.disable_ssl_verify = self.base_url.startswith("https://localhost") or self.base_url.startswith("https://127.0.0.1")
     
-    def _get_headers(self) -> Dict[str, str]:
-        """Get headers for API requests."""
-        headers = {
-            "Content-Type": "application/json",
-        }
+    def _get_headers(self, additional_headers: Optional[Dict[str, str]] = None) -> Dict[str, str]:
+        """Get headers with authentication if API key is available."""
+        headers = {}
         if self.api_key:
             headers["X-API-Key"] = self.api_key
+        if additional_headers:
+            headers.update(additional_headers)
         return headers
-    
-    async def _handle_http_error(self, response, operation: str) -> None:
-        """Handle HTTP error responses consistently across all methods.
-        
-        Args:
-            response: The HTTP response object
-            operation: Name of the operation being performed
-            
-        Raises:
-            AgentHubError: With detailed error information
-        """
-        error_text = await response.text() if hasattr(response, 'text') else "Unknown error"
-        logger.error(f"HTTP {response.status} error in {operation}: {error_text}")
-        
-        # Try to parse the error response for better error details
-        try:
-            error_data = json.loads(error_text)
-            if "detail" in error_data:
-                # Handle structured error responses
-                detail = error_data["detail"]
-                if isinstance(detail, dict):
-                    if "message" in detail:
-                        error_message = detail["message"]
-                        if "errors" in detail:
-                            error_message += f" - {detail['errors']}"
-                    else:
-                        error_message = str(detail)
-                else:
-                    error_message = str(detail)
-            else:
-                error_message = error_text
-        except (json.JSONDecodeError, KeyError):
-            # Fallback to raw error text if parsing fails
-            error_message = error_text
-        
-        # Raise a more informative error
-        raise AgentHubError(
-            message=f"{operation} failed (HTTP {response.status})",
-            status_code=response.status,
-            response_body=error_text,
-            operation=operation
-        )
     
     async def __aenter__(self):
         """Async context manager entry."""
@@ -256,7 +214,9 @@ class AgentHubClient:
                     logger.info(f"Agent submitted successfully: {result}")
                     return result
                 else:
-                    await self._handle_http_error(response, "submit_agent")
+                    error_text = await response.text()
+                    logger.error(f"Failed to submit agent: {error_text}")
+                    raise Exception(f"Submission failed: {error_text}")
         
         finally:
             # Clean up ZIP file
@@ -436,7 +396,8 @@ class AgentHubClient:
             if response.status == 200:
                 return await response.json()
             else:
-                await self._handle_http_error(response, "list_agents")
+                error_text = await response.text()
+                raise Exception(f"Failed to list agents: {error_text}")
     
     async def get_agent(self, agent_id: str) -> Dict[str, Any]:
         """Get agent details."""
@@ -450,7 +411,8 @@ class AgentHubClient:
             if response.status == 200:
                 return await response.json()
             else:
-                await self._handle_http_error(response, "get_agent")
+                error_text = await response.text()
+                raise Exception(f"Failed to get agent: {error_text}")
 
     async def approve_agent(self, agent_id: str) -> Dict[str, Any]:
         """Approve an agent (admin only)."""
@@ -464,7 +426,8 @@ class AgentHubClient:
             if response.status == 200:
                 return await response.json()
             else:
-                await self._handle_http_error(response, "approve_agent")
+                error_text = await response.text()
+                raise Exception(f"Failed to approve agent: {error_text}")
 
     async def reject_agent(self, agent_id: str, reason: str) -> Dict[str, Any]:
         """Reject an agent (admin only)."""
@@ -488,7 +451,8 @@ class AgentHubClient:
             if response.status == 200:
                 return await response.json()
             else:
-                await self._handle_http_error(response, "reject_agent")
+                error_text = await response.text()
+                raise Exception(f"Failed to reject agent: {error_text}")
     
     # =============================================================================
     # AGENT HIRING
