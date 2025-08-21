@@ -57,19 +57,28 @@ class JSONSchemaValidationService:
         
         return True
     
-    def validate_agent_config_schema(self, config_schema: Dict[str, Any]) -> bool:
-        """Validate that an agent's config_schema follows JSON Schema format."""
+    def validate_agent_config_schema(self, config_schema: Dict[str, Any]) -> tuple[bool, Optional[str]]:
+        """Validate that an agent's config_schema follows JSON Schema format.
+        
+        Returns:
+            tuple: (is_valid, error_message)
+        """
         if not config_schema:
-            return False
+            return False, "config_schema is required but was not provided"
         
         # Check if it's the new functions array format
         if "functions" in config_schema:
             return self._validate_functions_array_format(config_schema)
         
+        # Check if it's a simple property-based schema (legacy format)
+        if isinstance(config_schema, dict) and "type" in config_schema:
+            # This is a simple JSON Schema object, validate it
+            return self._validate_simple_json_schema(config_schema)
+        
         # Legacy format validation (for backward compatibility)
         return self._validate_legacy_config_schema(config_schema)
     
-    def _validate_functions_array_format(self, config_schema: Dict[str, Any]) -> bool:
+    def _validate_functions_array_format(self, config_schema: Dict[str, Any]) -> tuple[bool, Optional[str]]:
         """
         Validate the new config_schema.functions array format.
         
@@ -77,48 +86,96 @@ class JSONSchemaValidationService:
             config_schema: The config_schema with functions array
             
         Returns:
-            True if valid, False otherwise
+            tuple: (is_valid, error_message)
         """
         functions = config_schema.get("functions")
-        if not isinstance(functions, list) or len(functions) == 0:
-            return False
+        if not isinstance(functions, list):
+            return False, "config_schema.functions must be an array"
+        
+        if len(functions) == 0:
+            return False, "config_schema.functions array cannot be empty"
         
         # Valid function fields - only essential fields
         valid_function_fields = {
             "name", "description", "inputSchema", "outputSchema"
         }
         
-        for function in functions:
+        for i, function in enumerate(functions):
             if not isinstance(function, dict):
-                return False
+                return False, f"config_schema.functions[{i}] must be an object"
             
             # Validate required fields
-            if "name" not in function or "description" not in function:
-                return False
+            if "name" not in function:
+                return False, f"config_schema.functions[{i}].name is required"
+            if "description" not in function:
+                return False, f"config_schema.functions[{i}].description is required"
             
             # Validate function name
             function_name = function["name"]
             if not isinstance(function_name, str) or not function_name.strip():
-                return False
+                return False, f"config_schema.functions[{i}].name must be a non-empty string"
             
             # Validate unknown fields
             unknown_fields = set(function.keys()) - valid_function_fields
             if unknown_fields:
-                return False
+                return False, f"config_schema.functions[{i}] contains unknown fields: {', '.join(unknown_fields)}"
             
             # Validate inputSchema if present
             if "inputSchema" in function:
-                if not self.validate_json_schema(function["inputSchema"]):
-                    return False
+                is_valid, error_msg = self.validate_json_schema(function["inputSchema"])
+                if not is_valid:
+                    return False, f"config_schema.functions[{i}].inputSchema: {error_msg}"
             
             # Validate outputSchema if present
             if "outputSchema" in function:
-                if not self.validate_json_schema(function["outputSchema"]):
-                    return False
+                is_valid, error_msg = self.validate_json_schema(function["outputSchema"])
+                if not is_valid:
+                    return False, f"config_schema.functions[{i}].outputSchema: {error_msg}"
         
-        return True
+        return True, None
     
-    def _validate_legacy_config_schema(self, config_schema: Dict[str, Any]) -> bool:
+    def _validate_simple_json_schema(self, config_schema: Dict[str, Any]) -> tuple[bool, Optional[str]]:
+        """
+        Validate a simple JSON Schema object (property-based format).
+        
+        Args:
+            config_schema: A simple JSON Schema object
+            
+        Returns:
+            tuple: (is_valid, error_message)
+        """
+        # Basic JSON Schema validation
+        if not isinstance(config_schema, dict):
+            return False, "config_schema must be an object"
+        
+        if "type" not in config_schema:
+            return False, "config_schema must have a 'type' field"
+        
+        if config_schema["type"] != "object":
+            return False, "config_schema type must be 'object'"
+        
+        if "properties" not in config_schema:
+            return False, "config_schema must have a 'properties' field"
+        
+        if not isinstance(config_schema["properties"], dict):
+            return False, "config_schema.properties must be an object"
+        
+        # Validate each property
+        for prop_name, prop_schema in config_schema["properties"].items():
+            if not isinstance(prop_schema, dict):
+                return False, f"Property '{prop_name}' schema must be an object"
+            
+            if "type" not in prop_schema:
+                return False, f"Property '{prop_name}' must have a 'type' field"
+            
+            # Basic type validation
+            valid_types = ["string", "integer", "number", "boolean", "array", "object"]
+            if prop_schema["type"] not in valid_types:
+                return False, f"Property '{prop_name}' has invalid type '{prop_schema['type']}'. Valid types: {', '.join(valid_types)}"
+        
+        return True, None
+    
+    def _validate_legacy_config_schema(self, config_schema: Dict[str, Any]) -> tuple[bool, Optional[str]]:
         """
         Validate the legacy config_schema format (for backward compatibility).
         
@@ -126,18 +183,21 @@ class JSONSchemaValidationService:
             config_schema: The legacy config_schema format
             
         Returns:
-            True if valid, False otherwise
+            tuple: (is_valid, error_message)
         """
         required_fields = ["name", "description", "inputSchema", "outputSchema"]
-        if not all(field in config_schema for field in required_fields):
-            return False
+        missing_fields = [field for field in required_fields if field not in config_schema]
+        if missing_fields:
+            return False, f"Missing required fields: {', '.join(missing_fields)}"
         
         # Validate inputSchema
-        if not self.validate_json_schema(config_schema.get("inputSchema", {})):
-            return False
+        is_valid, error_msg = self.validate_json_schema(config_schema.get("inputSchema", {}))
+        if not is_valid:
+            return False, f"inputSchema: {error_msg}"
         
         # Validate outputSchema
-        if not self.validate_json_schema(config_schema.get("outputSchema", {})):
-            return False
+        is_valid, error_msg = self.validate_json_schema(config_schema.get("outputSchema", {}))
+        if not is_valid:
+            return False, f"outputSchema: {error_msg}"
         
-        return True
+        return True, None
