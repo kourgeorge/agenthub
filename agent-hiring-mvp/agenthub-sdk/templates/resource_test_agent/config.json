@@ -18,18 +18,73 @@
   ],
   "pricing_model": "free",
   "config_schema": {
-    "task_type": {
-      "type": "string",
-      "description": "Type of resource-intensive task to perform",
-      "enum": ["cpu", "memory", "both"],
-      "default": "both"
-    },
-    "intensity": {
-      "type": "integer",
-      "description": "Intensity level from 1 (low) to 10 (high)",
-      "minimum": 1,
-      "maximum": 10,
-      "default": 5
-    }
+    "functions": [
+      {
+        "name": "execute",
+        "description": "Execute resource-intensive tasks to test CPU and memory usage",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "task_type": {
+              "type": "string",
+              "description": "Type of resource-intensive task to perform",
+              "enum": ["cpu", "memory", "both"],
+              "default": "both"
+            },
+            "intensity": {
+              "type": "integer",
+              "description": "Intensity level from 1 (low) to 10 (high)",
+              "minimum": 1,
+              "maximum": 10,
+              "default": 5
+            }
+          },
+          "required": []
+        },
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": ["success", "error"],
+              "description": "Execution status"
+            },
+            "task_type": {
+              "type": "string",
+              "description": "Type of task that was executed"
+            },
+            "intensity_level": {
+              "type": "integer",
+              "description": "Intensity level used for execution"
+            },
+            "total_execution_time": {
+              "type": "number",
+              "description": "Total execution time in seconds"
+            },
+            "task_results": {
+              "type": "object",
+              "description": "Results from individual tasks"
+            },
+            "timestamp": {
+              "type": "string",
+              "description": "ISO timestamp of execution"
+            },
+            "agent_type": {
+              "type": "string",
+              "description": "Type of agent"
+            },
+            "note": {
+              "type": "string",
+              "description": "Additional information about the agent"
+            },
+            "error_message": {
+              "type": "string",
+              "description": "Error message if status is error"
+            }
+          },
+          "required": ["status", "task_type", "intensity_level", "total_execution_time", "timestamp", "agent_type"]
+        }
+      }
+    ]
   }
 }
