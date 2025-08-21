@@ -488,6 +488,16 @@
           }
         }
       }
+    },
+    {
+      "if": {
+        "properties": { "agent_type": { "enum": ["function"] } }
+      },
+      "then": {
+        "properties": {
+          "requires_initialization": { "const": false }
+        }
+      }
     }
   ],
   "additionalProperties": false
