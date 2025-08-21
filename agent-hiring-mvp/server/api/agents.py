@@ -122,10 +122,11 @@ async def submit_agent(
         if config_schema_dict:
             from ..services.json_schema_validation_service import JSONSchemaValidationService
             json_schema_validator = JSONSchemaValidationService()
-            if not json_schema_validator.validate_agent_config_schema(config_schema_dict):
+            is_valid, error_message = json_schema_validator.validate_agent_config_schema(config_schema_dict)
+            if not is_valid:
                 raise HTTPException(
                     status_code=400,
-                    detail={"message": "Invalid JSON Schema format in config_schema", "errors": "Schema must follow JSON Schema format with inputSchema and outputSchema"}
+                    detail={"message": "Invalid JSON Schema format in config_schema", "errors": error_message}
                 )
             logger.info(f"✅ JSON Schema validation passed for agent {name}")
         

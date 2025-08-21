@@ -49,8 +49,9 @@ class AgentService:
         """Create a new agent with multiple files."""
         # Validate JSON Schema if provided
         if agent_data.config_schema:
-            if not self.json_schema_validator.validate_agent_config_schema(agent_data.config_schema):
-                raise ValueError("Invalid JSON Schema format in config_schema")
+            is_valid, error_message = self.json_schema_validator.validate_agent_config_schema(agent_data.config_schema)
+            if not is_valid:
+                raise ValueError(f"Invalid JSON Schema format in config_schema: {error_message}")
             logger.info(f"✅ JSON Schema validation passed for agent {agent_data.name}")
         
         # Calculate code hash
