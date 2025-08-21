@@ -725,7 +725,7 @@ async def _main_async(input_data: Dict[str, Any], context: Dict[str, Any]) -> Di
         }
 
 
-def main(input_data: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+def execute(input_data: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
     """
     Main function for the Deep Research Agent.
     
@@ -766,5 +766,5 @@ if __name__ == "__main__":
         'max_concurrent_research_units': 3,
     }
 
-    result = main(test_input, {})
+    result = execute(test_input, {})
     print(json.dumps(result, indent=2))
