@@ -43,19 +43,19 @@ class JSONSchemaValidationService:
             errors.append(f"{error.path}: {error.message}")
         return errors
     
-    def validate_json_schema(self, schema: Dict[str, Any]) -> bool:
+    def validate_json_schema(self, schema: Dict[str, Any]) -> tuple[bool, Optional[str]]:
         """Validate that a schema follows JSON Schema format requirements."""
         required_fields = ["type", "properties"]
         if not all(field in schema for field in required_fields):
-            return False
+            return False, f"Missing required fields: {', '.join(required_fields)}"
         
         if schema["type"] != "object":
-            return False
+            return False, "Schema type must be 'object'"
         
         if "properties" not in schema or not isinstance(schema["properties"], dict):
-            return False
+            return False, "Schema must have 'properties' field as an object"
         
-        return True
+        return True, None
     
     def validate_agent_config_schema(self, config_schema: Dict[str, Any]) -> tuple[bool, Optional[str]]:
         """Validate that an agent's config_schema follows JSON Schema format.
