@@ -239,11 +239,11 @@ class AgentService:
         logger.info(f"Approved agent: {agent.name} (ID: {agent.id})")
         return agent
     
-    async def reject_agent(self, agent_id: str, reason: str) -> Optional[Agent]:
+    async def reject_agent(self, agent_id: str, reason: str) -> tuple[Optional[Agent], dict]:
         """Reject an agent and handle existing hirings and deployments."""
         agent = self.get_agent(agent_id)
         if not agent:
-            return None
+            return None, {}
         
         # Update agent status
         agent.status = AgentStatus.REJECTED.value
@@ -264,7 +264,8 @@ class AgentService:
                 active_hirings_count += 1
         
         # Clean up ALL deployments for this agent (comprehensive approach)
-        await self._cleanup_all_agent_deployments(agent_id)
+        # This is synchronous but provides detailed logging for progress tracking
+        cleanup_result = await self._cleanup_all_agent_deployments(agent_id)
         
         # Block new executions for this agent
         # (This is handled by the hiring service which checks agent status)
@@ -274,8 +275,9 @@ class AgentService:
         
         logger.info(f"Rejected agent: {agent.name} (ID: {agent.id}) - Reason: {reason}")
         logger.info(f"Processed {len(all_hirings)} total hirings, suspended {active_hirings_count} active hirings for rejected agent")
+        logger.info(f"Completed cleanup of {cleanup_result.get('total_deployments', 0)} deployments for agent {agent_id}")
         
-        return agent
+        return agent, cleanup_result
     
     def _stop_hiring_deployment(self, hiring: Hiring):
         """Stop deployment for a hiring (for ACP agents)."""
@@ -345,20 +347,24 @@ class AgentService:
             
             if not deployments:
                 logger.info(f"No deployments found for agent {agent_id}")
-                return
+                return {"total_deployments": 0, "cleaned_up": 0, "failed": 0, "details": []}
             
             logger.info(f"Found {len(deployments)} deployments to clean up for agent {agent_id}")
             
             deployment_service = DeploymentService(self.db)
             function_deployment_service = FunctionDeploymentService(self.db)
             
-            for deployment in deployments:
+            cleanup_details = []
+            cleaned_up = 0
+            failed = 0
+            
+            for i, deployment in enumerate(deployments, 1):
                 try:
-                    logger.info(f"Cleaning up deployment {deployment.deployment_id} for agent {agent_id}")
+                    logger.info(f"Cleaning up deployment {i}/{len(deployments)}: {deployment.deployment_id} for agent {agent_id}")
                     
                     # Stop the deployment based on agent type
                     if deployment.agent.agent_type == "acp_server":
-                        stop_result = deployment_service.stop_deployment(deployment.deployment_id, timeout=60)
+                        stop_result = deployment_service.stop_deployment(deployment.deployment_id, timeout=30)
                     elif deployment.agent.agent_type == "persistent":
                         # For persistent agents, try to cleanup first, then stop
                         try:
@@ -370,14 +376,26 @@ class AgentService:
                                 logger.info(f"Started persistent agent cleanup {deployment.deployment_id} in background")
                         except Exception as e:
                             logger.warning(f"Error starting persistent agent cleanup: {e}")
-                        stop_result = deployment_service.stop_deployment(deployment.deployment_id, timeout=60)
+                        stop_result = deployment_service.stop_deployment(deployment.deployment_id, timeout=30)
                     else:
                         stop_result = function_deployment_service.stop_function_deployment(deployment.deployment_id)
                     
                     if "error" in stop_result:
                         logger.error(f"Failed to stop deployment {deployment.deployment_id}: {stop_result['error']}")
+                        failed += 1
+                        cleanup_details.append({
+                            "deployment_id": deployment.deployment_id,
+                            "status": "failed",
+                            "error": stop_result["error"]
+                        })
                     else:
                         logger.info(f"Successfully stopped deployment {deployment.deployment_id}")
+                        cleaned_up += 1
+                        cleanup_details.append({
+                            "deployment_id": deployment.deployment_id,
+                            "status": "cleaned_up",
+                            "agent_type": deployment.agent.agent_type
+                        })
                     
                     # Note: Deployment status is managed by HiringService, not here
                     # This method only handles container stopping, not deployment lifecycle
@@ -385,12 +403,26 @@ class AgentService:
                     
                 except Exception as e:
                     logger.error(f"Exception cleaning up deployment {deployment.deployment_id}: {e}")
+                    failed += 1
+                    cleanup_details.append({
+                        "deployment_id": deployment.deployment_id,
+                        "status": "exception",
+                        "error": str(e)
+                    })
             
             self.db.commit()
-            logger.info(f"Completed cleanup of {len(deployments)} deployments for agent {agent_id}")
+            logger.info(f"Completed cleanup of {len(deployments)} deployments for agent {agent_id}: {cleaned_up} cleaned up, {failed} failed")
+            
+            return {
+                "total_deployments": len(deployments),
+                "cleaned_up": cleaned_up,
+                "failed": failed,
+                "details": cleanup_details
+            }
             
         except Exception as e:
             logger.error(f"Exception in _cleanup_all_agent_deployments: {e}")
+            return {"total_deployments": 0, "cleaned_up": 0, "failed": 0, "details": [], "error": str(e)}
     
     def update_agent_stats(self, agent_id: str, execution_count: int = 0, rating: Optional[float] = None) -> None:
         """Update agent statistics."""

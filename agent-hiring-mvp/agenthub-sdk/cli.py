@@ -930,6 +930,27 @@ def reject(ctx, agent_id, reason, base_url):
     try:
         echo(style(f"❌ Rejecting agent {agent_id}...", fg='blue'))
         echo(style("  🧹 Removing all deployments and containers...", fg='yellow'))
+        echo(style("  ⏱️  This may take several minutes for agents with many deployments", fg='blue'))
+        echo(style("  🔄 Please wait while cleanup operations complete...", fg='blue'))
+        
+        # Show a simple progress indicator
+        import time
+        import threading
+        import sys
+        
+        # Simple spinner animation with progress message
+        def show_spinner():
+            spinner_chars = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+            i = 0
+            while not hasattr(show_spinner, 'stop'):
+                sys.stdout.write(f'\r  {spinner_chars[i]} Cleaning up deployments (this may take several minutes)... ')
+                sys.stdout.flush()
+                time.sleep(0.1)
+                i = (i + 1) % len(spinner_chars)
+        
+        # Start spinner in background
+        spinner_thread = threading.Thread(target=show_spinner, daemon=True)
+        spinner_thread.start()
         
         async def reject_agent():
             api_key = ctx.obj.get('api_key') or cli_config.get('api_key')
@@ -939,18 +960,51 @@ def reject(ctx, agent_id, reason, base_url):
         
         result = asyncio.run(reject_agent())
         
-        echo(style("❌ Agent rejected successfully!", fg='yellow'))
+        # Stop spinner
+        show_spinner.stop = True
+        spinner_thread.join(timeout=1)
+        sys.stdout.write('\r' + ' ' * 50 + '\r')  # Clear spinner line
+        
+        echo(style("✅ Agent rejected successfully!", fg='green'))
         echo(f"  Agent ID: {result.get('agent_id')}")
         echo(f"  Status: {result.get('status')}")
         echo(f"  Reason: {result.get('reason')}")
-        echo(style("  ✅ All deployments and containers have been cleaned up", fg='green'))
+        
+        # Show cleanup summary
+        cleanup_summary = result.get('cleanup_summary', {})
+        if cleanup_summary:
+            total = cleanup_summary.get('total_deployments', 0)
+            cleaned = cleanup_summary.get('cleaned_up', 0)
+            failed = cleanup_summary.get('failed', 0)
+            
+            if total > 0:
+                echo(style(f"  🧹 Cleanup completed: {cleaned}/{total} deployments cleaned up", fg='green'))
+                if failed > 0:
+                    echo(style(f"  ⚠️  {failed} deployments failed to clean up", fg='yellow'))
+                
+                # Show detailed cleanup results
+                cleanup_details = result.get('cleanup_details', [])
+                if cleanup_details and verbose:
+                    echo(style("  📋 Cleanup details:", fg='blue'))
+                    for detail in cleanup_details:
+                        status_icon = "✅" if detail.get('status') == 'cleaned_up' else "❌"
+                        echo(f"    {status_icon} {detail.get('deployment_id', 'Unknown')}: {detail.get('status', 'Unknown')}")
+                        if detail.get('error'):
+                            echo(f"      Error: {detail.get('error')}")
+                elif cleanup_details:
+                    echo(style("  💡 Run with --verbose to see detailed cleanup results", fg='blue'))
         
         if verbose:
             echo("Full response:")
             echo(json.dumps(result, indent=2))
             
     except Exception as e:
-        echo(style(f"✗ Error rejecting agent: {e}", fg='red'))
+        if "timeout" in str(e).lower():
+            echo(style("⚠️  Agent rejection timed out. The agent has been marked as rejected, but cleanup may still be in progress.", fg='yellow'))
+            echo(style("🔍 Check deployment status with: agenthub deploy list", fg='blue'))
+            echo(style("💡 You can also check the server logs for cleanup progress", fg='blue'))
+        else:
+            echo(style(f"✗ Error rejecting agent: {e}", fg='red'))
         sys.exit(1)
 
 

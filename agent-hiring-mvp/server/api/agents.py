@@ -459,16 +459,39 @@ async def reject_agent(
 ):
     """Reject an agent (admin only)."""
     agent_service = AgentService(db)
-    agent = await agent_service.reject_agent(agent_id, reason)
+    result = await agent_service.reject_agent(agent_id, reason)
     
-    if not agent:
+    if not result or not result[0]:
         raise HTTPException(status_code=404, detail="Agent not found")
+    
+    agent, cleanup_result = result
     
     return {
         "message": "Agent rejected",
         "agent_id": agent.id,
         "status": agent.status,
         "reason": reason,
+        "cleanup_summary": {
+            "total_deployments": cleanup_result.get("total_deployments", 0),
+            "cleaned_up": cleanup_result.get("cleaned_up", 0),
+            "failed": cleanup_result.get("failed", 0)
+        },
+        "cleanup_details": cleanup_result.get("details", [])
+    }
+
+
+@router.get("/{agent_id}/reject-progress")
+async def get_reject_progress(
+    agent_id: str,
+    db: Session = Depends(get_session_dependency),
+):
+    """Get progress of agent rejection cleanup (for monitoring)."""
+    # This endpoint can be used to check cleanup progress
+    # For now, it returns basic info, but could be enhanced with real-time progress
+    return {
+        "agent_id": agent_id,
+        "status": "cleanup_completed",  # Since cleanup is synchronous
+        "message": "Use the reject endpoint to see detailed cleanup results"
     }
 
 

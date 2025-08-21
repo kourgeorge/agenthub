@@ -102,9 +102,9 @@ class AgentHubClient:
         
         # Create session with timeout and connection settings
         timeout = aiohttp.ClientTimeout(
-            total=300,  # 5 minutes total timeout
+            total=600,  # 10 minutes total timeout for agent operations
             connect=30,  # 30 seconds to establish connection
-            sock_read=60,  # 60 seconds to read from socket
+            sock_read=300,  # 5 minutes to read from socket (for long operations like agent rejection)
             sock_connect=30,  # 30 seconds to connect socket
         )
         
@@ -434,10 +434,19 @@ class AgentHubClient:
         if not self.session:
             raise RuntimeError("Client not initialized. Use async context manager.")
         
+        # Use extended timeout for agent rejection (cleanup operations can take time)
+        extended_timeout = aiohttp.ClientTimeout(
+            total=600,  # 10 minutes total
+            connect=30,  # 30 seconds to establish connection
+            sock_read=300,  # 5 minutes to read from socket
+            sock_connect=30,  # 30 seconds to connect socket
+        )
+        
         async with self.session.put(
             f"{self.api_base}/agents/{agent_id}/reject",
             params={"reason": reason},
             headers=self._get_headers(),
+            timeout=extended_timeout,
         ) as response:
             if response.status == 200:
                 return await response.json()
