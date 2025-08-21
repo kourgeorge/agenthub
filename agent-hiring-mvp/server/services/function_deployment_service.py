@@ -40,6 +40,14 @@ class FunctionDeploymentService:
         # Initialize environment service for external API keys
         self.env_service = EnvironmentService()
     
+    def _get_agent_files(self, agent_id: str) -> Optional[List[Dict[str, Any]]]:
+        """Get all files for an agent."""
+        from ..models.agent_file import AgentFile
+        agent_files = self.db.query(AgentFile).filter(AgentFile.agent_id == agent_id).all()
+        if agent_files:
+            return [file.to_dict() for file in agent_files]
+        return None
+    
     def _get_agent_env_path(self, agent: Agent) -> Optional[str]:
         """
         Get the path to the agent's .env file if it exists.
@@ -239,7 +247,21 @@ class FunctionDeploymentService:
                 file_name, function_name = entry_point.split(':', 1)
             else:
                 file_name = entry_point
-                function_name = 'main'
+                # Get function name from agent config file (lifecycle.execute)
+                try:
+                    # Get agent config from agent files to read lifecycle.execute
+                    agent_files = self._get_agent_files(agent.id)
+                    function_name = 'execute'  # default fallback
+                    
+                    for file_data in agent_files:
+                        if file_data.get('file_path') == 'config.json':
+                            agent_config = json.loads(file_data['file_content'])
+                            lifecycle = agent_config.get('lifecycle', {})
+                            function_name = lifecycle.get('execute', 'execute')
+                            break
+                except Exception as e:
+                    logger.warning(f"Could not read agent config for function name, using default 'execute': {e}")
+                    function_name = 'execute'
             
             # Remove .py extension if present for import
             module_name = file_name.replace('.py', '')
