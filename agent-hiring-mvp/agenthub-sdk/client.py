@@ -234,7 +234,9 @@ class AgentHubClient:
                 file_name, function_name = entry_point_raw.split(':', 1)
             else:
                 file_name = entry_point_raw
-                function_name = 'main'
+                # Get function name from lifecycle.execute if available, otherwise default to 'execute'
+                lifecycle = getattr(config, 'lifecycle', {})
+                function_name = lifecycle.get('execute', 'execute')
             
             entry_point_path = os.path.join(code_directory, file_name)
             
