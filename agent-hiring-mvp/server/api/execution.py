@@ -10,6 +10,7 @@ from datetime import datetime
 from ..database.config import get_session_dependency
 from ..services.execution_service import ExecutionService, ExecutionCreateRequest
 from ..models.execution import Execution, ExecutionStatus
+from ..models.agent import Agent
 from ..middleware.auth import get_current_user
 
 
@@ -130,7 +131,7 @@ def get_execution(
     current_user = Depends(get_current_user),
     db: Session = Depends(get_session_dependency)
 ):
-    """Get an execution by ID."""
+    """Get an execution by ID with complete metadata and usage summary."""
     import logging
     logger = logging.getLogger(__name__)
     
@@ -157,27 +158,60 @@ def get_execution(
     from ..models.agent import Agent
     agent = db.query(Agent).filter(Agent.id == execution.agent_id).first()
     
-    return {
-        "execution_id": execution.execution_id,
-        "agent_id": execution.agent_id,
-        "hiring_id": execution.hiring_id,
-        "user_id": execution.user_id,
+    # Get usage summary from execution_resource_usage table
+    from ..models.resource_usage import ExecutionResourceUsage
+    usage_records = db.query(ExecutionResourceUsage).filter(
+        ExecutionResourceUsage.execution_id == execution.id
+    ).all()
+    
+    # Build usage summary
+    total_cost = sum(record.cost for record in usage_records)
+    total_tokens = sum(record.total_tokens or 0 for record in usage_records)
+    total_operations = len(usage_records)
+    
+    # Build resource breakdown
+    resource_breakdown = {}
+    for record in usage_records:
+        key = f"{record.resource_type}:{record.resource_provider}"
+        if key not in resource_breakdown:
+            resource_breakdown[key] = {
+                "total_cost": 0.0,
+                "operations": 0,
+                "total_tokens": 0
+            }
+        
+        resource_breakdown[key]["total_cost"] += record.cost
+        resource_breakdown[key]["operations"] += 1
+        resource_breakdown[key]["total_tokens"] += (record.total_tokens or 0)
+    
+    # Build complete response in the expected format
+    response = {
         "status": execution.status,
-        "input_data": execution.input_data,
-        "output_data": execution.output_data,
-        "error_message": execution.error_message,
-        "container_logs": execution.container_logs,
-        "created_at": execution.created_at.isoformat(),
-        "started_at": execution.started_at.isoformat() if execution.started_at else None,
-        "completed_at": execution.completed_at.isoformat() if execution.completed_at else None,
-        "duration_ms": execution.duration_ms,
+        "execution_id": execution.execution_id,
+        "result": execution.output_data,  # Agent's output according to outputSchema
+        "execution_time": execution.duration_ms / 1000.0 if execution.duration_ms else 0.0,
+        "usage_summary": {
+            "total_cost": total_cost,
+            "tokens_used": total_tokens,
+            "api_calls": total_operations,
+            "resource_breakdown": resource_breakdown
+        },
         "metadata": {
+            "agent_id": execution.agent_id,
             "agent_name": agent.name if agent else None,
             "agent_type": agent.agent_type if agent else None,
+            "execution_status": execution.status,
             "execution_type": execution.execution_type,
-            "retrieved_at": datetime.utcnow().isoformat()
+            "timestamp": execution.completed_at.isoformat() if execution.completed_at else None,
         }
     }
+    
+    # Add error information if execution failed
+    if execution.status == "failed" and execution.error_message:
+        response["error"] = execution.error_message
+        response["metadata"]["error_type"] = "execution_failure"
+    
+    return response
 
 
 @router.post("/{execution_id}/run")
@@ -349,23 +383,70 @@ async def get_hiring_executions(
             detail="Access denied: You can only access your own hirings"
         )
     
-    return [
-        {
+    # Build complete execution responses with metadata and usage summary
+    complete_executions = []
+    
+    for execution in executions:
+        # Get agent information
+        agent = db.query(Agent).filter(Agent.id == execution.agent_id).first()
+        
+        # Get usage summary from execution_resource_usage table
+        from ..models.resource_usage import ExecutionResourceUsage
+        usage_records = db.query(ExecutionResourceUsage).filter(
+            ExecutionResourceUsage.execution_id == execution.id
+        ).all()
+        
+        # Build usage summary
+        total_cost = sum(record.cost for record in usage_records)
+        total_tokens = sum(record.total_tokens or 0 for record in usage_records)
+        total_operations = len(usage_records)
+        
+        # Build resource breakdown
+        resource_breakdown = {}
+        for record in usage_records:
+            key = f"{record.resource_type}:{record.resource_provider}"
+            if key not in resource_breakdown:
+                resource_breakdown[key] = {
+                    "total_cost": 0.0,
+                    "operations": 0,
+                    "total_tokens": 0
+                }
+            
+            resource_breakdown[key]["total_cost"] += record.cost
+            resource_breakdown[key]["operations"] += 1
+            resource_breakdown[key]["total_tokens"] += (record.total_tokens or 0)
+        
+        # Build complete execution response
+        execution_response = {
             "execution_id": execution.execution_id,
-            "agent_id": execution.agent_id,
             "status": execution.status,
-            "execution_type": execution.execution_type,
-            "input_data": execution.input_data,
-            "output_data": execution.output_data,
-            "error_message": execution.error_message,
-            "container_logs": execution.container_logs,
-            "created_at": execution.created_at.isoformat(),
-            "started_at": execution.started_at.isoformat() if execution.started_at else None,
-            "completed_at": execution.completed_at.isoformat() if execution.completed_at else None,
-            "duration_ms": execution.duration_ms,
+            "result": execution.output_data,  # Agent's output according to outputSchema
+            "execution_time": execution.duration_ms / 1000.0 if execution.duration_ms else 0.0,
+            "usage_summary": {
+                "total_cost": total_cost,
+                "tokens_used": total_tokens,
+                "api_calls": total_operations,
+                "resource_breakdown": resource_breakdown
+            },
+            "metadata": {
+                "agent_id": execution.agent_id,
+                "agent_name": agent.name if agent else None,
+                "agent_type": agent.agent_type if agent else None,
+                "execution_status": execution.status,
+                "execution_type": execution.execution_type,
+                "timestamp": execution.completed_at.isoformat() if execution.completed_at else None,
+                "validation_status": "unknown"  # TODO: Add validation_status field to executions table
+            }
         }
-        for execution in executions
-    ]
+        
+        # Add error information if execution failed
+        if execution.status == "failed" and execution.error_message:
+            execution_response["error"] = execution.error_message
+            execution_response["metadata"]["error_type"] = "execution_failure"
+        
+        complete_executions.append(execution_response)
+    
+    return complete_executions
 
 
 @router.get("/stats/agent/{agent_id}")

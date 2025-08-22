@@ -819,7 +819,7 @@ class PersistentAgent(ABC):
         if deployment.status == DeploymentStatus.RUNNING.value and deployment.proxy_endpoint:
             try:
                 health_url = f"{deployment.proxy_endpoint}/health"
-                response = requests.get(health_url, timeout=2)
+                response = requests.get(health_url, timeout=10)  # Increased timeout from 2 to 10 seconds
                 if response.status_code == 200:
                     real_time_health = True
                     # Update database with fresh health status
