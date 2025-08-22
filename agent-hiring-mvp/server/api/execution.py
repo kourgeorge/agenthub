@@ -203,7 +203,8 @@ def get_execution(
             "execution_status": execution.status,
             "execution_type": execution.execution_type,
             "timestamp": execution.completed_at.isoformat() if execution.completed_at else None,
-        }
+        },
+        "container_logs": execution.container_logs
     }
     
     # Add error information if execution failed
@@ -212,6 +213,43 @@ def get_execution(
         response["metadata"]["error_type"] = "execution_failure"
     
     return response
+
+
+@router.get("/{execution_id}/logs", response_model=dict)
+def get_execution_logs(
+    execution_id: str, 
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_session_dependency)
+):
+    """Get container logs for a specific execution."""
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    # Get execution to check ownership
+    execution_service = ExecutionService(db)
+    execution = execution_service.get_execution(execution_id)
+    
+    if not execution:
+        logger.warning(f"Execution not found: {execution_id}")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Execution not found"
+        )
+    
+    # Ensure the user can only access their own executions
+    if execution.user_id != current_user.id:
+        logger.warning(f"Access denied: {execution_id} for user {current_user.id}")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: You can only access your own executions"
+        )
+    
+    return {
+        "execution_id": execution_id,
+        "container_logs": execution.container_logs,
+        "status": execution.status,
+        "timestamp": execution.completed_at.isoformat() if execution.completed_at else None
+    }
 
 
 @router.post("/{execution_id}/run")
