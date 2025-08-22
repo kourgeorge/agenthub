@@ -1363,8 +1363,20 @@ def execute_hiring_cmd(ctx, hiring_id, input, config, user_id, wait, timeout, ba
             echo(style("❌ Agent execution failed!", fg='red'))
             echo(f"  Execution ID: {result.get('execution_id')}")
             echo(f"  Error: {result.get('error', 'Unknown error')}")
+            
+            # Display AgentHub metadata if available
+            if result.get('metadata'):
+                echo("\n🔧 AgentHub Metadata:")
+                metadata = result['metadata']
+                echo(f"  Agent: {metadata.get('agent_name', 'Unknown')} (ID: {metadata.get('agent_id', 'Unknown')})")
+                echo(f"  Type: {metadata.get('agent_type', 'Unknown')}")
+                echo(f"  Execution Status: {metadata.get('execution_status', 'Unknown')}")
+                echo(f"  Timestamp: {metadata.get('timestamp', 'Unknown')}")
+                if metadata.get('error_type'):
+                    echo(f"  Error Type: {metadata.get('error_type')}")
+            
             if verbose:
-                echo("\nFull response:")
+                echo("\n🔍 Full Response:")
                 echo(json.dumps(result, indent=2))
             sys.exit(1)
         
@@ -1387,8 +1399,20 @@ def execute_hiring_cmd(ctx, hiring_id, input, config, user_id, wait, timeout, ba
             echo(style("❌ Agent execution failed!", fg='red'))
             echo(f"  Execution ID: {result.get('execution_id')}")
             echo(f"  Error: {result.get('error_message', result.get('error', 'Execution failed'))}")
+            
+            # Display AgentHub metadata if available
+            if result.get('metadata'):
+                echo("\n🔧 AgentHub Metadata:")
+                metadata = result['metadata']
+                echo(f"  Agent: {metadata.get('agent_name', 'Unknown')} (ID: {metadata.get('agent_id', 'Unknown')})")
+                echo(f"  Type: {metadata.get('agent_type', 'Unknown')}")
+                echo(f"  Execution Status: {metadata.get('execution_status', 'Unknown')}")
+                echo(f"  Timestamp: {metadata.get('timestamp', 'Unknown')}")
+                if metadata.get('error_type'):
+                    echo(f"  Error Type: {metadata.get('error_type')}")
+            
             if verbose:
-                echo("\nFull response:")
+                echo("\n🔍 Full Response:")
                 echo(json.dumps(result, indent=2))
             sys.exit(1)
         
@@ -1396,26 +1420,46 @@ def execute_hiring_cmd(ctx, hiring_id, input, config, user_id, wait, timeout, ba
         echo(f"  Execution ID: {result.get('execution_id')}")
         echo(f"  Status: {result.get('status')}")
         
-        # Display results - check multiple possible locations
-        output_data = result.get('output_data')
-        if output_data:
-            echo("\n📊 Result:")
-            if isinstance(output_data, dict):
-                if 'output' in output_data:
-                    echo(json.dumps(output_data['output'], indent=2))
-                else:
-                    echo(json.dumps(output_data, indent=2))
-            else:
-                echo(str(output_data))
-        elif result.get('result'):
-            echo("\n📊 Result:")
+        # Display AgentHub metadata
+        if result.get('metadata'):
+            echo("\n🔧 AgentHub Metadata:")
+            metadata = result['metadata']
+            echo(f"  Agent: {metadata.get('agent_name', 'Unknown')} (ID: {metadata.get('agent_id', 'Unknown')})")
+            echo(f"  Type: {metadata.get('agent_type', 'Unknown')}")
+            echo(f"  Execution Status: {metadata.get('execution_status', 'Unknown')}")
+            echo(f"  Timestamp: {metadata.get('timestamp', 'Unknown')}")
+            if metadata.get('validation_status'):
+                echo(f"  Validation: {metadata.get('validation_status')}")
+        
+        # Display execution metrics
+        if result.get('execution_time'):
+            echo(f"  Execution Time: {result.get('execution_time')}s")
+        if result.get('usage_summary'):
+            usage = result['usage_summary']
+            echo(f"  Total Cost: ${usage.get('total_cost', 0):.4f}")
+            if usage.get('tokens_used'):
+                echo(f"  Tokens Used: {usage.get('tokens_used')}")
+        
+        # Display agent results - check the 'result' field first (new format)
+        if result.get('result'):
+            echo("\n📊 Agent Result:")
             echo(json.dumps(result['result'], indent=2))
+        # Fallback to old format fields for backward compatibility
+        elif result.get('output_data'):
+            echo("\n📊 Result (Legacy Format):")
+            if isinstance(result['output_data'], dict):
+                if 'output' in result['output_data']:
+                    echo(json.dumps(result['output_data']['output'], indent=2))
+                else:
+                    echo(json.dumps(result['output_data'], indent=2))
+            else:
+                echo(str(result['output_data']))
         elif result.get('output'):
-            echo("\n📊 Result:")
+            echo("\n📊 Result (Legacy Format):")
             echo(json.dumps(result['output'], indent=2))
         
         if verbose:
-            echo("\nFull response:")
+            echo("\n🔍 Full Response:")
             echo(json.dumps(result, indent=2))
             
     except Exception as e:
@@ -1503,27 +1547,48 @@ def status(ctx, execution_id, base_url):
         echo(f"  ID: {result.get('execution_id')}")
         echo(f"  Status: {result.get('status')}")
         echo(f"  Created: {result.get('created_at')}")
-        echo(f"  Updated: {result.get('updated_at')}")
+        echo(f"  Started: {result.get('started_at')}")
+        echo(f"  Completed: {result.get('completed_at')}")
+        if result.get('duration_ms'):
+            echo(f"  Duration: {result.get('duration_ms')}ms")
         
-        # Display results - check both possible locations
-        output_data = result.get('output_data')
-        if output_data:
-            echo("\n📋 Result:")
-            if isinstance(output_data, dict):
-                if 'output' in output_data:
-                    echo(output_data['output'])
-                else:
-                    echo(json.dumps(output_data, indent=2))
-            else:
-                echo(str(output_data))
-        elif result.get('result'):
-            echo("\n📋 Result:")
+        # Display AgentHub metadata if available
+        if result.get('metadata'):
+            echo("\n🔧 AgentHub Metadata:")
+            metadata = result['metadata']
+            echo(f"  Agent: {metadata.get('agent_name', 'Unknown')} (ID: {metadata.get('agent_type', 'Unknown')})")
+            echo(f"  Type: {metadata.get('agent_type', 'Unknown')}")
+            echo(f"  Execution Type: {metadata.get('execution_type', 'Unknown')}")
+            echo(f"  Retrieved: {metadata.get('retrieved_at', 'Unknown')}")
+        
+        # Display agent results - prioritize the new 'result' field format
+        if result.get('result'):
+            echo("\n📊 Agent Result:")
             echo(json.dumps(result['result'], indent=2))
+        elif result.get('output_data'):
+            echo("\n📊 Result:")
+            if isinstance(result['output_data'], dict):
+                if 'output' in result['output_data']:
+                    echo(json.dumps(result['output_data']['output'], indent=2))
+                else:
+                    echo(json.dumps(result['output_data'], indent=2))
+            else:
+                echo(str(result['output_data']))
         
+        # Display error information if any
         if result.get('error'):
             echo(f"\n❌ Error: {result['error']}")
         elif result.get('error_message'):
             echo(f"\n❌ Error: {result['error_message']}")
+        
+        # Display container logs if available
+        if result.get('container_logs'):
+            echo(f"\n📋 Container Logs:")
+            echo(result['container_logs'])
+        
+        if verbose:
+            echo("\n🔍 Full Response:")
+            echo(json.dumps(result, indent=2))
             
     except Exception as e:
         echo(style(f"✗ Error getting execution status: {e}", fg='red'))

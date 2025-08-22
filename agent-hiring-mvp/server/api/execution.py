@@ -5,6 +5,7 @@ from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
+from datetime import datetime
 
 from ..database.config import get_session_dependency
 from ..services.execution_service import ExecutionService, ExecutionCreateRequest
@@ -133,6 +134,7 @@ def get_execution(
     import logging
     logger = logging.getLogger(__name__)
     
+    # Get execution to check its type and ownership
     execution_service = ExecutionService(db)
     execution = execution_service.get_execution(execution_id)
     
@@ -151,6 +153,10 @@ def get_execution(
             detail="Access denied: You can only access your own executions"
         )
     
+    # Get agent information for metadata
+    from ..models.agent import Agent
+    agent = db.query(Agent).filter(Agent.id == execution.agent_id).first()
+    
     return {
         "execution_id": execution.execution_id,
         "agent_id": execution.agent_id,
@@ -165,6 +171,12 @@ def get_execution(
         "started_at": execution.started_at.isoformat() if execution.started_at else None,
         "completed_at": execution.completed_at.isoformat() if execution.completed_at else None,
         "duration_ms": execution.duration_ms,
+        "metadata": {
+            "agent_name": agent.name if agent else None,
+            "agent_type": agent.agent_type if agent else None,
+            "execution_type": execution.execution_type,
+            "retrieved_at": datetime.utcnow().isoformat()
+        }
     }
 
 

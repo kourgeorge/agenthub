@@ -320,35 +320,45 @@ class ExecutionService:
                     try:
                         validated_output = self.json_schema_validator.validate_output(runtime_result.output, agent)
                         logger.info(f"✅ Output validation passed for agent {agent.id}")
-                        # Use validated output
-                        output_data = validated_output
+                        # Use validated output as the agent's result
+                        agent_output = validated_output
                     except ValueError as e:
                         logger.error(f"❌ Output validation failed for agent {agent.id}: {e}")
                         # Continue with original output but log the validation failure
-                        output_data = runtime_result.output
+                        agent_output = runtime_result.output
                         logger.warning(f"⚠️ Using unvalidated output due to validation failure: {e}")
                 else:
                     # Check if the output is already a JSON object (dict)
                     if isinstance(runtime_result.output, dict):
                         # Agent returned a proper JSON object, use it directly
-                        output_data = runtime_result.output
+                        agent_output = runtime_result.output
                     else:
                         # Agent returned a string, wrap it in the standard format
-                        output_data = {
+                        agent_output = {
                             "output": runtime_result.output,
                             "execution_time": runtime_result.execution_time,
                             "status": "success"
                         }
 
-                self.update_execution_status(execution_id, ExecutionStatus.COMPLETED, output_data, container_logs=runtime_result.container_logs)
+                # Store the agent's output in the database
+                self.update_execution_status(execution_id, ExecutionStatus.COMPLETED, agent_output, container_logs=runtime_result.container_logs)
                 logger.info(f"✅ Execution {execution_id} status updated to COMPLETED in database")
                 
+                # Return AgentHub response with agent output and meta information
                 return {
                     "status": "success",
                     "execution_id": execution_id,
-                    "result": output_data,
+                    "result": agent_output,  # Agent's output according to its outputSchema
                     "execution_time": runtime_result.execution_time,
-                    "usage_summary": usage_summary
+                    "usage_summary": usage_summary,
+                    "metadata": {
+                        "agent_id": agent.id,
+                        "agent_name": agent.name,
+                        "agent_type": agent.agent_type,
+                        "execution_status": "completed",
+                        "timestamp": datetime.utcnow().isoformat(),
+                        "validation_status": "validated" if agent.has_json_schema else "no_schema"
+                    }
                 }
             
             elif runtime_result.status == RuntimeStatus.FAILED:
@@ -366,7 +376,15 @@ class ExecutionService:
                 return {
                     "status": "error",
                     "execution_id": execution_id,
-                    "error": error_msg
+                    "error": error_msg,
+                    "metadata": {
+                        "agent_id": agent.id,
+                        "agent_name": agent.name,
+                        "agent_type": agent.agent_type,
+                        "execution_status": "failed",
+                        "timestamp": datetime.utcnow().isoformat(),
+                        "error_type": "runtime_failure"
+                    }
                 }
             
             else:  # FAILED or other status
@@ -382,7 +400,15 @@ class ExecutionService:
                 return {
                     "status": "error",
                     "execution_id": execution_id,
-                    "error": error_msg
+                    "error": error_msg,
+                    "metadata": {
+                        "agent_id": agent.id,
+                        "agent_name": agent.name,
+                        "agent_type": agent.agent_type,
+                        "execution_status": "failed",
+                        "timestamp": datetime.utcnow().isoformat(),
+                        "error_type": "unknown_status"
+                    }
                 }
         
         except Exception as e:
@@ -398,7 +424,15 @@ class ExecutionService:
             return {
                 "status": "error",
                 "execution_id": execution_id,
-                "error": error_msg
+                "error": error_msg,
+                "metadata": {
+                    "agent_id": agent.id if 'agent' in locals() else None,
+                    "agent_name": agent.name if 'agent' in locals() else None,
+                    "agent_type": agent.agent_type if 'agent' in locals() else None,
+                    "execution_status": "failed",
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "error_type": "unexpected_exception"
+                }
             }
     
     def _get_agent_files(self, agent_id: str) -> Optional[List[Dict[str, Any]]]:

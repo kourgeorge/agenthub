@@ -6,6 +6,7 @@ import tempfile
 import os
 from typing import List, Optional, Dict, Any
 from pathlib import Path
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status, BackgroundTasks
 from sqlalchemy.orm import Session
@@ -687,6 +688,9 @@ async def execute_agent_direct(
             detail=result.get("error", "Execution failed")
         )
     
+    # Get agent information for additional metadata
+    agent = db.query(Agent).filter(Agent.id == agent_id).first()
+    
     return {
         "status": "success",
         "result": result.get("result", {}),
@@ -694,7 +698,12 @@ async def execute_agent_direct(
         "hiring_id": execution_data.hiring_id,
         "metadata": {
             "execution_time": result.get("execution_time", 0),
-            "tokens_used": result.get("tokens_used", 0)
+            "tokens_used": result.get("tokens_used", 0),
+            "agent_id": agent_id,
+            "agent_name": agent.name if agent else None,
+            "agent_type": agent.agent_type if agent else None,
+            "execution_status": "completed",
+            "timestamp": datetime.utcnow().isoformat()
         }
     }
 
