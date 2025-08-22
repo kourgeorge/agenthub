@@ -587,9 +587,6 @@ class HiringRequest(BaseModel):
     requirements: Optional[Dict[str, Any]] = None
     billing_cycle: Optional[str] = "per_use"
 
-class DirectExecutionRequest(BaseModel):
-    hiring_id: int
-    input_data: Dict[str, Any]
 
 @router.post("/{agent_id}/hire", response_model=dict)
 async def hire_and_deploy_agent(
@@ -661,126 +658,7 @@ async def hire_and_deploy_agent(
         logger.error(f"Error in hire_and_deploy_agent: {e}")
         raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
 
-@router.post("/{agent_id}/execute", response_model=dict)
-async def execute_agent_direct(
-    agent_id: str,
-    execution_data: DirectExecutionRequest,
-    current_user = Depends(get_current_user),
-    db: Session = Depends(get_session_dependency)
-):
-    """Execute an agent directly and return result."""
-    
-    # 1. Create execution
-    execution_service = ExecutionService()
-    execution = execution_service.create_execution(ExecutionCreateRequest(
-        hiring_id=execution_data.hiring_id,
-        user_id=current_user.id,
-        input_data=execution_data.input_data,
-        execution_type="run"
-    ))
-    
-    # 2. Run execution and wait for result
-    result = await execution_service.execute_agent(execution.execution_id, user_id=current_user.id)
-    
-    if result.get("status") == "error":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=result.get("error", "Execution failed")
-        )
-    
-    # Get agent information for additional metadata
-    agent = db.query(Agent).filter(Agent.id == agent_id).first()
-    
-    return {
-        "status": "success",
-        "result": result.get("result", {}),
-        "execution_id": execution.execution_id,
-        "hiring_id": execution_data.hiring_id,
-        "metadata": {
-            "execution_time": result.get("execution_time", 0),
-            "tokens_used": result.get("tokens_used", 0),
-            "agent_id": agent_id,
-            "agent_name": agent.name if agent else None,
-            "agent_type": agent.agent_type if agent else None,
-            "execution_status": "completed",
-            "timestamp": datetime.utcnow().isoformat()
-        }
-    }
 
-@router.post("/{agent_id}/initialize", response_model=dict)
-async def initialize_persistent_agent(
-    agent_id: str,
-    init_data: DirectExecutionRequest,
-    current_user = Depends(get_current_user),
-    db: Session = Depends(get_session_dependency)
-):
-    """Initialize a persistent agent with configuration."""
-    
-    # 1. Create initialization execution
-    execution_service = ExecutionService()
-    execution = execution_service.create_execution(ExecutionCreateRequest(
-        hiring_id=init_data.hiring_id,
-        user_id=current_user.id,
-        input_data=init_data.input_data,
-        execution_type="initialize"
-    ))
-    
-    # 2. Run initialization and wait for result
-    result = await execution_service.execute_initialization(execution.execution_id, user_id=current_user.id)
-    
-    if result.get("status") == "error":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=result.get("error", "Initialization failed")
-        )
-    
-    return {
-        "status": "success",
-        "result": result.get("result", {}),
-        "execution_id": execution.execution_id,
-        "hiring_id": init_data.hiring_id,
-        "message": "Persistent agent initialized successfully",
-        "metadata": {
-            "execution_time": result.get("execution_time", 0),
-            "tokens_used": result.get("tokens_used", 0)
-        }
-    }
 
-@router.post("/{agent_id}/cleanup", response_model=dict)
-async def cleanup_persistent_agent(
-    agent_id: str,
-    cleanup_data: DirectExecutionRequest,
-    current_user = Depends(get_current_user),
-    db: Session = Depends(get_session_dependency)
-):
-    """Clean up a persistent agent and free resources."""
-    
-    # 1. Create cleanup execution
-    execution_service = ExecutionService()
-    execution = execution_service.create_execution(ExecutionCreateRequest(
-        hiring_id=cleanup_data.hiring_id,
-        user_id=current_user.id,
-        input_data=cleanup_data.input_data,
-        execution_type="cleanup"
-    ))
-    
-    # 2. Run cleanup and wait for result
-    result = await execution_service.execute_cleanup(execution.execution_id, user_id=current_user.id)
-    
-    if result.get("status") == "error":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=result.get("error", "Cleanup failed")
-        )
-    
-    return {
-        "status": "success",
-        "result": result.get("result", {}),
-        "execution_id": execution.execution_id,
-        "hiring_id": cleanup_data.hiring_id,
-        "message": "Persistent agent cleaned up successfully",
-        "metadata": {
-            "execution_time": result.get("execution_time", 0),
-            "tokens_used": result.get("tokens_used", 0)
-        }
-    }
+
+
