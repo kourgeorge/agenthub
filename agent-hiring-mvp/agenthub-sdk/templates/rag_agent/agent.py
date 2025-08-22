@@ -245,7 +245,7 @@ def answer_multiple_questions(index: VectorStoreIndex, questions: list, config: 
         raise
 
 
-def main(input_data: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+def execute(input_data: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
     """
     Main function for the RAG agent.
     
