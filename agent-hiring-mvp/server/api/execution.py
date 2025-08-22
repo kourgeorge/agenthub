@@ -203,8 +203,7 @@ def get_execution(
             "execution_status": execution.status,
             "execution_type": execution.execution_type,
             "timestamp": execution.completed_at.isoformat() if execution.completed_at else None,
-        },
-        "container_logs": execution.container_logs
+        }
     }
     
     # Add error information if execution failed
