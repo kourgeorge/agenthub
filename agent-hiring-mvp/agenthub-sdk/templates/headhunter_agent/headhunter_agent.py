@@ -497,7 +497,7 @@ Found {len(candidates)} potential candidates for the {job_title} position in {re
             self.cleanup_selenium()
 
 
-def main(input_data: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+def execute(input_data: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
     """Main entry point for the headhunter agent"""
     try:
         # Load environment variables
