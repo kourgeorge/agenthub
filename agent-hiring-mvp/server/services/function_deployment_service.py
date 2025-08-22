@@ -236,26 +236,32 @@ class FunctionDeploymentService:
                         # Update execution to completed
                         from ..models.execution import ExecutionStatus
                         from ..services.execution_service import ExecutionService
+                        from ..database.config import get_session
                         
-                        execution_service = ExecutionService()
-                        execution_service.update_execution_status(
-                            input_data.get("execution_id"), 
-                            ExecutionStatus.COMPLETED, 
-                            result.get("output"),
-                            container_logs=result.get("container_logs")
-                        )
+                        # Create a new database session for the background thread
+                        with get_session() as db_session:
+                            execution_service = ExecutionService(db_session)
+                            execution_service.update_execution_status(
+                                input_data.get("execution_id"), 
+                                ExecutionStatus.COMPLETED, 
+                                result.get("output"),
+                                container_logs=result.get("container_logs")
+                            )
                         logger.info(f"✅ Function execution {input_data.get('execution_id')} completed successfully")
                     else:
                         # Update execution to failed
                         from ..models.execution import ExecutionStatus
                         from ..services.execution_service import ExecutionService
+                        from ..database.config import get_session
                         
-                        execution_service = ExecutionService()
-                        execution_service.update_execution_status(
-                            input_data.get("execution_id"), 
-                            ExecutionStatus.FAILED, 
-                            error_message=result.get("error")
-                        )
+                        # Create a new database session for the background thread
+                        with get_session() as db_session:
+                            execution_service = ExecutionService(db_session)
+                            execution_service.update_execution_status(
+                                input_data.get("execution_id"), 
+                                ExecutionStatus.FAILED, 
+                                error_message=result.get("error")
+                            )
                         logger.error(f"❌ Function execution {input_data.get('execution_id')} failed: {result.get('error')}")
                         
                 except Exception as e:
@@ -264,13 +270,16 @@ class FunctionDeploymentService:
                     try:
                         from ..models.execution import ExecutionStatus
                         from ..services.execution_service import ExecutionService
+                        from ..database.config import get_session
                         
-                        execution_service = ExecutionService()
-                        execution_service.update_execution_status(
-                            input_data.get("execution_id"), 
-                            ExecutionStatus.FAILED, 
-                            error_message=str(e)
-                        )
+                        # Create a new database session for the background thread
+                        with get_session() as db_session:
+                            execution_service = ExecutionService(db_session)
+                            execution_service.update_execution_status(
+                                input_data.get("execution_id"), 
+                                ExecutionStatus.FAILED, 
+                                error_message=str(e)
+                            )
                     except Exception as update_error:
                         logger.error(f"Failed to update execution status: {update_error}")
             
@@ -292,61 +301,67 @@ class FunctionDeploymentService:
     def _execute_in_container_sync(self, container, input_data: Dict[str, Any], deployment_id: str) -> Dict[str, Any]:
         """Execute a function in the container synchronously (called from background thread)."""
         try:
-            # Get deployment details first
+            # Get deployment details first - use a new database session for the background thread
             from ..models.deployment import AgentDeployment
-            deployment = self.db.query(AgentDeployment).filter(
-                AgentDeployment.deployment_id == deployment_id
-            ).first()
-            
-            if not deployment:
-                return {"error": "Deployment not found"}
-            
-            # Get agent details
             from ..models.agent import Agent
-            agent = self.db.query(Agent).filter(Agent.id == deployment.agent_id).first()
-            if not agent:
-                return {"error": "Agent not found"}
+            from ..database.config import get_session
             
-            # Prepare input data
-            input_json = json.dumps(input_data)
-            
-            # Get execution_id from input_data if available
-            execution_id = input_data.get("execution_id")
-            
-            # Prepare environment variables
-            env_vars = {
-                "AGENTHUB_SERVER_URL": "http://host.docker.internal:8002"
-            }
-            
-            # Add execution_id to environment if available
-            if execution_id:
-                env_vars["AGENTHUB_EXECUTION_ID"] = execution_id
-            
-            # Execute the function in the container
-            # Parse entry point to get file and function name
-            entry_point = agent.entry_point
-            if ':' in entry_point:
-                file_name, function_name = entry_point.split(':', 1)
-            else:
-                file_name = entry_point
-                # Get function name from agent config file (lifecycle.execute)
-                try:
-                    # Get agent config from agent files to read lifecycle.execute
-                    agent_files = self._get_agent_files(agent.id)
-                    function_name = 'execute'  # default fallback
-                    
-                    for file_data in agent_files:
-                        if file_data.get('file_path') == 'config.json':
-                            agent_config = json.loads(file_data['file_content'])
-                            lifecycle = agent_config.get('lifecycle', {})
-                            function_name = lifecycle.get('execute', 'execute')
-                            break
-                except Exception as e:
-                    logger.warning(f"Could not read agent config for function name, using default 'execute': {e}")
-                    function_name = 'execute'
-            
-            # Remove .py extension if present for import
-            module_name = file_name.replace('.py', '')
+            with get_session() as db_session:
+                deployment = db_session.query(AgentDeployment).filter(
+                    AgentDeployment.deployment_id == deployment_id
+                ).first()
+                
+                if not deployment:
+                    return {"error": "Deployment not found"}
+                
+                # Get agent details
+                agent = db_session.query(Agent).filter(Agent.id == deployment.agent_id).first()
+                if not agent:
+                    return {"error": "Agent not found"}
+                
+                # Get agent files for function name detection
+                from ..models.agent_file import AgentFile
+                agent_files = db_session.query(AgentFile).filter(AgentFile.agent_id == agent.id).all()
+                
+                # Prepare input data
+                input_json = json.dumps(input_data)
+                
+                # Get execution_id from input_data if available
+                execution_id = input_data.get("execution_id")
+                
+                # Prepare environment variables
+                env_vars = {
+                    "AGENTHUB_SERVER_URL": "http://host.docker.internal:8002"
+                }
+                
+                # Add execution_id to environment if available
+                if execution_id:
+                    env_vars["AGENTHUB_EXECUTION_ID"] = execution_id
+                
+                # Execute the function in the container
+                # Parse entry point to get file and function name
+                entry_point = agent.entry_point
+                if ':' in entry_point:
+                    file_name, function_name = entry_point.split(':', 1)
+                else:
+                    file_name = entry_point
+                    # Get function name from agent config file (lifecycle.execute)
+                    try:
+                        # Get agent config from agent files to read lifecycle.execute
+                        function_name = 'execute'  # default fallback
+                        
+                        for file_data in agent_files:
+                            if file_data.get('file_path') == 'config.json':
+                                agent_config = json.loads(file_data['file_content'])
+                                lifecycle = agent_config.get('lifecycle', {})
+                                function_name = lifecycle.get('execute', 'execute')
+                                break
+                    except Exception as e:
+                        logger.warning(f"Could not read agent config for function name, using default 'execute': {e}")
+                        function_name = 'execute'
+                
+                # Remove .py extension if present for import
+                module_name = file_name.replace('.py', '')
             
             # Create a Python script that captures both stdout and stderr
             python_script = f"""
