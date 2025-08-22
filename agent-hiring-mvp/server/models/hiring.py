@@ -38,7 +38,6 @@ class Hiring(Base):
     acp_endpoint = Column(String(500), nullable=True)  # ACP communication endpoint
     
     # Usage Tracking
-    total_executions = Column(Integer, default=0, nullable=False)
     last_executed_at = Column(DateTime, nullable=True)
     
     # Billing (future)

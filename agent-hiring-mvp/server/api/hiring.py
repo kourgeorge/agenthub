@@ -100,6 +100,12 @@ def get_current_user_hirings(
     
     result = []
     for hiring in hirings:
+        # Dynamically calculate execution count instead of using potentially outdated field
+        from ..models.execution import Execution
+        execution_count = db.query(Execution).filter(
+            Execution.hiring_id == hiring.id
+        ).count()
+        
         hiring_data = {
             "id": hiring.id,
             "agent_id": hiring.agent_id,
@@ -107,7 +113,7 @@ def get_current_user_hirings(
             "billing_cycle": hiring.billing_cycle,
             "hired_at": hiring.hired_at.isoformat(),
             "created_at": hiring.hired_at.isoformat(),  # Alias for frontend compatibility
-            "total_executions": hiring.total_executions,
+            "total_executions": execution_count,  # Use dynamic count
             "total_cost": 0.0,  # Placeholder for future billing integration
         }
         
@@ -186,12 +192,18 @@ def get_user_hirings(
     
     result = []
     for hiring in hirings:
+        # Dynamically calculate execution count instead of using potentially outdated field
+        from ..models.execution import Execution
+        execution_count = db.query(Execution).filter(
+            Execution.hiring_id == hiring.id
+        ).count()
+        
         hiring_data = {
             "id": hiring.id,
             "agent_id": hiring.agent_id,
             "status": hiring.status,
             "hired_at": hiring.hired_at.isoformat(),
-            "total_executions": hiring.total_executions,
+            "total_executions": execution_count,
         }
         
         # Add agent information
@@ -261,10 +273,11 @@ def get_hiring(
             detail="Access denied: You can only view your own hirings"
         )
     
-    # Get deployment information
-    deployment = db.query(AgentDeployment).filter(
-        AgentDeployment.hiring_id == hiring_id
-    ).first()
+    # Dynamically calculate execution count instead of using removed field
+    from ..models.execution import Execution
+    execution_count = db.query(Execution).filter(
+        Execution.hiring_id == hiring.id
+    ).count()
     
     response = {
         "id": hiring.id,
@@ -275,7 +288,7 @@ def get_hiring(
         "expires_at": hiring.expires_at.isoformat() if hiring.expires_at else None,
         "config": hiring.config,
         "state": hiring.state,
-        "total_executions": hiring.total_executions,
+        "total_executions": execution_count,  # Use dynamic count
         "last_executed_at": hiring.last_executed_at.isoformat() if hiring.last_executed_at else None,
     }
     
@@ -330,16 +343,23 @@ def get_agent_hirings(
     # Filter hirings to only show those belonging to the current user
     user_hirings = [hiring for hiring in hirings if hiring.user_id == current_user.id]
     
-    return [
-        {
+    result = []
+    for hiring in user_hirings:
+        # Dynamically calculate execution count for each hiring
+        from ..models.execution import Execution
+        execution_count = db.query(Execution).filter(
+            Execution.hiring_id == hiring.id
+        ).count()
+        
+        result.append({
             "id": hiring.id,
             "user_id": hiring.user_id,
             "status": hiring.status,
             "hired_at": hiring.hired_at.isoformat(),
-            "total_executions": hiring.total_executions,
-        }
-        for hiring in user_hirings
-    ]
+            "total_executions": execution_count,  # Use dynamic count
+        })
+    
+    return result
 
 
 @router.put("/{hiring_id}/activate")
@@ -516,16 +536,23 @@ def get_active_hirings(db: Session = Depends(get_session_dependency)):
     hiring_service = HiringService(db)
     hirings = hiring_service.get_active_hirings()
     
-    return [
-        {
+    result = []
+    for hiring in hirings:
+        # Dynamically calculate execution count for each hiring
+        from ..models.execution import Execution
+        execution_count = db.query(Execution).filter(
+            Execution.hiring_id == hiring.id
+        ).count()
+        
+        result.append({
             "id": hiring.id,
             "agent_id": hiring.agent_id,
             "user_id": hiring.user_id,
             "hired_at": hiring.hired_at.isoformat(),
-            "total_executions": hiring.total_executions,
-        }
-        for hiring in hirings
-    ]
+            "total_executions": execution_count,  # Use dynamic count
+        })
+    
+    return result
 
 
 @router.get("/stats/global")

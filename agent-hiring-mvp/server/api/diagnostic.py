@@ -63,8 +63,14 @@ def get_hirings_diagnostic(
                 AgentDeployment.hiring_id == hiring.id
             ).first()
             
+            # Dynamically calculate execution count instead of using removed field
+            from ..models.execution import Execution
+            execution_count = db.query(Execution).filter(
+                Execution.hiring_id == hiring.id
+            ).count()
+            
             hiring_detail = {
-                "hiring_id": hiring.id,
+                "id": hiring.id,
                 "agent_id": hiring.agent_id,
                 "agent_name": hiring.agent.name if hiring.agent else "Unknown",
                 "agent_type": hiring.agent.agent_type if hiring.agent else "unknown",
@@ -75,7 +81,7 @@ def get_hirings_diagnostic(
                 "billing_cycle": hiring.billing_cycle,
                 "hired_at": hiring.hired_at.isoformat() if hiring.hired_at else None,
                 "expires_at": hiring.expires_at.isoformat() if hiring.expires_at else None,
-                "total_executions": hiring.total_executions,
+                "total_executions": execution_count,  # Use dynamic count
                 "last_executed_at": hiring.last_executed_at.isoformat() if hiring.last_executed_at else None,
                 "deployment": None
             }
