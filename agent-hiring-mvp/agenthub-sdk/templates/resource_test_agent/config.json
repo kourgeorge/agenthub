@@ -1,7 +1,7 @@
 {
   "name": "Resource Test Agent",
-  "description": "An agent that performs CPU and memory intensive tasks to test Docker monitoring systems. Uses only Python standard library for maximum compatibility.",
-  "version": "1.0.0",
+  "description": "A configurable agent that performs CPU, memory, and disk intensive tasks to test Docker monitoring systems. Uses only Python standard library for maximum compatibility.",
+  "version": "2.0.0",
   "entry_point": "resource_test_agent.py",
   "agent_type": "function",
   "author": "AgentHub Team",
@@ -11,32 +11,82 @@
     "monitoring",
     "cpu-intensive",
     "memory-intensive",
+    "disk-intensive",
     "docker-testing",
     "performance-testing",
     "stress-testing",
-    "standard-library"
+    "standard-library",
+    "configurable",
+    "failure-simulation"
   ],
   "pricing_model": "free",
   "config_schema": {
     "functions": [
       {
         "name": "execute",
-        "description": "Execute resource-intensive tasks to test CPU and memory usage",
+        "description": "Execute configurable resource-intensive tasks to test CPU, memory, and disk usage",
         "inputSchema": {
           "type": "object",
           "properties": {
             "task_type": {
               "type": "string",
               "description": "Type of resource-intensive task to perform",
-              "enum": ["cpu", "memory", "both"],
-              "default": "both"
+              "enum": ["cpu", "memory", "disk", "all"],
+              "default": "all"
             },
-            "intensity": {
+            "cpu_percent": {
               "type": "integer",
-              "description": "Intensity level from 1 (low) to 10 (high)",
+              "description": "Target CPU usage percentage (1-100)",
               "minimum": 1,
-              "maximum": 10,
-              "default": 5
+              "maximum": 100,
+              "default": 50
+            },
+            "cpu_duration_seconds": {
+              "type": "integer",
+              "description": "Duration for CPU intensive task in seconds (1-300)",
+              "minimum": 1,
+              "maximum": 300,
+              "default": 30
+            },
+            "memory_mb": {
+              "type": "integer",
+              "description": "Target memory usage in MB (1-1000)",
+              "minimum": 1,
+              "maximum": 1000,
+              "default": 100
+            },
+            "memory_duration_seconds": {
+              "type": "integer",
+              "description": "Duration for memory intensive task in seconds (1-300)",
+              "minimum": 1,
+              "maximum": 300,
+              "default": 30
+            },
+            "disk_mb": {
+              "type": "integer",
+              "description": "Target disk usage in MB (1-500)",
+              "minimum": 1,
+              "maximum": 500,
+              "default": 50
+            },
+            "disk_duration_seconds": {
+              "type": "integer",
+              "description": "Duration for disk intensive task in seconds (1-300)",
+              "minimum": 1,
+              "maximum": 300,
+              "default": 30
+            },
+            "should_succeed": {
+              "type": "boolean",
+              "description": "Whether the task should succeed (false to force failure)",
+              "default": true
+            },
+            "failure_probability": {
+              "type": "number",
+              "description": "Probability of failure (0.0-1.0, 0.0 = never fail, 1.0 = always fail)",
+              "minimum": 0.0,
+              "maximum": 1.0,
+              "default": 0.0
             }
           },
           "required": []
@@ -53,9 +103,37 @@
               "type": "string",
               "description": "Type of task that was executed"
             },
-            "intensity_level": {
+            "cpu_percent": {
               "type": "integer",
-              "description": "Intensity level used for execution"
+              "description": "Target CPU usage percentage"
+            },
+            "cpu_duration_seconds": {
+              "type": "integer",
+              "description": "Target CPU task duration in seconds"
+            },
+            "memory_mb": {
+              "type": "integer",
+              "description": "Target memory usage in MB"
+            },
+            "memory_duration_seconds": {
+              "type": "integer",
+              "description": "Target memory task duration in seconds"
+            },
+            "disk_mb": {
+              "type": "integer",
+              "description": "Target disk usage in MB"
+            },
+            "disk_duration_seconds": {
+              "type": "integer",
+              "description": "Target disk task duration in seconds"
+            },
+            "should_succeed": {
+              "type": "boolean",
+              "description": "Whether the task was configured to succeed"
+            },
+            "failure_probability": {
+              "type": "number",
+              "description": "Configured failure probability"
             },
             "total_execution_time": {
               "type": "number",
@@ -80,9 +158,13 @@
             "error_message": {
               "type": "string",
               "description": "Error message if status is error"
+            },
+            "error_type": {
+              "type": "string",
+              "description": "Type of error that occurred"
             }
           },
-          "required": ["status", "task_type", "intensity_level", "total_execution_time", "timestamp", "agent_type"]
+          "required": ["status", "task_type", "total_execution_time", "timestamp", "agent_type"]
         }
       }
     ]
