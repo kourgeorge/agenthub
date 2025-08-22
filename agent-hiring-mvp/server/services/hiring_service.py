@@ -458,19 +458,12 @@ class HiringService:
     def _cleanup_persistent_agent_sync(self, deployment_service, deployment_id: str):
         """Synchronous wrapper for persistent agent cleanup."""
         try:
-            # Run the async cleanup in a new event loop for this thread
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            try:
-                cleanup_result = loop.run_until_complete(
-                    deployment_service.cleanup_persistent_agent(deployment_id)
-                )
-                if "error" in cleanup_result:
-                    logger.warning(f"Failed to cleanup persistent agent {deployment_id}: {cleanup_result['error']}")
-                else:
-                    logger.info(f"Successfully cleaned up persistent agent {deployment_id}")
-            finally:
-                loop.close()
+            # Call the synchronous cleanup method directly
+            cleanup_result = deployment_service.cleanup_persistent_agent(deployment_id)
+            if "error" in cleanup_result:
+                logger.warning(f"Failed to cleanup persistent agent {deployment_id}: {cleanup_result['error']}")
+            else:
+                logger.info(f"Successfully cleaned up persistent agent {deployment_id}")
         except Exception as e:
             logger.warning(f"Error during persistent agent cleanup: {e}")
     
