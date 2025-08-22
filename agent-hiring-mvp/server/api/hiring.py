@@ -300,6 +300,11 @@ def get_hiring(
             "agent_description": hiring.agent.description,
         })
     
+    # Fetch deployment information
+    deployment = db.query(AgentDeployment).filter(
+        AgentDeployment.hiring_id == hiring.id
+    ).first()
+    
     # Add deployment information if available
     if deployment:
         response["deployment"] = {
