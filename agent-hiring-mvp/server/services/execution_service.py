@@ -282,17 +282,25 @@ class ExecutionService:
                     execution_time = time.time() - start_time
                     logger.info(f"⏱️ Persistent agent execution completed in {execution_time:.2f}s")
                     
+                    # Extract container logs from the result
+                    container_logs = result.get("container_logs", "")
+                    logger.info(f"Persistent agent execution for {execution_id}, status: {result.get('status')}, container logs length: {len(container_logs)}")
+                    if container_logs:
+                        logger.info(f"First 200 chars of container logs: {container_logs[:200]}...")
+                    
                     if result.get("status") == "success":
                         runtime_result = RuntimeResult(
                             status=RuntimeStatus.COMPLETED,
                             output=result.get("result", {}),
-                            execution_time=execution_time
+                            execution_time=execution_time,
+                            container_logs=container_logs
                         )
                     else:
                         runtime_result = RuntimeResult(
                             status=RuntimeStatus.FAILED,
                             error=result.get("error", "Execution failed"),
-                            execution_time=execution_time
+                            execution_time=execution_time,
+                            container_logs=container_logs
                         )
                 else:
                     # Persistent agents require Docker deployment - no in-process fallback
@@ -631,19 +639,39 @@ class ExecutionService:
 
     async def execute_initialization(self, execution_id: str, user_id: Optional[int] = None) -> Dict[str, Any]:
         """Execute agent initialization."""
-        # Use system database session for internal operations
-        execution = self._get_execution_system(execution_id)
-        if not execution:
-            return {"status": "error", "message": "Execution not found"}
+        logger.info(f"🚀 Starting initialization for execution {execution_id}")
         
-        # Use provided user_id or fall back to execution's user_id
-        current_user_id = user_id or execution.user_id or 1
-        
-        # Start resource tracking for this execution
-        await self.resource_manager.start_execution(execution_id, current_user_id)
-        
-        # Update status to running
-        self.update_execution_status(execution_id, ExecutionStatus.RUNNING)
+        try:
+            # Use system database session for internal operations
+            execution = self._get_execution_system(execution_id)
+            if not execution:
+                logger.error(f"Execution not found in system session: {execution_id}")
+                return {"status": "error", "message": "Execution not found"}
+            
+            logger.info(f"Found execution {execution_id} with status: {execution.status}")
+            
+            # Use provided user_id or fall back to execution's user_id
+            current_user_id = user_id or execution.user_id or 1
+            logger.info(f"Using user_id: {current_user_id}")
+            
+            # Start resource tracking for this execution
+            await self.resource_manager.start_execution(execution_id, current_user_id)
+            logger.info(f"Resource tracking started for execution {execution_id}")
+            
+            # Update status to running using system database session
+            logger.info(f"Updating execution status to RUNNING for {execution_id}")
+            # Use system database session for consistency
+            execution_system = self._get_execution_system(execution_id)
+            if execution_system:
+                execution_system.status = ExecutionStatus.RUNNING.value
+                execution_system.started_at = datetime.utcnow()
+                self.system_db.commit()
+                logger.info(f"Execution status updated to RUNNING using system session for {execution_id}")
+            else:
+                logger.error(f"Could not update execution status to RUNNING - execution not found in system session: {execution_id}")
+        except Exception as e:
+            logger.error(f"Error in execute_initialization setup for {execution_id}: {e}")
+            raise
         
         try:
             # Get agent details
@@ -657,7 +685,9 @@ class ExecutionService:
                 # Use Docker-based persistent agent
                 from .deployment_service import DeploymentService
                 deployment_service = DeploymentService(self.db)
+                logger.info(f"Calling deployment service for persistent agent initialization: {deployment.deployment_id}")
                 result = deployment_service.initialize_persistent_agent(deployment.deployment_id, execution.input_data or {})
+                logger.info(f"Deployment service result: {result}")
             else:
                 # Persistent agents require Docker deployment - no in-process fallback
                 return {
@@ -670,29 +700,85 @@ class ExecutionService:
             usage_summary = await self.resource_manager.end_execution(execution_id, "completed")
             
             if result.get('status') == 'success':
-                self.update_execution_status(execution_id, ExecutionStatus.COMPLETED, result.get('result', {}))
+                # Extract container logs from the result
+                container_logs = result.get('container_logs', '')
+                logger.info(f"Persistent agent initialization successful for {execution_id}, container logs length: {len(container_logs)}")
+                if container_logs:
+                    logger.info(f"First 200 chars of container logs: {container_logs[:200]}...")
+                
+                logger.info(f"Updating execution status to COMPLETED for {execution_id}")
+                # Use system database session for consistency
+                execution_system = self._get_execution_system(execution_id)
+                if execution_system:
+                    execution_system.status = ExecutionStatus.COMPLETED.value
+                    execution_system.completed_at = datetime.utcnow()
+                    execution_system.output_data = result.get('result', {})
+                    execution_system.container_logs = container_logs
+                    if execution_system.started_at:
+                        execution_system.duration_ms = int((execution_system.completed_at - execution_system.started_at).total_seconds() * 1000)
+                    self.system_db.commit()
+                    logger.info(f"Execution status updated to COMPLETED using system session for {execution_id}")
+                else:
+                    logger.error(f"Could not update execution status to COMPLETED - execution not found in system session: {execution_id}")
+                
                 return {
                     "status": "success",
                     "execution_id": execution_id,
                     "result": result.get('result', {}),
                     "message": result.get('message', 'Initialization completed successfully'),
-                    "usage_summary": usage_summary
+                    "usage_summary": usage_summary,
+                    "container_logs": container_logs
                 }
             else:
                 # Don't call end_execution again - it was already called above for success case
                 error_msg = result.get('error', 'Initialization failed')
-                self.update_execution_status(execution_id, ExecutionStatus.FAILED, error_message=error_msg)
+                container_logs = result.get('container_logs', '')
+                logger.info(f"Persistent agent initialization failed for {execution_id}, error: {error_msg}, container logs length: {len(container_logs)}")
+                if container_logs:
+                    logger.info(f"First 200 chars of container logs: {container_logs[:200]}...")
+                
+                # Use system database session for consistency
+                execution_system = self._get_execution_system(execution_id)
+                if execution_system:
+                    execution_system.status = ExecutionStatus.FAILED.value
+                    execution_system.completed_at = datetime.utcnow()
+                    execution_system.error_message = error_msg
+                    execution_system.container_logs = container_logs
+                    if execution_system.started_at:
+                        execution_system.duration_ms = int((execution_system.completed_at - execution_system.started_at).total_seconds() * 1000)
+                    self.system_db.commit()
+                    logger.info(f"Execution status updated to FAILED using system session for {execution_id}")
+                else:
+                    logger.error(f"Could not update execution status to FAILED - execution not found in system session: {execution_id}")
                 return {
                     "status": "error",
                     "execution_id": execution_id,
-                    "error": error_msg
+                    "error": error_msg,
+                    "container_logs": container_logs
                 }
         
         except Exception as e:
+            logger.error(f"Exception during initialization for {execution_id}: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            
             # End resource tracking on error
             await self.resource_manager.end_execution(execution_id, "failed")
             error_msg = f"Initialization failed: {str(e)}"
-            self.update_execution_status(execution_id, ExecutionStatus.FAILED, error_message=error_msg)
+            
+            # Use system database session for consistency
+            execution_system = self._get_execution_system(execution_id)
+            if execution_system:
+                execution_system.status = ExecutionStatus.FAILED.value
+                execution_system.completed_at = datetime.utcnow()
+                execution_system.error_message = error_msg
+                if execution_system.started_at:
+                    execution_system.duration_ms = int((execution_system.completed_at - execution_system.started_at).total_seconds() * 1000)
+                self.system_db.commit()
+                logger.info(f"Execution status updated to FAILED using system session for {execution_id}")
+            else:
+                logger.error(f"Could not update execution status to FAILED - execution not found in system session: {execution_id}")
+            
             return {
                 "status": "error",
                 "execution_id": execution_id,

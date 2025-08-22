@@ -1071,12 +1071,14 @@ class PersistentAgent(ABC):
             if result.get("status") == "success":
                 return {
                     "status": "success",
-                    "result": result.get("result", {})
+                    "result": result.get("result", {}),
+                    "container_logs": result.get("container_logs", "")
                 }
             else:
                 return {
                     "status": "error",
-                    "error": result.get("error", "Execution failed")
+                    "error": result.get("error", "Execution failed"),
+                    "container_logs": result.get("container_logs", "")
                 }
                 
         except Exception as e:
@@ -1148,12 +1150,14 @@ class PersistentAgent(ABC):
                 
                 return {
                     "status": "success",
-                    "result": result.get("result", {})
+                    "result": result.get("result", {}),
+                    "container_logs": result.get("container_logs", "")
                 }
             else:
                 return {
                     "status": "error",
-                    "error": result.get("error", "Initialization failed")
+                    "error": result.get("error", "Initialization failed"),
+                    "container_logs": result.get("container_logs", "")
                 }
                 
         except Exception as e:
@@ -1199,7 +1203,7 @@ class PersistentAgent(ABC):
             # Start cleanup in a separate thread to avoid blocking
             import threading
             cleanup_thread = threading.Thread(
-                target=self._execute_in_container_sync,
+                target=self._execute_in_container,
                 args=(container_name, exec_input)
             )
             cleanup_thread.start()
@@ -1502,6 +1506,14 @@ with open('/tmp/agent_stderr.txt', 'w') as f:
             
             result_json = read_result.output.decode().strip()
             result_data = json.loads(result_json)
+            
+            # Add container logs to the result data
+            result_data["container_logs"] = container_logs
+            
+            # Log the container logs for debugging
+            logger.info(f"Container logs captured for {container_name}: {len(container_logs)} characters")
+            if container_logs:
+                logger.info(f"First 200 chars of logs: {container_logs[:200]}...")
             
             # Clean up temp files
             container.exec_run(cmd=["rm", "-f", "/tmp/agent_result.json", "/tmp/agent_stdout.txt", "/tmp/agent_stderr.txt"])
