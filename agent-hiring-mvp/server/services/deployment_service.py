@@ -1297,7 +1297,7 @@ try:
     print("Writing result to temp file...", file=sys.stderr)
     # Write result to temp file
     with open('/tmp/agent_result.json', 'w') as f:
-        json.dump({"status": "success", "result": result}, f)
+        json.dump({{"status": "success", "result": result}}, f)
     print("Result written to temp file", file=sys.stderr)
         
 except Exception as e:
