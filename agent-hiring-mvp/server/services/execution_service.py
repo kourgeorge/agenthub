@@ -212,6 +212,10 @@ class ExecutionService:
     
     async def execute_agent(self, execution_id: str, user_id: Optional[int] = None) -> Dict[str, Any]:
         """Execute an agent using the unified runtime service."""
+        import time
+        
+        # Track start time for execution timing
+        start_time = time.time()
 
         # Use main database session for all operations to ensure consistency
         execution = self.get_execution(execution_id)
@@ -262,6 +266,8 @@ class ExecutionService:
             if agent_type == 'acp_server':
                 # Handle ACP server agents
                 logger.info(f"🌐 Executing ACP server agent {agent.id}")
+                
+                # Execute ACP server agent directly (will run in background task)
                 runtime_result = await self._execute_acp_server_agent(agent, execution.input_data or {}, execution_id)
             elif agent_type == 'persistent':
                 # Handle persistent agents
@@ -273,80 +279,36 @@ class ExecutionService:
                     from .deployment_service import DeploymentService
                     deployment_service = DeploymentService(self.db)
                     
-                    # Start execution in background thread to avoid blocking
-                    import threading
+                    # Execute persistent agent directly (will run in background task)
+                    import time
+                    start_time = time.time()
                     
-                    def execute_persistent_in_thread():
-                        try:
-                            # Execute the persistent agent and get result
-                            import asyncio
-                            
-                            # Create new event loop for the thread
-                            loop = asyncio.new_event_loop()
-                            asyncio.set_event_loop(loop)
-                            
-                            # Execute the agent
-                            result = loop.run_until_complete(
-                                deployment_service.execute_persistent_agent(deployment.deployment_id, execution.input_data or {})
-                            )
-                            
-                            # Track execution time
-                            import time
-                            execution_time = time.time() - start_time
-                            logger.info(f"⏱️ Persistent agent execution completed in {execution_time:.2f}s")
-                            
-                            # Extract container logs from the result
-                            container_logs = result.get("container_logs", "")
-                            logger.info(f"Persistent agent execution for {execution_id}, status: {result.get('status')}, container logs length: {len(container_logs)}")
-                            if container_logs:
-                                logger.info(f"First 200 chars of container logs: {container_logs[:200]}...")
-                            
-                            # Update execution status in database based on result
-                            if result.get("status") == "success":
-                                # Update execution to completed
-                                self.update_execution_status(
-                                    execution_id, 
-                                    ExecutionStatus.COMPLETED, 
-                                    result.get("result", {}),
-                                    container_logs=container_logs
-                                )
-                                logger.info(f"✅ Persistent agent execution {execution_id} completed successfully")
-                            else:
-                                # Update execution to failed
-                                self.update_execution_status(
-                                    execution_id, 
-                                    ExecutionStatus.FAILED, 
-                                    error_message=result.get("error", "Execution failed"),
-                                    container_logs=container_logs
-                                )
-                                logger.error(f"❌ Persistent agent execution {execution_id} failed: {result.get('error')}")
-                                
-                        except Exception as e:
-                            logger.error(f"Background persistent execution thread failed: {e}")
-                            # Update execution to failed
-                            try:
-                                self.update_execution_status(
-                                    execution_id, 
-                                    ExecutionStatus.FAILED, 
-                                    error_message=str(e)
-                                )
-                            except Exception as update_error:
-                                logger.error(f"Failed to update execution status: {update_error}")
-                        finally:
-                            loop.close()
+                    result = await deployment_service.execute_persistent_agent(deployment.deployment_id, execution.input_data or {})
                     
-                    # Start execution in background thread
-                    thread = threading.Thread(target=execute_persistent_in_thread, daemon=True)
-                    thread.start()
+                    # Track execution time
+                    execution_time = time.time() - start_time
+                    logger.info(f"⏱️ Persistent agent execution completed in {execution_time:.2f}s")
                     
-                    # Return immediately with "running" status
-                    logger.info(f"🔄 Persistent agent execution {execution_id} started in background")
-                    runtime_result = RuntimeResult(
-                        status=RuntimeStatus.RUNNING,
-                        output=None,
-                        execution_time=0.0,
-                        container_logs="Persistent agent execution started in background"
-                    )
+                    # Extract container logs from the result
+                    container_logs = result.get("container_logs", "")
+                    logger.info(f"Persistent agent execution for {execution_id}, status: {result.get('status')}, container logs length: {len(container_logs)}")
+                    if container_logs:
+                        logger.info(f"First 200 chars of container logs: {container_logs[:200]}...")
+                    
+                    if result.get("status") == "success":
+                        runtime_result = RuntimeResult(
+                            status=RuntimeStatus.COMPLETED,
+                            output=result.get("result", {}),
+                            execution_time=execution_time,
+                            container_logs=container_logs
+                        )
+                    else:
+                        runtime_result = RuntimeResult(
+                            status=RuntimeStatus.FAILED,
+                            error=result.get("error", "Execution failed"),
+                            execution_time=execution_time,
+                            container_logs=container_logs
+                        )
                 else:
                     # Persistent agents require Docker deployment - no in-process fallback
                     return {
@@ -414,24 +376,7 @@ class ExecutionService:
                     }
                 }
             
-            elif runtime_result.status == RuntimeStatus.RUNNING:
-                logger.info(f"🔄 Execution {execution_id} is running in background")
-                
-                # For function agents, the execution is running in background
-                # The frontend should poll for status updates
-                return {
-                    "status": "running",
-                    "execution_id": execution_id,
-                    "message": "Function execution is running in background",
-                    "metadata": {
-                        "agent_id": agent.id,
-                        "agent_name": agent.name,
-                        "agent_type": agent.agent_type,
-                        "execution_status": "running",
-                        "timestamp": datetime.utcnow().isoformat(),
-                        "status_message": "Execution started in background, please poll for updates"
-                    }
-                }
+
             
             elif runtime_result.status == RuntimeStatus.FAILED:
                 logger.error(f"RUNTIME FAILED: {execution_id}")
@@ -752,20 +697,20 @@ class ExecutionService:
             
             # Check if agent has a Docker deployment for this hiring
             deployment = self._get_active_deployment_for_hiring(execution.hiring_id)
-            if deployment:
-                # Use Docker-based persistent agent
-                from .deployment_service import DeploymentService
-                deployment_service = DeploymentService(self.db)
-                logger.info(f"Calling deployment service for persistent agent initialization: {deployment.deployment_id}")
-                result = deployment_service.initialize_persistent_agent(deployment.deployment_id, execution.input_data or {})
-                logger.info(f"Deployment service result: {result}")
-            else:
+            if not deployment:
                 # Persistent agents require Docker deployment - no in-process fallback
                 return {
                     "status": "error",
                     "execution_id": execution_id,
                     "error": f"Persistent agent {agent.id} requires Docker deployment for initialization. No deployment found for hiring {execution.hiring_id}."
                 }
+            
+            # Use Docker-based persistent agent
+            from .deployment_service import DeploymentService
+            deployment_service = DeploymentService(self.db)
+            logger.info(f"Calling deployment service for persistent agent initialization: {deployment.deployment_id}")
+            result = deployment_service.initialize_persistent_agent(deployment.deployment_id, execution.input_data or {})
+            logger.info(f"Deployment service result: {result}")
             
             # End resource tracking and get usage summary
             usage_summary = await self.resource_manager.end_execution(execution_id, "completed")

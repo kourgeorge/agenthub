@@ -2,7 +2,7 @@
 
 import asyncio
 from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from datetime import datetime
@@ -254,6 +254,7 @@ def get_execution_logs(
 @router.post("/{execution_id}/run")
 async def run_execution(
     execution_id: str, 
+    background_tasks: BackgroundTasks,
     current_user = Depends(get_current_user),
     db: Session = Depends(get_session_dependency)
 ):
@@ -294,10 +295,10 @@ async def run_execution(
             # Create background task for execution
             if execution.execution_type == "initialize":
                 logger.info(f"Starting initialization for execution {execution_id}")
-                asyncio.create_task(execution_service.execute_initialization(execution_id, user_id=current_user.id))
+                background_tasks.add_task(execution_service.execute_initialization, execution_id, current_user.id)
             else:
                 logger.info(f"Starting agent execution for execution {execution_id}")
-                asyncio.create_task(execution_service.execute_agent(execution_id, user_id=current_user.id))
+                background_tasks.add_task(execution_service.execute_agent, execution_id, current_user.id)
 
             # Return immediately - execution is running in background
             return {
