@@ -273,35 +273,80 @@ class ExecutionService:
                     from .deployment_service import DeploymentService
                     deployment_service = DeploymentService(self.db)
                     
-                    # Track execution time
-                    import time
-                    start_time = time.time()
+                    # Start execution in background thread to avoid blocking
+                    import threading
                     
-                    result = await deployment_service.execute_persistent_agent(deployment.deployment_id, execution.input_data or {})
+                    def execute_persistent_in_thread():
+                        try:
+                            # Execute the persistent agent and get result
+                            import asyncio
+                            
+                            # Create new event loop for the thread
+                            loop = asyncio.new_event_loop()
+                            asyncio.set_event_loop(loop)
+                            
+                            # Execute the agent
+                            result = loop.run_until_complete(
+                                deployment_service.execute_persistent_agent(deployment.deployment_id, execution.input_data or {})
+                            )
+                            
+                            # Track execution time
+                            import time
+                            execution_time = time.time() - start_time
+                            logger.info(f"⏱️ Persistent agent execution completed in {execution_time:.2f}s")
+                            
+                            # Extract container logs from the result
+                            container_logs = result.get("container_logs", "")
+                            logger.info(f"Persistent agent execution for {execution_id}, status: {result.get('status')}, container logs length: {len(container_logs)}")
+                            if container_logs:
+                                logger.info(f"First 200 chars of container logs: {container_logs[:200]}...")
+                            
+                            # Update execution status in database based on result
+                            if result.get("status") == "success":
+                                # Update execution to completed
+                                self.update_execution_status(
+                                    execution_id, 
+                                    ExecutionStatus.COMPLETED, 
+                                    result.get("result", {}),
+                                    container_logs=container_logs
+                                )
+                                logger.info(f"✅ Persistent agent execution {execution_id} completed successfully")
+                            else:
+                                # Update execution to failed
+                                self.update_execution_status(
+                                    execution_id, 
+                                    ExecutionStatus.FAILED, 
+                                    error_message=result.get("error", "Execution failed"),
+                                    container_logs=container_logs
+                                )
+                                logger.error(f"❌ Persistent agent execution {execution_id} failed: {result.get('error')}")
+                                
+                        except Exception as e:
+                            logger.error(f"Background persistent execution thread failed: {e}")
+                            # Update execution to failed
+                            try:
+                                self.update_execution_status(
+                                    execution_id, 
+                                    ExecutionStatus.FAILED, 
+                                    error_message=str(e)
+                                )
+                            except Exception as update_error:
+                                logger.error(f"Failed to update execution status: {update_error}")
+                        finally:
+                            loop.close()
                     
-                    execution_time = time.time() - start_time
-                    logger.info(f"⏱️ Persistent agent execution completed in {execution_time:.2f}s")
+                    # Start execution in background thread
+                    thread = threading.Thread(target=execute_persistent_in_thread, daemon=True)
+                    thread.start()
                     
-                    # Extract container logs from the result
-                    container_logs = result.get("container_logs", "")
-                    logger.info(f"Persistent agent execution for {execution_id}, status: {result.get('status')}, container logs length: {len(container_logs)}")
-                    if container_logs:
-                        logger.info(f"First 200 chars of container logs: {container_logs[:200]}...")
-                    
-                    if result.get("status") == "success":
-                        runtime_result = RuntimeResult(
-                            status=RuntimeStatus.COMPLETED,
-                            output=result.get("result", {}),
-                            execution_time=execution_time,
-                            container_logs=container_logs
-                        )
-                    else:
-                        runtime_result = RuntimeResult(
-                            status=RuntimeStatus.FAILED,
-                            error=result.get("error", "Execution failed"),
-                            execution_time=execution_time,
-                            container_logs=container_logs
-                        )
+                    # Return immediately with "running" status
+                    logger.info(f"🔄 Persistent agent execution {execution_id} started in background")
+                    runtime_result = RuntimeResult(
+                        status=RuntimeStatus.RUNNING,
+                        output=None,
+                        execution_time=0.0,
+                        container_logs="Persistent agent execution started in background"
+                    )
                 else:
                     # Persistent agents require Docker deployment - no in-process fallback
                     return {
@@ -366,6 +411,25 @@ class ExecutionService:
                         "execution_status": "completed",
                         "timestamp": datetime.utcnow().isoformat(),
                         "validation_status": "validated" if agent.has_json_schema else "no_schema"
+                    }
+                }
+            
+            elif runtime_result.status == RuntimeStatus.RUNNING:
+                logger.info(f"🔄 Execution {execution_id} is running in background")
+                
+                # For function agents, the execution is running in background
+                # The frontend should poll for status updates
+                return {
+                    "status": "running",
+                    "execution_id": execution_id,
+                    "message": "Function execution is running in background",
+                    "metadata": {
+                        "agent_id": agent.id,
+                        "agent_name": agent.name,
+                        "agent_type": agent.agent_type,
+                        "execution_status": "running",
+                        "timestamp": datetime.utcnow().isoformat(),
+                        "status_message": "Execution started in background, please poll for updates"
                     }
                 }
             
@@ -481,11 +545,18 @@ class ExecutionService:
                 result = await deployment_service.execute_in_container(deployment.deployment_id, enhanced_input_data)
                 logger.info(f"Container execution result: {result}")
                 
-                # Extract container logs
-                container_logs = result.get("container_logs", "")
-                logger.info(f"Container logs: {container_logs[:200]}...")  # First 200 chars
-                
-                if result.get("status") == "success":
+                # The function deployment service now returns "started" immediately for non-blocking execution
+                # The actual result will be updated in the database by the background thread
+                if result.get("status") == "started":
+                    logger.info(f"Function execution started in background for {execution_id}")
+                    # Return a "running" status so the frontend can poll for updates
+                    return RuntimeResult(
+                        status=RuntimeStatus.RUNNING,
+                        output=None,
+                        execution_time=0.0,
+                        container_logs="Execution started in background"
+                    )
+                elif result.get("status") == "success":
                     # Function deployment service returns "result" field, not "output"
                     output_data = result.get("result") or result.get("output")
                     execution_time = result.get("execution_time")
@@ -498,7 +569,7 @@ class ExecutionService:
                         status=RuntimeStatus.COMPLETED,
                         output=output_data,
                         execution_time=execution_time,
-                        container_logs=container_logs
+                        container_logs=result.get("container_logs", "")
                     )
                 else:
                     error_msg = result.get("error", "Unknown error")
@@ -506,7 +577,7 @@ class ExecutionService:
                     return RuntimeResult(
                         status=RuntimeStatus.FAILED,
                         error=error_msg,
-                        container_logs=container_logs
+                        container_logs=result.get("container_logs", "")
                     )
             else:
                 # Function agents require Docker deployment - no subprocess fallback

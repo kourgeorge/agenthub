@@ -38,7 +38,7 @@ DATABASE_ECHO = os.getenv("DATABASE_ECHO", "false").lower() == "true"
 # =============================================================================
 
 # Execution limits
-MAX_EXECUTION_TIME = int(os.getenv("MAX_EXECUTION_TIME", 30))  # seconds
+MAX_EXECUTION_TIME = int(os.getenv("MAX_EXECUTION_TIME", 1800))  # 30 minutes in seconds
 MAX_OUTPUT_SIZE = int(os.getenv("MAX_OUTPUT_SIZE", 1024 * 1024))  # 1MB
 MAX_CODE_SIZE = int(os.getenv("MAX_CODE_SIZE", 10 * 1024 * 1024))  # 10MB
 

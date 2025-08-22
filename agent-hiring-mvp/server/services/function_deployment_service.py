@@ -219,6 +219,88 @@ class FunctionDeploymentService:
             # Get container
             container = self.docker_client.containers.get(deployment.container_id)
             
+            # IMPORTANT: For function agents, we need to execute in a non-blocking way
+            # so the execution status can be updated and the frontend can poll
+            logger.info(f"Starting non-blocking execution for function agent in container {container.id}")
+            
+            # Start execution in background thread to avoid blocking
+            import threading
+            
+            def execute_in_thread():
+                try:
+                    # Execute the function and get result
+                    result = self._execute_in_container_sync(container, input_data, deployment_id)
+                    
+                    # Update execution status in database based on result
+                    if result.get("status") == "success":
+                        # Update execution to completed
+                        from ..models.execution import ExecutionStatus
+                        from ..services.execution_service import ExecutionService
+                        
+                        execution_service = ExecutionService()
+                        execution_service.update_execution_status(
+                            input_data.get("execution_id"), 
+                            ExecutionStatus.COMPLETED, 
+                            result.get("output"),
+                            container_logs=result.get("container_logs")
+                        )
+                        logger.info(f"✅ Function execution {input_data.get('execution_id')} completed successfully")
+                    else:
+                        # Update execution to failed
+                        from ..models.execution import ExecutionStatus
+                        from ..services.execution_service import ExecutionService
+                        
+                        execution_service = ExecutionService()
+                        execution_service.update_execution_status(
+                            input_data.get("execution_id"), 
+                            ExecutionStatus.FAILED, 
+                            error_message=result.get("error")
+                        )
+                        logger.error(f"❌ Function execution {input_data.get('execution_id')} failed: {result.get('error')}")
+                        
+                except Exception as e:
+                    logger.error(f"Background execution thread failed: {e}")
+                    # Update execution to failed
+                    try:
+                        from ..models.execution import ExecutionStatus
+                        from ..services.execution_service import ExecutionService
+                        
+                        execution_service = ExecutionService()
+                        execution_service.update_execution_status(
+                            input_data.get("execution_id"), 
+                            ExecutionStatus.FAILED, 
+                            error_message=str(e)
+                        )
+                    except Exception as update_error:
+                        logger.error(f"Failed to update execution status: {update_error}")
+            
+            # Start execution in background thread
+            thread = threading.Thread(target=execute_in_thread, daemon=True)
+            thread.start()
+            
+            # Return immediately with "started" status
+            return {
+                "status": "started",
+                "message": "Function execution started in background",
+                "deployment_id": deployment_id
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to start function execution in background: {e}")
+            return {"error": f"Failed to start execution: {str(e)}"}
+            
+    def _execute_in_container_sync(self, container, input_data: Dict[str, Any], deployment_id: str) -> Dict[str, Any]:
+        """Execute a function in the container synchronously (called from background thread)."""
+        try:
+            # Get deployment details first
+            from ..models.deployment import AgentDeployment
+            deployment = self.db.query(AgentDeployment).filter(
+                AgentDeployment.deployment_id == deployment_id
+            ).first()
+            
+            if not deployment:
+                return {"error": "Deployment not found"}
+            
             # Get agent details
             from ..models.agent import Agent
             agent = self.db.query(Agent).filter(Agent.id == deployment.agent_id).first()
@@ -382,6 +464,7 @@ with open('/tmp/agent_stderr.txt', 'w') as f:
             logger.info(f"Function execution details for {deployment_id}:")
             logger.info(f"  Exit code: {exec_result.exit_code}")
             logger.info(f"  Stdout length: {len(stdout_logs)}")
+            logger.info(f"  Stdout content: {stdout_logs[:500]}...")
             logger.info(f"  Stderr length: {len(stderr_logs)}")
             if stderr_logs:
                 logger.info(f"  Stderr content: {stderr_logs[:500]}...")

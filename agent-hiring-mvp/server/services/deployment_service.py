@@ -598,10 +598,10 @@ class PersistentAgent(ABC):
                         None,
                         lambda: self.docker_client.containers.run(**container_config)
                     ),
-                    timeout=120  # 2 minutes timeout
+                    timeout=600  # 10 minutes timeout for long-running agent deployments
                 )
             except asyncio.TimeoutError:
-                logger.error(f"Container creation timed out for {container_name} after 2 minutes")
+                logger.error(f"Container creation timed out for {container_name} after 10 minutes")
                 raise Exception(f"Container creation timed out for {container_name}")
             except Exception as e:
                 logger.error(f"Container creation failed for {container_name}: {e}")
@@ -1297,7 +1297,7 @@ try:
     print("Writing result to temp file...", file=sys.stderr)
     # Write result to temp file
     with open('/tmp/agent_result.json', 'w') as f:
-        json.dump({{"status": "success", "result": result}}, f)
+        json.dump({"status": "success", "result": result}, f)
     print("Result written to temp file", file=sys.stderr)
         
 except Exception as e:

@@ -132,7 +132,7 @@ async def chat_with_agent(
         )
     
     logger.info(f"User {current_user.id} sending chat message to agent {deployment.agent_id}")
-    return await _make_agent_request(deployment, "POST", "chat", message, timeout=30)
+    return await _make_agent_request(deployment, "POST", "chat", message, timeout=600)  # 10 minutes for long-running agent executions
 
 
 @router.post("/message/{hiring_id}")
@@ -147,7 +147,7 @@ async def send_message_to_agent(
     deployment, hiring = await _validate_deployment_access(hiring_id, current_user, db)
     
     logger.info(f"User {current_user.id} sending message to agent {deployment.agent_id}")
-    return await _make_agent_request(deployment, "POST", "message", message, timeout=60)
+    return await _make_agent_request(deployment, "POST", "message", message, timeout=600)  # 10 minutes for long-running agent executions
 
 
 @router.get("/info/{hiring_id}")
