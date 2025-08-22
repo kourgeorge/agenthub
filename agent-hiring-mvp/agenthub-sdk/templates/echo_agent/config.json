@@ -1,6 +1,6 @@
 {
   "name": "Echo Agent",
-  "description": "A simple agent that echoes back input messages with processing",
+  "description": "A simple agent that echoes back input messages with processing and metadata",
   "version": "1.0.0",
   "entry_point": "echo_agent.py",
   "agent_type": "function",
@@ -13,7 +13,8 @@
     "debugging",
     "message-processing",
     "basic",
-    "demo"
+    "demo",
+    "validation"
   ],
   "pricing_model": "free",
   "requirements": [],
@@ -21,22 +22,38 @@
     "functions": [
       {
         "name": "execute",
-        "description": "Echo back the input message with optional prefix",
+        "description": "Echo back the input message with optional prefix and enhanced metadata",
         "inputSchema": {
           "type": "object",
           "properties": {
             "message": {
               "type": "string",
               "description": "The message to echo back",
-              "default": "Helloworld"
+              "minLength": 1,
+              "maxLength": 1000,
+              "default": "Hello World!"
             },
             "prefix": {
               "type": "string",
               "description": "Prefix to add before the echoed message",
+              "minLength": 0,
+              "maxLength": 100,
               "default": "Echo: "
+            },
+            "uppercase": {
+              "type": "boolean",
+              "description": "Whether to convert the message to uppercase",
+              "default": false
+            },
+            "repeat_count": {
+              "type": "integer",
+              "description": "Number of times to repeat the message",
+              "minimum": 1,
+              "maximum": 10,
+              "default": 1
             }
           },
-          "required": [],
+          "required": ["message"],
           "additionalProperties": false
         },
         "outputSchema": {
@@ -44,7 +61,7 @@
           "properties": {
             "response": {
               "type": "string",
-              "description": "The echoed message with prefix"
+              "description": "The echoed message with prefix and any transformations applied"
             },
             "original_message": {
               "type": "string",
@@ -52,7 +69,8 @@
             },
             "timestamp": {
               "type": "string",
-              "description": "ISO timestamp of when the response was generated"
+              "description": "ISO timestamp of when the response was generated",
+              "format": "date-time"
             },
             "agent_type": {
               "type": "string",
