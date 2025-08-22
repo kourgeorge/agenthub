@@ -23,29 +23,15 @@
             },
             "research_depth": {
               "type": "string",
-              "description": "Level of research depth",
+              "description": "Level of research depth - determines max iterations and tool calls automatically",
               "enum": ["shallow", "moderate", "deep", "comprehensive"],
               "default": "moderate"
-            },
-            "max_iterations": {
-              "type": "integer",
-              "description": "Maximum number of research iterations",
-              "minimum": 1,
-              "maximum": 10,
-              "default": 3
             },
             "max_concurrent_research": {
               "type": "integer",
               "description": "Maximum concurrent research units",
               "minimum": 1,
               "maximum": 20,
-              "default": 5
-            },
-            "max_tool_calls": {
-              "type": "integer",
-              "description": "Maximum tool calls per research step",
-              "minimum": 1,
-              "maximum": 30,
               "default": 5
             },
             "search_api": {
@@ -68,7 +54,7 @@
               "type": "string",
               "description": "Model for conducting research",
               "enum": ["openai:gpt-4o", "openai:gpt-4o-mini", "openai:gpt-4-turbo", "openai:gpt-3.5-turbo", "anthropic:claude-3-5-sonnet", "anthropic:claude-3-haiku"],
-              "default": "openai:gpt-4o"
+              "default": "openai:gpt-4o-mini"
             },
             "research_model_max_tokens": {
               "type": "integer",
@@ -94,7 +80,7 @@
               "type": "string",
               "description": "Model for writing the final report",
               "enum": ["openai:gpt-4o", "openai:gpt-4o-mini", "openai:gpt-4-turbo", "openai:gpt-3.5-turbo", "anthropic:claude-3-5-sonnet", "anthropic:claude-3-haiku"],
-              "default": "openai:gpt-4o"
+              "default": "openai:gpt-4o-mini"
             },
             "final_report_model_max_tokens": {
               "type": "integer",

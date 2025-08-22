@@ -31,10 +31,17 @@ The Deep Research Agent uses a sophisticated multi-agent architecture:
 
 ### Optional Parameters
 
-- `research_depth` (string): Level of research depth - "shallow", "moderate", "deep", or "comprehensive"
-- `max_iterations` (integer): Maximum number of research iterations (1-10, default: 3)
+- `research_depth` (string): Level of research depth - "shallow", "moderate", "deep", or "comprehensive" (determines max iterations and tool calls automatically)
 - `max_concurrent_research` (integer): Maximum concurrent research units (1-20, default: 5)
-- `max_tool_calls` (integer): Maximum tool calls per research step (1-30, default: 5)
+
+### Research Depth Mapping
+
+The `research_depth` parameter automatically determines the maximum iterations and tool calls:
+
+- **shallow**: 2 iterations, 3 tool calls per step (quick overview)
+- **moderate**: 3 iterations, 5 tool calls per step (balanced research)
+- **deep**: 5 iterations, 8 tool calls per step (thorough analysis)
+- **comprehensive**: 8 iterations, 12 tool calls per step (exhaustive research)
 - `search_api` (string): Search API to use - "tavily", "serper", "openai", "anthropic", or "none" (default: "tavily")
 - `include_sources` (boolean): Whether to include source citations (default: true)
 - `allow_clarification` (boolean): Whether to ask clarifying questions (default: true)
@@ -70,7 +77,6 @@ The Deep Research Agent uses a sophisticated multi-agent architecture:
 {
   "research_query": "What are the latest developments in artificial intelligence and machine learning?",
   "research_depth": "moderate",
-  "max_iterations": 3,
   "search_api": "tavily"
 }
 ```
@@ -81,7 +87,6 @@ The Deep Research Agent uses a sophisticated multi-agent architecture:
 {
   "research_query": "Analyze the impact of climate change on global food security",
   "research_depth": "comprehensive",
-  "max_iterations": 5,
   "max_concurrent_research": 8,
   "research_model": "openai:gpt-4o",
   "final_report_model": "openai:gpt-4o",
@@ -176,13 +181,13 @@ The agent returns a comprehensive research report with the following structure:
 ### Common Issues
 
 1. **API Key Errors**: Ensure API keys are properly configured
-2. **Rate Limit Errors**: Reduce `max_concurrent_research` or `max_iterations`
+2. **Rate Limit Errors**: Reduce `max_concurrent_research` or use a lower `research_depth`
 3. **Token Limit Errors**: Use smaller models or reduce `max_tokens` parameters
 4. **Search API Failures**: Try switching to a different `search_api`
 
 ### Performance Optimization
 
-- Use appropriate `research_depth` for your needs
+- Use appropriate `research_depth` for your needs (shallow for quick overviews, comprehensive for detailed analysis)
 - Adjust `max_concurrent_research` based on API limits
 - Consider using faster models for compression tasks
 - Monitor execution time and adjust parameters accordingly

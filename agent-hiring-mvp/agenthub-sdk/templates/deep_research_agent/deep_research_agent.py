@@ -613,8 +613,7 @@ async def _main_async(input_data: Dict[str, Any], context: Dict[str, Any]) -> Di
     Args:
         input_data: Dictionary containing:
             - research_query: The research question or topic to investigate
-            - research_depth: Level of research depth (shallow, moderate, deep, comprehensive)
-            - max_iterations: Maximum number of research iterations
+            - research_depth: Level of research depth (shallow, moderate, deep, comprehensive) - determines max iterations and tool calls automatically
             - max_concurrent_research: Maximum concurrent research units
             - search_api: Search API to use (tavily, serper, openai, anthropic, none)
             - include_sources: Whether to include source citations
@@ -638,15 +637,14 @@ async def _main_async(input_data: Dict[str, Any], context: Dict[str, Any]) -> Di
 
     # Build configuration from input
     config_data = {
-        'research_model': input_data.get('research_model', 'openai:gpt-4o'),
+        'research_model': input_data.get('research_model', 'openai:gpt-4o-mini'),
         'research_model_max_tokens': int(input_data.get('research_model_max_tokens', 10000)),
         'compression_model': input_data.get('compression_model', 'openai:gpt-4o-mini'),
         'compression_model_max_tokens': int(input_data.get('compression_model_max_tokens', 8192)),
-        'final_report_model': input_data.get('final_report_model', 'openai:gpt-4o'),
+        'final_report_model': input_data.get('final_report_model', 'openai:gpt-4o-mini'),
         'final_report_model_max_tokens': int(input_data.get('final_report_model_max_tokens', 10000)),
-        'max_researcher_iterations': int(input_data.get('max_iterations', 3)),
+        'research_depth': input_data.get('research_depth', 'moderate'),
         'max_concurrent_research_units': int(input_data.get('max_concurrent_research', 5)),
-        'max_react_tool_calls': int(input_data.get('max_tool_calls', 5)),
         'allow_clarification': agent.ensure_boolean(input_data.get('allow_clarification', False)),
         'search_api': input_data.get('search_api', 'serper'),
         'max_structured_output_retries': int(input_data.get('max_retries', 3))
@@ -700,6 +698,7 @@ async def _main_async(input_data: Dict[str, Any], context: Dict[str, Any]) -> Di
         response = {
             'status': 'success',
             'research_query': research_query,
+            'research_depth': input_data.get('research_depth', 'moderate'),
             'research_brief': research_brief,
             'final_report': final_report,
             'execution_time': execution_time,
@@ -759,7 +758,6 @@ if __name__ == "__main__":
     test_input = {
         'research_query': 'Who is George Kour?',
         'research_depth': 'moderate',
-        'max_iterations': 2,
         'max_concurrent_research': 3,
         'search_api': 'serper',
         'include_sources': True,

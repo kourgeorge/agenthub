@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Tuple
 from langchain_core.runnables import RunnableConfig
 import os
 from enum import Enum
@@ -25,6 +25,25 @@ class MCPConfig(BaseModel):
         description="Whether the MCP server requires authentication"
     )
 
+def get_depth_based_limits(research_depth: str) -> Tuple[int, int]:
+    """
+    Map research depth to max iterations and max tool calls.
+    
+    Args:
+        research_depth: The research depth level (shallow, moderate, deep, comprehensive)
+        
+    Returns:
+        Tuple of (max_iterations, max_tool_calls)
+    """
+    depth_mapping = {
+        "shallow": (2, 3),
+        "moderate": (3, 5),
+        "deep": (5, 8),
+        "comprehensive": (8, 12)
+    }
+    
+    return depth_mapping.get(research_depth.lower(), (3, 5))
+
 class Configuration(BaseModel):
     # General Configuration
     max_structured_output_retries: int = Field(
@@ -44,6 +63,10 @@ class Configuration(BaseModel):
     search_api: SearchAPI = Field(
         default=SearchAPI.TAVILY,
         description="Search API to use for research. Options: tavily, serper, openai, anthropic, none. NOTE: Make sure your Researcher Model supports the selected search API."
+    )
+    research_depth: str = Field(
+        default="moderate",
+        description="Level of research depth (shallow, moderate, deep, comprehensive) - determines max iterations and tool calls automatically"
     )
     max_researcher_iterations: int = Field(
         default=3,
@@ -97,6 +120,16 @@ class Configuration(BaseModel):
         default=None,
         description="Additional prompt to include for MCP tools"
     )
+    
+    def __init__(self, **data):
+        super().__init__(**data)
+        # Auto-set max_researcher_iterations and max_react_tool_calls based on research_depth
+        if 'research_depth' in data:
+            max_iterations, max_tool_calls = get_depth_based_limits(data['research_depth'])
+            if 'max_researcher_iterations' not in data:
+                self.max_researcher_iterations = max_iterations
+            if 'max_react_tool_calls' not in data:
+                self.max_react_tool_calls = max_tool_calls
     
     @classmethod
     def from_runnable_config(
