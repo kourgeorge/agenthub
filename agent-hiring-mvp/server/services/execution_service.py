@@ -359,6 +359,9 @@ class ExecutionService:
                 self.update_execution_status(execution_id, ExecutionStatus.COMPLETED, agent_output, container_logs=runtime_result.container_logs)
                 logger.info(f"✅ Execution {execution_id} status updated to COMPLETED in database")
                 
+                # End resource tracking for completed execution
+                usage_summary = await self.resource_manager.end_execution(execution_id, "completed")
+                
                 # Return AgentHub response with agent output and meta information
                 return {
                     "status": "success",
@@ -377,6 +380,25 @@ class ExecutionService:
                 }
             
 
+            
+            elif runtime_result.status == RuntimeStatus.RUNNING:
+                logger.info(f"🔄 Execution {execution_id} is running - returning running status")
+                
+                # For running executions, we don't end resource tracking yet
+                # The execution will continue in the background
+                return {
+                    "status": "running",
+                    "execution_id": execution_id,
+                    "message": "Execution is running in the background",
+                    "metadata": {
+                        "agent_id": agent.id,
+                        "agent_name": agent.name,
+                        "agent_type": agent.agent_type,
+                        "execution_status": "running",
+                        "timestamp": datetime.utcnow().isoformat(),
+                        "status_type": "background_execution"
+                    }
+                }
             
             elif runtime_result.status == RuntimeStatus.FAILED:
                 logger.error(f"RUNTIME FAILED: {execution_id}")
@@ -494,7 +516,7 @@ class ExecutionService:
                 # The actual result will be updated in the database by the background thread
                 if result.get("status") == "started":
                     logger.info(f"Function execution started in background for {execution_id}")
-                    # Return a "running" status so the frontend can poll for updates
+                    # Return RUNNING status for asynchronous execution
                     return RuntimeResult(
                         status=RuntimeStatus.RUNNING,
                         output=None,
