@@ -9,6 +9,7 @@ import json
 import os
 import aiohttp
 import asyncio
+import time
 from typing import List, Dict, Any, Optional
 import dotenv
 
@@ -93,7 +94,7 @@ class DeepResearchAgent:
             raise Exception("Web search resource not available or failed")
 
 
-    async def generate_search_queries(self, research_topic: str, num_queries: int = 3) -> List[str]:
+    async def generate_search_queries(self, research_topic: str, num_queries: int = 3, model_name: str = "gpt-3.5-turbo") -> List[str]:
         """Generate search queries using AgentHub server or fallback to direct API"""
         prompt = f"""Given the research topic: "{research_topic}", generate {num_queries} specific search queries to investigate this topic thoroughly. 
         Each query should be unique and target different aspects of the topic.
@@ -103,7 +104,7 @@ class DeepResearchAgent:
         llm_response = await get_resource(
             "llm",
             provider="openai",
-            model="gpt-3.5-turbo",
+            model=model_name,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=200,
             temperature=0.7
@@ -118,7 +119,7 @@ class DeepResearchAgent:
         if hasattr(self, 'client'):
             try:
                 response = self.client.chat.completions.create(
-                    model="gpt-3.5-turbo",
+                    model=model_name,
                     messages=[{"role": "user", "content": prompt}],
                     max_tokens=200,
                     temperature=0.7
@@ -133,7 +134,7 @@ class DeepResearchAgent:
             print("No LLM API key available")
             return [research_topic]
 
-    async def analyze_search_results(self, query: str, results: List[Dict[str, Any]]) -> Dict[str, Any]:
+    async def analyze_search_results(self, query: str, results: List[Dict[str, Any]], model_name: str = "gpt-3.5-turbo") -> Dict[str, Any]:
         """Analyze search results using AgentHub server or fallback to direct API"""
         if not results:
             return {"learnings": [], "follow_up_questions": []}
@@ -158,7 +159,7 @@ Extract key learnings and generate follow-up questions. Return a JSON object wit
         llm_response = await get_resource(
             "llm",
             provider="openai",
-            model="gpt-3.5-turbo",
+            model=model_name,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=500,
             temperature=0.3
@@ -182,7 +183,7 @@ Extract key learnings and generate follow-up questions. Return a JSON object wit
         if hasattr(self, 'client'):
             try:
                 response = self.client.chat.completions.create(
-                    model="gpt-3.5-turbo",
+                    model=model_name,
                     messages=[{"role": "user", "content": prompt}],
                     max_tokens=500,
                     temperature=0.3
@@ -204,7 +205,7 @@ Extract key learnings and generate follow-up questions. Return a JSON object wit
             print("No LLM API key available")
             return {"learnings": [], "follow_up_questions": []}
 
-    async def generate_final_report(self, research_topic: str, all_learnings: List[str], all_sources: List[str]) -> str:
+    async def generate_final_report(self, research_topic: str, all_learnings: List[str], all_sources: List[str], model_name: str = "gpt-3.5-turbo") -> str:
         """Generate final report using AgentHub server or fallback to direct API"""
         learnings_text = "\n".join([f"- {learning}" for learning in all_learnings])
         sources_text = "\n".join([f"- {source}" for source in all_sources])
@@ -223,7 +224,7 @@ Write a detailed report (2-3 pages) that synthesizes all findings, includes all 
         llm_response = await get_resource(
             "llm",
             provider="openai",
-            model="gpt-3.5-turbo",
+            model=model_name,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=1500,
             temperature=0.3
@@ -236,7 +237,7 @@ Write a detailed report (2-3 pages) that synthesizes all findings, includes all 
         if hasattr(self, 'client'):
             try:
                 response = self.client.chat.completions.create(
-                    model="gpt-3.5-turbo",
+                    model=model_name,
                     messages=[{"role": "user", "content": prompt}],
                     max_tokens=1500,
                     temperature=0.3
@@ -249,17 +250,17 @@ Write a detailed report (2-3 pages) that synthesizes all findings, includes all 
         else:
             return "Error: No LLM API key available for report generation"
 
-    async def research(self, topic: str, depth: int = 2, breadth: int = 3) -> Dict[str, Any]:
+    async def research(self, topic: str, depth: int = 2, breadth: int = 3, model_name: str = "gpt-3.5-turbo") -> Dict[str, Any]:
         """Main research function"""
         print(f"Starting deep research on: {topic}")
-        print(f"Depth: {depth}, Breadth: {breadth}")
+        print(f"Depth: {depth}, Breadth: {breadth}, Model: {model_name}")
 
         all_learnings = []
         all_sources = []
         all_follow_up_questions = []
 
         # Generate initial search queries
-        initial_queries = await self.generate_search_queries(topic, breadth)
+        initial_queries = await self.generate_search_queries(topic, breadth, model_name)
 
         for i, query in enumerate(initial_queries):
             print(f"\nResearching query {i + 1}/{len(initial_queries)}: {query}")
@@ -269,7 +270,7 @@ Write a detailed report (2-3 pages) that synthesizes all findings, includes all 
             all_sources.extend([r['url'] for r in results])
 
             # Analyze results
-            analysis = await self.analyze_search_results(query, results)
+            analysis = await self.analyze_search_results(query, results, model_name)
             all_learnings.extend(analysis.get("learnings", []))
             all_follow_up_questions.extend(analysis.get("follow_up_questions", []))
 
@@ -282,7 +283,7 @@ Write a detailed report (2-3 pages) that synthesizes all findings, includes all 
                     follow_up_results = await self.search_web(follow_up, 3)
                     all_sources.extend([r['url'] for r in follow_up_results])
 
-                    follow_up_analysis = await self.analyze_search_results(follow_up, follow_up_results)
+                    follow_up_analysis = await self.analyze_search_results(follow_up, follow_up_results, model_name)
                     all_learnings.extend(follow_up_analysis.get("learnings", []))
 
         # Remove duplicates
@@ -294,7 +295,7 @@ Write a detailed report (2-3 pages) that synthesizes all findings, includes all 
         print(f"Total sources: {len(all_sources)}")
 
         # Generate final report
-        final_report = await self.generate_final_report(topic, all_learnings, all_sources)
+        final_report = await self.generate_final_report(topic, all_learnings, all_sources, model_name)
 
         return {
             "topic": topic,
@@ -326,47 +327,63 @@ async def _main_async(input_data: Dict[str, Any], config: Dict[str, Any]) -> Dic
         config: Agent configuration
     
     Returns:
-        Agent response with research results
+        Agent response with research results matching the new outputSchema
     """
-
+    start_time = time.time()
+    
     try:
         # Extract parameters from input
         topic = input_data.get("topic", "Advances in Quantum Computing")
         depth = input_data.get("depth", 2)
         breadth = input_data.get("breadth", 3)
+        model_name = input_data.get("model_name", "gpt-3.5-turbo") # Get model_name from input
         execution_id = input_data.get("execution_id")  # Get execution ID for resource tracking
 
         # Create agent and perform research
         agent = DeepResearchAgent()
-        result = await agent.research(topic, depth, breadth)
+        result = await agent.research(topic, depth, breadth, model_name)
+        
+        # Calculate processing time
+        processing_time = time.time() - start_time
 
-        # Return structured response
+        # Return structured response matching the new outputSchema
         return {
-            "topic": result["topic"],
-            "report": result["report"],
-            "learnings": result["learnings"],
-            "sources": result["sources"],
-            "follow_up_questions": result["follow_up_questions"],
-            "stats": result["stats"],
-            "status": "success",
-            "agent": "deep_research",
-            "version": "1.0.0"
+            "research_results": {
+                "summary": result["report"],
+                "key_insights": result["learnings"],
+                "sources": result["sources"]
+            },
+            "metadata": {
+                "processing_time": processing_time,
+                "searches_performed": breadth + (depth > 1 and len(result.get("follow_up_questions", [])) or 0),
+                "depth_level": depth,
+                "model_used": model_name # Add model_used to metadata
+            },
+            "status": "success"
         }
 
     except Exception as e:
         return {
-            "error": str(e),
-            "status": "error",
-            "agent": "deep_research",
-            "version": "1.0.0"
+            "research_results": {
+                "summary": f"Error during research: {str(e)}",
+                "key_insights": [],
+                "sources": []
+            },
+            "metadata": {
+                "processing_time": time.time() - start_time,
+                "searches_performed": 0,
+                "depth_level": 0,
+                "model_used": "N/A" # Add model_used to metadata
+            },
+            "status": "error"
         }
 
 
-def main(input_data: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+def execute(input_data: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Main agent function.
+    Execute function - main entry point for the agent.
     
-    This is a synchronous wrapper around the async implementation.
+    This function matches the function name expected in the new config schema.
     
     Args:
         input_data: User input data containing:
@@ -376,7 +393,7 @@ def main(input_data: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
         config: Agent configuration
     
     Returns:
-        Agent response with research results
+        Agent response with research results matching the new outputSchema
     """
     import asyncio
     
@@ -395,11 +412,38 @@ def main(input_data: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
             
     except Exception as e:
         return {
-            "error": str(e),
-            "status": "error",
-            "agent": "deep_research",
-            "version": "1.0.0"
+            "research_results": {
+                "summary": f"Error during execution: {str(e)}",
+                "key_insights": [],
+                "sources": []
+            },
+            "metadata": {
+                "processing_time": 0,
+                "searches_performed": 0,
+                "depth_level": 0,
+                "model_used": "N/A" # Add model_used to metadata
+            },
+            "status": "error"
         }
+
+
+def main(input_data: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Main agent function (legacy support).
+    
+    This is a synchronous wrapper around the async implementation.
+    
+    Args:
+        input_data: User input data containing:
+            - topic: The research topic to investigate
+            - depth: How deep to go in follow-up research (1-3, default: 2)
+            - breadth: Number of initial search queries (1-5, default: 3)
+        config: Agent configuration
+    
+    Returns:
+        Agent response with research results
+    """
+    return execute(input_data, config)
 
 
 # For local testing
@@ -407,10 +451,10 @@ if __name__ == "__main__":
     test_input = {
         "topic": "George Kour",
         "breadth": 3,
-        "breadth": 3,
-        "depth": 2
+        "depth": 2,
+        "model_name": "gpt-4o"
     }
     test_config = {}
 
-    result = main(test_input, test_config)
+    result = execute(test_input, test_config)
     print(json.dumps(result, indent=2))

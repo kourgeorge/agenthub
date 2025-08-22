@@ -19,25 +19,103 @@
   "price_per_use": 0.2,
   "requirements": ["openai>=1.0.0", "requests>=2.28.0", "python-dotenv>=1.0.0"],
   "config_schema": {
-    "topic": {
-      "type": "string",
-      "description": "Research query or topic to investigate",
-      "required": true,
-      "placeholder": "Latest developments in AI"
-    },
-    "depth": {
-      "type": "integer",
-      "description": "How deep to go in the research (1-3)",
-      "default": 2,
-      "minimum": 1,
-      "maximum": 3
-    },
-    "breadth": {
-      "type": "integer", 
-      "description": "How many initial search queries to generate (1-5)",
-      "default": 3,
-      "minimum": 1,
-      "maximum": 5
-    }
+    "functions": [
+      {
+        "name": "execute",
+        "description": "Execute deep research on a given topic",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "topic": {
+              "type": "string",
+              "description": "Research query or topic to investigate",
+              "minLength": 1,
+              "maxLength": 1000
+            },
+            "depth": {
+              "type": "integer",
+              "description": "How deep to go in the research (1-3)",
+              "minimum": 1,
+              "maximum": 3,
+              "default": 2
+            },
+            "breadth": {
+              "type": "integer", 
+              "description": "How many initial search queries to generate (1-5)",
+              "minimum": 1,
+              "maximum": 5,
+              "default": 3
+            },
+            "model_name": {
+              "type": "string",
+              "description": "OpenAI model to use for analysis and report generation",
+              "enum": ["gpt-3.5-turbo", "gpt-4", "gpt-4o", "gpt-4o-mini"],
+              "default": "gpt-3.5-turbo"
+            }
+          },
+          "required": ["topic"],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "research_results": {
+              "type": "object",
+              "description": "Comprehensive research findings",
+              "properties": {
+                "summary": {
+                  "type": "string",
+                  "description": "Executive summary of research findings"
+                },
+                "key_insights": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Key insights discovered during research"
+                },
+                "sources": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Sources used for research"
+                }
+              },
+              "required": ["summary", "key_insights", "sources"]
+            },
+            "metadata": {
+              "type": "object",
+              "properties": {
+                "processing_time": {
+                  "type": "number",
+                  "description": "Total processing time in seconds"
+                },
+                "searches_performed": {
+                  "type": "integer",
+                  "description": "Number of web searches performed"
+                },
+                "depth_level": {
+                  "type": "integer",
+                  "description": "Actual depth level used for research"
+                },
+                "model_used": {
+                  "type": "string",
+                  "description": "LLM model that was used for analysis"
+                }
+              },
+              "required": ["processing_time", "searches_performed", "depth_level", "model_used"]
+            },
+            "status": {
+              "type": "string",
+              "enum": ["success", "error"],
+              "description": "Execution status"
+            }
+          },
+          "required": ["research_results", "metadata", "status"],
+          "additionalProperties": false
+        }
+      }
+    ]
   }
 }
