@@ -721,32 +721,11 @@ with open('/tmp/agent_stderr.txt', 'w') as f:
             )
             logger.info(f"Created merged .env file for function deployment: {merged_env_path}")
             
-            # Create Dockerfile for function agents with BuildKit detection
+            # Create Dockerfile for function agents
             dockerfile_path = deploy_dir / "Dockerfile"
-            
-            # Check if BuildKit is available
-            use_buildkit = self._is_buildkit_available()
-            logger.info(f"Function deployment - BuildKit available: {use_buildkit}")
-            
-            # Generate appropriate Dockerfile
-            dockerfile_content = self._generate_function_dockerfile(use_buildkit)
-            logger.info(f"Function deployment - Generated Dockerfile with BuildKit: {use_buildkit}")
-            
-            # Log the first few lines of the generated Dockerfile for debugging
-            dockerfile_lines = dockerfile_content.split('\n')
-            logger.info(f"Function deployment - Dockerfile first 5 lines: {dockerfile_lines[:5]}")
-            
-            # Check if the Dockerfile contains BuildKit features
-            has_mount = '--mount=type=cache' in dockerfile_content
-            has_syntax = '# syntax=docker/dockerfile:1.7' in dockerfile_content
-            logger.info(f"Function deployment - Dockerfile contains --mount: {has_mount}, syntax directive: {has_syntax}")
-            
             with open(dockerfile_path, 'w') as f:
-                f.write(dockerfile_content)
+                f.write(self._generate_function_dockerfile())
             logger.info("Created Dockerfile for function deployment")
-            
-            # Create .dockerignore for build optimization
-            self._create_dockerignore(deploy_dir)
             
         except Exception as e:
             logger.error(f"Failed to extract agent code: {e}")
@@ -765,8 +744,7 @@ with open('/tmp/agent_stderr.txt', 'w') as f:
                     path=str(deploy_dir),
                     tag=image_name,
                     rm=True,
-                    forcerm=True,
-                    buildargs={'DOCKER_BUILDKIT': '1'}
+                    forcerm=True
                 )
             )
             
@@ -781,49 +759,7 @@ with open('/tmp/agent_stderr.txt', 'w') as f:
             return image
             
         except Exception as e:
-            error_msg = str(e)
-            logger.error(f"Failed to build function Docker image: {error_msg}")
-            
-            # Check if this is a BuildKit error and try fallback
-            if "the --mount option requires BuildKit" in error_msg or "BuildKit" in error_msg:
-                logger.warning(f"Function deployment - BuildKit error detected, attempting fallback build without BuildKit features")
-                
-                try:
-                    # Regenerate Dockerfile without BuildKit features
-                    logger.info(f"Function deployment - Regenerating Dockerfile without BuildKit")
-                    
-                    # Generate fallback Dockerfile
-                    dockerfile_content = self._generate_function_dockerfile(use_buildkit=False)
-                    dockerfile_path = deploy_dir / "Dockerfile"
-                    dockerfile_path.write_text(dockerfile_content, encoding='utf-8')
-                    
-                    # Try build again without BuildKit
-                    logger.info(f"Function deployment - Retrying Docker build without BuildKit for {image_name}")
-                    image, logs = await loop.run_in_executor(
-                        None,
-                        lambda: self.docker_client.images.build(
-                            path=str(deploy_dir),
-                            tag=image_name,
-                            rm=True,
-                            forcerm=True
-                        )
-                    )
-                    
-                    # Log build output
-                    for log in logs:
-                        if isinstance(log, dict) and 'stream' in log:
-                            stream_content = log['stream']
-                            if isinstance(stream_content, str):
-                                logger.info(f"Function deployment - Fallback build: {stream_content.strip()}")
-                    
-                    logger.info(f"Function deployment - Fallback Docker build successful for {image_name}")
-                    return image
-                        
-                except Exception as fallback_error:
-                    logger.error(f"Function deployment - Fallback Docker build also failed for {image_name}: {fallback_error}")
-                    raise Exception(f"Both BuildKit and fallback builds failed. Original error: {error_msg}, Fallback error: {fallback_error}")
-            
-            # If it's not a BuildKit error, raise the original exception
+            logger.error(f"Failed to build function Docker image: {e}")
             raise
     
 
@@ -891,124 +827,28 @@ with open('/tmp/agent_stderr.txt', 'w') as f:
             self.db.commit()
             raise
 
-    def _generate_function_dockerfile(self, use_buildkit: bool = True) -> str:
-        """Generate Dockerfile for function agents with or without BuildKit optimizations."""
-        if use_buildkit:
-            return """# syntax=docker/dockerfile:1.7
-FROM python:3.11-slim-bookworm
-
-# 1) Basic, safe defaults for Python
-ENV PYTHONDONTWRITEBYTECODE=1 \\
-    PYTHONUNBUFFERED=1 \\
-    PIP_DISABLE_PIP_VERSION_CHECK=1 \\
-    PIP_NO_WARN_SCRIPT_LOCATION=1 \\
-    PYTHONPATH=/app
+    def _generate_function_dockerfile(self) -> str:
+        """Generate Dockerfile for function agents."""
+        return """FROM python:3.11-slim
 
 WORKDIR /app
 
-# 2) Install only what you need, without recommends; keep certs for HTTPS
-RUN apt-get update && \\
-    apt-get install -y --no-install-recommends \\
-        ca-certificates \\
-        curl \\
-        gcc \\
-        && rm -rf /var/lib/apt/lists/* \\
-        && apt-get clean
+# Install system dependencies
+RUN apt-get update && apt-get install -y \\
+    gcc \\
+    && rm -rf /var/lib/apt/lists/*
 
-# 3) Leverage build cache for deps; speed up pip with BuildKit cache
+# Copy requirements and install Python dependencies
 COPY requirements.txt .
-RUN --mount=type=cache,target=/root/.cache/pip \\
-    python -m pip install --no-cache-dir --no-deps -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
-# 4) Copy only the app code (make sure .dockerignore excludes junk)
+# Copy agent code
 COPY . .
 
-# 5) Drop root for security
-RUN useradd -m -s /bin/bash appuser && \\
-    chown -R appuser:appuser /app
-USER appuser
+# Set environment variables
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
 
-# 6) Keep container running for function execution
+# Keep container running for function execution
 CMD ["tail", "-f", "/dev/null"]
-"""
-        else:
-            return """FROM python:3.11-slim-bookworm
-
-# 1) Basic, safe defaults for Python
-ENV PYTHONDONTWRITEBYTECODE=1 \\
-    PYTHONUNBUFFERED=1 \\
-    PIP_DISABLE_PIP_VERSION_CHECK=1 \\
-    PIP_NO_WARN_SCRIPT_LOCATION=1 \\
-    PYTHONPATH=/app
-
-WORKDIR /app
-
-# 2) Install only what you need, without recommends; keep certs for HTTPS
-RUN apt-get update && \\
-    apt-get install -y --no-install-recommends \\
-        ca-certificates \\
-        curl \\
-        gcc \\
-        && rm -rf /var/lib/apt/lists/* \\
-        && apt-get clean
-
-# 3) Install Python dependencies
-COPY requirements.txt .
-RUN python -m pip install --no-cache-dir -r requirements.txt
-
-# 4) Copy only the app code (make sure .dockerignore excludes junk)
-COPY . .
-
-# 5) Drop root for security
-RUN useradd -m -s /bin/bash appuser && \\
-    chown -R appuser:appuser /app
-USER appuser
-
-# 6) Keep container running for function execution
-CMD ["tail", "-f", "/dev/null"]
-"""
-    
-    def _create_dockerignore(self, deploy_dir: Path):
-        """Create .dockerignore file for build optimization."""
-        try:
-            from ..config.docker_config import DockerConfig
-            
-            dockerignore_content = DockerConfig.get_dockerignore_content()
-            dockerignore_path = deploy_dir / ".dockerignore"
-            dockerignore_path.write_text(dockerignore_content, encoding='utf-8')
-            
-            logger.info(f"Created .dockerignore for function deployment: {dockerignore_path}")
-        except Exception as e:
-            logger.warning(f"Failed to create .dockerignore: {e}")
-            # Don't fail the deployment if .dockerignore creation fails
-    
-    def _is_buildkit_available(self) -> bool:
-        """Check if Docker BuildKit is available and enabled."""
-        try:
-            import os
-            
-            # Check environment variables
-            env_buildkit = os.getenv("DOCKER_BUILDKIT", "1")
-            env_inline_cache = os.getenv("BUILDKIT_INLINE_CACHE", "1")
-            
-            logger.info(f"Function deployment - Environment DOCKER_BUILDKIT: {env_buildkit}")
-            logger.info(f"Function deployment - Environment BUILDKIT_INLINE_CACHE: {env_inline_cache}")
-            
-            # Very conservative approach: only use BuildKit if explicitly enabled
-            # and environment variables are set to "1", AND we're in a development environment
-            if env_buildkit == "1" and env_inline_cache == "1":
-                # Additional safety check: only enable BuildKit in development
-                is_dev = os.getenv("AGENTHUB_ENV", "production").lower() in ["dev", "development", "test"]
-                if is_dev:
-                    logger.info("Function deployment - BuildKit enabled for dev environment")
-                    return True
-                else:
-                    logger.info("Function deployment - BuildKit disabled for production safety")
-                    return False
-            else:
-                logger.info("Function deployment - BuildKit environment variables not set to '1', disabling BuildKit")
-                return False
-                
-        except Exception as e:
-            logger.warning(f"Function deployment - Failed to check BuildKit availability: {e}")
-            return False 
+""" 
