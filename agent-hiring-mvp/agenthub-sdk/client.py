@@ -128,6 +128,7 @@ class AgentHubClient:
         self,
         agent: Agent,
         code_directory: str,
+        build_image: bool = False,
     ) -> Dict[str, Any]:
         """Submit an agent to the hiring platform."""
         if not self.session:
@@ -186,6 +187,9 @@ class AgentHubClient:
             
             if hasattr(config, 'acp_manifest') and config.acp_manifest:
                 form_data.add_field("acp_manifest", json.dumps(config.acp_manifest))
+            
+            # Add build image flag
+            form_data.add_field("build_image", str(build_image).lower())
             
             # Add code file
             async with aiofiles.open(zip_path, "rb") as f:

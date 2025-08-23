@@ -45,7 +45,7 @@ class AgentService:
         self.db = db
         self.json_schema_validator = JSONSchemaValidationService()
     
-    def create_agent(self, agent_data: AgentCreateRequest, code_file_path: str, owner_id: int) -> Agent:
+    def create_agent(self, agent_data: AgentCreateRequest, code_file_path: str, owner_id: int, build_image: bool = False) -> Agent:
         """Create a new agent with multiple files."""
         # Validate JSON Schema if provided
         if agent_data.config_schema:
@@ -95,6 +95,38 @@ class AgentService:
         
         # Create agent file records
         self._create_agent_file_records(agent.id, agent_files)
+        
+        # Pre-build Docker image if requested
+        if build_image:
+            try:
+                logger.info(f"Pre-building Docker image for agent {agent.id}")
+                
+                # Import here to avoid circular imports
+                from ..services.deployment_service import DeploymentService
+                deployment_service = DeploymentService(self.db)
+                
+                # If agent already has a pre-built image, remove it first
+                if agent.docker_image:
+                    logger.info(f"Agent already has pre-built image {agent.docker_image}, removing old image before building new one")
+                    try:
+                        deployment_service.remove_prebuilt_image(agent.docker_image)
+                        logger.info(f"Removed old pre-built image {agent.docker_image}")
+                    except Exception as e:
+                        logger.warning(f"Failed to remove old pre-built image {agent.docker_image}: {e}")
+                
+                # Pre-build the Docker image and wait for completion
+                image_name = deployment_service.pre_build_agent_image(agent)
+                
+                if image_name:
+                    agent.docker_image = image_name
+                    self.db.commit()
+                    logger.info(f"Successfully pre-built Docker image {image_name} for agent {agent.id}")
+                    logger.info(f"💾 Stored image name '{image_name}' in agent.docker_image field")
+                else:
+                    logger.warning(f"Failed to pre-build Docker image for agent {agent.id}")
+            except Exception as e:
+                logger.error(f"Error pre-building Docker image for agent {agent.id}: {e}")
+                # Don't fail the agent creation if image building fails
         
         logger.info(f"Created agent: {agent.name} (ID: {agent.id}) with {len(agent_files.get('files', []))} files for owner {owner_id}")
         return agent

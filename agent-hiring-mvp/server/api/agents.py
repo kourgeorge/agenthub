@@ -106,6 +106,7 @@ async def submit_agent(
     monthly_price: Optional[float] = Form(None),
     agent_type: Optional[str] = Form("function"),  # New field
     acp_manifest: Optional[str] = Form(None),  # JSON string - New field
+    build_image: bool = Form(False),  # New field for pre-building Docker image
     code_file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_session_dependency),
@@ -168,13 +169,14 @@ async def submit_agent(
                 )
             
             # Create agent
-            agent = agent_service.create_agent(agent_data, temp_file_path, current_user.id)
+            agent = agent_service.create_agent(agent_data, temp_file_path, current_user.id, build_image)
             
             return {
                 "message": "Agent submitted successfully",
                 "agent_id": agent.id,
                 "status": agent.status,
                 "agent_type": agent.agent_type,
+                "image_built": agent.docker_image is not None if build_image else False,
             }
         
         finally:

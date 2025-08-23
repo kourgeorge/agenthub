@@ -55,6 +55,7 @@ def show_next_steps(command: str, **kwargs):
         else:
             echo("  (use 'agenthub agent approve <agent_id>' to approve your agent)")
             echo("  (use 'agenthub agent list' to see all your agents)")
+        echo("  💡 Tip: Use 'agenthub agent publish --build' to pre-build Docker image for faster first deployment")
             
     elif command == "agent approve":
         agent_id = kwargs.get('agent_id')
@@ -590,8 +591,9 @@ def test(ctx, directory, input, config):
 @click.option('--directory', '-dir', default='.', help='Agent directory to publish')
 @click.option('--base-url', help='Base URL of the AgentHub server')
 @click.option('--dry-run', is_flag=True, help='Validate without publishing')
+@click.option('--build', is_flag=True, help='Pre-build Docker image on server side for faster first deployment (takes several minutes)')
 @click.pass_context
-def publish(ctx, directory, base_url, dry_run):
+def publish(ctx, directory, base_url, dry_run, build):
     """Publish agent to the AgentHub platform."""
     verbose = ctx.obj.get('verbose', False)
     
@@ -675,11 +677,16 @@ def publish(ctx, directory, base_url, dry_run):
         agent = _create_agent_instance(config_data)
         
         # Publish the agent
-        echo(style("📤 Publishing agent...", fg='blue'))
+        if build:
+            echo(style("📤 Publishing agent with Docker image pre-build...", fg='blue'))
+            echo(style("⏳ Building Docker image - this will take several minutes...", fg='yellow'))
+            echo(style("   Please wait while the image is being built on the server...", fg='yellow'))
+        else:
+            echo(style("📤 Publishing agent...", fg='blue'))
         
         async def publish_agent():
             async with AgentHubClient(base_url, api_key=api_key) as client:
-                result = await client.submit_agent(agent, str(agent_dir))
+                result = await client.submit_agent(agent, str(agent_dir), build_image=build)
                 return result
         
         result = asyncio.run(publish_agent())
@@ -687,6 +694,10 @@ def publish(ctx, directory, base_url, dry_run):
         echo(style("✓ Agent published successfully!", fg='green'))
         echo(f"  Agent ID: {result.get('agent_id', 'Unknown')}")
         echo(f"  Status: {result.get('status', 'Unknown')}")
+        if build and result.get('image_built'):
+            echo(style("  🐳 Docker image pre-built successfully!", fg='cyan'))
+        elif build:
+            echo(style("  ⏳ Docker image building in background...", fg='yellow'))
         show_next_steps("agent publish", agent_id=result.get('agent_id'))
         
         if verbose:

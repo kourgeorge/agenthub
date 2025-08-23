@@ -218,15 +218,51 @@ class DeploymentService:
             # Extract agent code
             self._extract_agent_code(agent, deploy_dir)
             
-            # Build Docker image using centralized utility
-            user_id = deployment.hiring.user_id or "anon"
-            agent_type = agent.agent_type
-            hiring_id = deployment.hiring_id
-            deployment_uuid = deployment_id.split('_')[-1]  # Get the UUID part
-            image_name = generate_docker_image_name(agent_type, user_id, agent.id, hiring_id, deployment_uuid)
+            # Initialize image_name variable
+            image_name = None
             
-            # Build Docker image asynchronously
-            image = await self._build_docker_image(deploy_dir, image_name)
+            # Check if agent already has a pre-built image
+            logger.info(f"🔍 Checking for pre-built Docker image for agent {agent.id}")
+            logger.info(f"Agent docker_image field: {agent.docker_image}")
+            
+            if agent.docker_image:
+                expected_prefix = f"agenthub_{agent.agent_type.lower().replace('-', '_')}_prebuild"
+                logger.info(f"Expected pre-built image prefix: {expected_prefix}")
+                
+                if agent.docker_image.startswith(expected_prefix):
+                    logger.info(f"✅ Found pre-built Docker image {agent.docker_image} for agent {agent.id}")
+                    image_name = agent.docker_image
+                    # Verify the image exists in Docker
+                    try:
+                        self.docker_client.images.get(image_name)
+                        logger.info(f"🐳 Pre-built image {image_name} verified in Docker - USING PRE-BUILT IMAGE")
+                    except docker_errors.ImageNotFound:
+                        logger.warning(f"⚠️ Pre-built image {image_name} not found in Docker, will build new image")
+                        image_name = None
+                else:
+                    logger.info(f"Agent has docker_image but doesn't match pre-built pattern: {agent.docker_image}")
+            else:
+                logger.info(f"No docker_image field found for agent {agent.id}")
+            
+            # Build new image if no pre-built image available
+            if not image_name:
+                logger.info(f"🔨 Building new Docker image from scratch for agent {agent.id}")
+                # Build Docker image using centralized utility
+                user_id = deployment.hiring.user_id or "anon"
+                agent_type = agent.agent_type
+                hiring_id = deployment.hiring_id
+                deployment_uuid = deployment_id.split('_')[-1]  # Get the UUID part
+                image_name = generate_docker_image_name(agent_type, user_id, agent.id, hiring_id, deployment_uuid)
+                
+                logger.info(f"Building new Docker image: {image_name}")
+                # Build Docker image asynchronously
+                image = await self._build_docker_image(deploy_dir, image_name)
+            else:
+                logger.info(f"🚀 FAST DEPLOYMENT: Using pre-built image {image_name} - skipping Docker build")
+            
+            # Ensure image_name is set before proceeding
+            if not image_name:
+                raise Exception("Failed to determine Docker image name for deployment")
             
             # Update deployment with image info
             deployment.docker_image = image_name
@@ -552,6 +588,144 @@ class PersistentAgent(ABC):
         except Exception as e:
             logger.error(f"Docker build failed for {image_name}: {e}")
             raise
+
+    def pre_build_agent_image(self, agent: Agent) -> Optional[str]:
+        """Pre-build Docker image for an agent without creating a deployment."""
+        try:
+            logger.info(f"Pre-building Docker image for agent {agent.id}")
+            
+            # Verify Docker daemon is accessible
+            try:
+                self.docker_client.ping()
+            except Exception as e:
+                logger.error(f"Docker daemon is not accessible: {e}")
+                return None
+            
+            # Create temporary deployment directory
+            temp_deploy_dir = self.deployment_dir / f"prebuild_{agent.id}_{uuid.uuid4().hex[:8]}"
+            temp_deploy_dir.mkdir(exist_ok=True)
+            
+            try:
+                # Extract agent code
+                self._extract_agent_code(agent, temp_deploy_dir)
+                
+                # Verify files were created
+                requirements_file = temp_deploy_dir / "requirements.txt"
+                dockerfile = temp_deploy_dir / "Dockerfile"
+                
+                # Ensure requirements.txt exists and is not empty
+                if requirements_file.exists():
+                    with open(requirements_file, 'r') as f:
+                        requirements_content = f.read()
+                        if not requirements_content.strip():
+                            logger.warning("Requirements.txt is empty, adding basic requirements")
+                            with open(requirements_file, 'w') as f:
+                                f.write("requests>=2.25.0\n")
+                else:
+                    logger.warning("Requirements.txt not found, creating basic one")
+                    with open(requirements_file, 'w') as f:
+                        f.write("requests>=2.25.0\n")
+                
+                if not dockerfile.exists():
+                    logger.error("Dockerfile not found, cannot proceed with build")
+                    return None
+                
+                # Generate image name for pre-built image
+                # Use a valid Docker image naming convention
+                prebuild_uuid = uuid.uuid4().hex[:8]
+                # Docker image names must follow: [a-z0-9][a-z0-9._-]*
+                # Replace hyphens with underscores and ensure valid format
+                # IMPORTANT: Docker image names must be entirely lowercase
+                safe_agent_type = agent.agent_type.lower().replace('-', '_')
+                safe_agent_id = agent.id.lower().replace('-', '_')
+                image_name = f"agenthub_{safe_agent_type}_prebuild_{safe_agent_id}_{prebuild_uuid}"
+                
+                # Build Docker image with timeout
+                try:
+                    logger.info(f"Building Docker image {image_name}")
+                    
+                    # Use a cross-platform timeout approach
+                    import threading
+                    import time
+                    
+                    build_result = {"image": None, "logs": None, "error": None, "completed": False}
+                    
+                    def docker_build():
+                        try:
+                            image, logs = self.docker_client.images.build(
+                                path=str(temp_deploy_dir),
+                                tag=image_name,
+                                rm=True,
+                                forcerm=True
+                            )
+                            build_result["image"] = image
+                            build_result["logs"] = logs
+                            build_result["completed"] = True
+                        except Exception as e:
+                            build_result["error"] = e
+                            logger.error(f"Docker build failed in thread: {e}")
+                    
+                    # Start build in a separate thread
+                    build_thread = threading.Thread(target=docker_build)
+                    build_thread.daemon = True
+                    build_thread.start()
+                    
+                    # Wait for build to complete or timeout
+                    timeout_seconds = 300  # 5 minutes
+                    start_time = time.time()
+                    
+                    while not build_result["completed"] and build_result["error"] is None:
+                        if time.time() - start_time > timeout_seconds:
+                            logger.error(f"Docker build timed out for {image_name} after {timeout_seconds} seconds")
+                            return None
+                        time.sleep(1)  # Check every second
+                    
+                    # Check for errors
+                    if build_result["error"]:
+                        logger.error(f"Docker build failed for {image_name}: {build_result['error']}")
+                        return None
+                    
+                    logger.info(f"Successfully pre-built Docker image {image_name} for agent {agent.id}")
+                    logger.info(f"📦 Image will be stored in agent.docker_image field for future use")
+                    return image_name
+                    
+                except Exception as e:
+                    logger.error(f"Docker build failed for {image_name}: {e}")
+                    return None
+                        
+            finally:
+                # Clean up temporary directory
+                try:
+                    shutil.rmtree(temp_deploy_dir)
+                except Exception as e:
+                    logger.warning(f"Failed to clean up temporary directory {temp_deploy_dir}: {e}")
+                    
+        except Exception as e:
+            logger.error(f"Error pre-building Docker image for agent {agent.id}: {e}")
+            return None
+
+    def remove_prebuilt_image(self, image_name: str) -> bool:
+        """Remove a pre-built Docker image."""
+        try:
+            logger.info(f"Removing pre-built Docker image: {image_name}")
+            
+            # Check if image exists
+            try:
+                image = self.docker_client.images.get(image_name)
+                logger.info(f"Found image {image_name}, removing it")
+                
+                # Remove the image
+                self.docker_client.images.remove(image_name, force=True)
+                logger.info(f"Successfully removed pre-built image {image_name}")
+                return True
+                
+            except docker_errors.ImageNotFound:
+                logger.info(f"Image {image_name} not found, nothing to remove")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Failed to remove pre-built image {image_name}: {e}")
+            return False
 
 
     async def _deploy_container(self, deployment: AgentDeployment, image_name: str):
