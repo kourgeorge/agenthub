@@ -293,85 +293,117 @@ class DeploymentService:
         )
         logger.info(f"Created merged .env file for deployment: {merged_env_path}")
         
-        # Create Dockerfile based on agent type
+        # Create Dockerfile based on agent type with BuildKit detection
         dockerfile = deploy_dir / "Dockerfile"
         if not dockerfile.exists():
             agent_type = agent.agent_type
             
-            if agent_type == "function":
-                # Function agents run once and exit
-                dockerfile_content = """FROM python:3.11-slim
-
-WORKDIR /app
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
-
-# Copy requirements and install
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy application code
-COPY . .
-
-# Function agents run once and exit
-CMD ["python", "main.py"]
-"""
-            elif agent_type == "persistent":
-                # Persistent agents stay running and use docker exec for operations
-                dockerfile_content = """FROM python:3.11-slim
-
-WORKDIR /app
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
-
-# Copy requirements and install
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy application code
-COPY . .
-
-# Create state directory for persistent agents
-RUN mkdir -p /app/state
-
-# Set environment variables
-ENV PYTHONPATH=/app
-ENV STATE_DIR=/app/state
-ENV PYTHONUNBUFFERED=1
-
-# Keep container running for persistent agent execution
-CMD ["tail", "-f", "/dev/null"]
-"""
-            else:  # acp or other types
-                # ACP agents run a server
-                dockerfile_content = """FROM python:3.11-slim
-
-WORKDIR /app
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
-
-# Copy requirements and install
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy application code
-COPY . .
-
-# Expose port
-EXPOSE 8001
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \\
-  CMD curl -f http://localhost:8001/health || exit 1
-
-# Run the application
-CMD ["python", "main.py"]
-"""
+            # Check if BuildKit is available
+            use_buildkit = self._is_buildkit_available()
+            logger.info(f"BuildKit available: {use_buildkit} for agent type: {agent_type}")
+            
+            # Generate appropriate Dockerfile
+            dockerfile_content = self._generate_optimized_dockerfile(agent_type, use_buildkit)
+            logger.info(f"Generated Dockerfile for {agent_type} agent with BuildKit: {use_buildkit}")
+            
+            # Log the first few lines of the generated Dockerfile for debugging
+            dockerfile_lines = dockerfile_content.split('\n')
+            logger.info(f"Dockerfile first 5 lines: {dockerfile_lines[:5]}")
+            
+            # Check if the Dockerfile contains BuildKit features
+            has_mount = '--mount=type=cache' in dockerfile_content
+            has_syntax = '# syntax=docker/dockerfile:1.7' in dockerfile_content
+            logger.info(f"Dockerfile contains --mount: {has_mount}, syntax directive: {has_syntax}")
             
             dockerfile.write_text(dockerfile_content, encoding='utf-8')
+            
+            # Create .dockerignore for build optimization
+            self._create_dockerignore(deploy_dir)
+        """Generate persistent agent Dockerfile with or without BuildKit optimizations."""
+        if use_buildkit:
+            return """# syntax=docker/dockerfile:1.7
+FROM python:3.11-slim-bookworm
+
+# 1) Basic, safe defaults for Python
+ENV PYTHONDONTWRITEBYTECODE=1 \\
+    PYTHONUNBUFFERED=1 \\
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \\
+    PIP_NO_WARN_SCRIPT_LOCATION=1 \\
+    PYTHONPATH=/app \\
+    STATE_DIR=/app/state
+
+WORKDIR /app
+
+# 2) Install only what you need, without recommends; keep certs for HTTPS
+RUN apt-get update && \\
+    apt-get install -y --no-install-recommends \\
+        ca-certificates \\
+        curl \\
+        && rm -rf /var/lib/apt/lists/* \\
+        && apt-get clean
+
+# 3) Leverage build cache for deps; speed up pip with BuildKit cache
+COPY requirements.txt .
+RUN --mount=type=cache,target=/root/.cache/pip \\
+    python -m pip install --no-cache-dir --no-deps -r requirements.txt
+
+# 4) Copy only the app code (make sure .dockerignore excludes junk)
+COPY . .
+
+# 5) Create state directory for persistent agents
+RUN mkdir -p /app/state
+
+# 6) Drop root for security
+RUN useradd -m -s /bin/bash appuser && \\
+    chown -R appuser:appuser /app
+USER appuser
+
+# 7) Keep container running for persistent agent execution
+CMD ["tail", "-f", "/dev/null"]
+"""
+        else:
+            return """FROM python:3.11-slim-bookworm
+
+# 1) Basic, safe defaults for Python
+ENV PYTHONDONTWRITEBYTECODE=1 \\
+    PYTHONUNBUFFERED=1 \\
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \\
+    PIP_NO_WARN_SCRIPT_LOCATION=1 \\
+    PYTHONPATH=/app \\
+    STATE_DIR=/app/state
+
+WORKDIR /app
+
+# 2) Install only what you need, without recommends; keep certs for HTTPS
+RUN apt-get update && \\
+    apt-get install -y --no-install-recommends \\
+        ca-certificates \\
+        curl \\
+        && rm -rf /var/lib/apt/lists/* \\
+        && apt-get clean
+
+# 3) Install Python dependencies
+COPY requirements.txt .
+RUN python -m pip install --no-cache-dir -r requirements.txt
+
+# 4) Copy only the app code (make sure .dockerignore excludes junk)
+COPY . .
+
+# 5) Create state directory for persistent agents
+RUN mkdir -p /app/state
+
+# 6) Drop root for security
+RUN useradd -m -s /bin/bash appuser && \\
+    chown -R appuser:appuser /app
+USER appuser
+
+# 7) Keep container running for persistent agent execution
+CMD ["tail", "-f", "/dev/null"]
+"""
+    
+
+
+            self._create_dockerignore(deploy_dir)
     
     def _extract_agent_files(self, agent: Agent, deploy_dir: Path):
         """Extract all agent files to deployment directory."""
@@ -524,6 +556,13 @@ class PersistentAgent(ABC):
         
         # Add timeout to prevent hanging builds
         try:
+            # Enable BuildKit for the build
+            build_env = os.environ.copy()
+            build_env.update({
+                'DOCKER_BUILDKIT': '1',
+                'BUILDKIT_INLINE_CACHE': '1'
+            })
+            
             image, logs = await asyncio.wait_for(
                 loop.run_in_executor(
                     None,
@@ -531,7 +570,8 @@ class PersistentAgent(ABC):
                         path=str(deploy_dir),
                         tag=image_name,
                         rm=True,
-                        forcerm=True
+                        forcerm=True,
+                        buildargs={'DOCKER_BUILDKIT': '1'}
                     )
                 ),
                 timeout=300  # 5 minutes timeout
@@ -550,8 +590,90 @@ class PersistentAgent(ABC):
             logger.error(f"Docker build timed out for {image_name} after 5 minutes")
             raise Exception(f"Docker build timed out for {image_name}")
         except Exception as e:
-            logger.error(f"Docker build failed for {image_name}: {e}")
+            error_msg = str(e)
+            logger.error(f"Docker build failed for {image_name}: {error_msg}")
+            
+            # Check if this is a BuildKit error and try fallback
+            if "the --mount option requires BuildKit" in error_msg or "BuildKit" in error_msg:
+                logger.warning(f"BuildKit error detected, attempting fallback build without BuildKit features")
+                
+                try:
+                    # Regenerate Dockerfile without BuildKit features
+                    agent_type = self._detect_agent_type_from_deploy_dir(deploy_dir)
+                    if agent_type:
+                        logger.info(f"Regenerating Dockerfile for {agent_type} without BuildKit")
+                        
+                        # Generate fallback Dockerfile
+                        dockerfile_content = self._generate_optimized_dockerfile(agent_type, use_buildkit=False)
+                        dockerfile_path = deploy_dir / "Dockerfile"
+                        dockerfile_path.write_text(dockerfile_content, encoding='utf-8')
+                        
+                        # Try build again without BuildKit
+                        logger.info(f"Retrying Docker build without BuildKit for {image_name}")
+                        image, logs = await asyncio.wait_for(
+                            loop.run_in_executor(
+                                None,
+                                lambda: self.docker_client.images.build(
+                                    path=str(deploy_dir),
+                                    tag=image_name,
+                                    rm=True,
+                                    forcerm=True
+                                )
+                            ),
+                            timeout=300  # 5 minutes timeout
+                        )
+                        
+                        # Log build output
+                        for log in logs:
+                            if isinstance(log, dict) and 'stream' in log:
+                                stream_content = log['stream']
+                                if isinstance(stream_content, str):
+                                    logger.info(f"Fallback build: {stream_content.strip()}")
+                        
+                        logger.info(f"Fallback Docker build successful for {image_name}")
+                        return image
+                    else:
+                        logger.error("Could not detect agent type for fallback Dockerfile generation")
+                        raise
+                        
+                except Exception as fallback_error:
+                    logger.error(f"Fallback Docker build also failed for {image_name}: {fallback_error}")
+                    raise Exception(f"Both BuildKit and fallback builds failed. Original error: {error_msg}, Fallback error: {fallback_error}")
+            
+            # If it's not a BuildKit error, raise the original exception
             raise
+    
+    def _detect_agent_type_from_deploy_dir(self, deploy_dir: Path) -> Optional[str]:
+        """Detect agent type from deployment directory contents."""
+        try:
+            # Check for common indicators of agent type
+            dockerfile_path = deploy_dir / "Dockerfile"
+            if dockerfile_path.exists():
+                dockerfile_content = dockerfile_path.read_text()
+                
+                # Look for agent type indicators in the Dockerfile
+                if "CMD [\"tail\", \"-f\", \"/dev/null\"]" in dockerfile_content:
+                    if "STATE_DIR=/app/state" in dockerfile_content:
+                        return "persistent"
+                    else:
+                        return "function"
+                elif "EXPOSE 8001" in dockerfile_content and "HEALTHCHECK" in dockerfile_content:
+                    return "acp"
+                else:
+                    # Default to function if we can't determine
+                    return "function"
+            
+            # Fallback: check for other files that might indicate agent type
+            if (deploy_dir / "state").exists():
+                return "persistent"
+            elif (deploy_dir / "main.py").exists():
+                return "function"
+            else:
+                return "function"  # Default fallback
+                
+        except Exception as e:
+            logger.warning(f"Failed to detect agent type from deployment directory: {e}")
+            return "function"  # Safe default
 
 
     async def _deploy_container(self, deployment: AgentDeployment, image_name: str):
@@ -1523,3 +1645,301 @@ with open('/tmp/agent_stderr.txt', 'w') as f:
         except Exception as e:
             logger.error(f"Error executing in container: {e}")
             return {"status": "error", "error": str(e)} 
+    
+    def _create_dockerignore(self, deploy_dir: Path):
+        """Create .dockerignore file for build optimization."""
+        try:
+            from ..config.docker_config import DockerConfig
+            
+            dockerignore_content = DockerConfig.get_dockerignore_content()
+            dockerignore_path = deploy_dir / ".dockerignore"
+            dockerignore_path.write_text(dockerignore_content, encoding='utf-8')
+            
+            logger.info(f"Created .dockerignore for deployment: {dockerignore_path}")
+        except Exception as e:
+            logger.warning(f"Failed to create .dockerignore: {e}")
+            # Don't fail the deployment if .dockerignore creation fails
+    
+    def _is_buildkit_available(self) -> bool:
+        """Check if Docker BuildKit is available and enabled."""
+        try:
+            from ..config.docker_config import DockerConfig
+            
+            # Check environment variables
+            env_buildkit = os.getenv("DOCKER_BUILDKIT", "1")
+            env_inline_cache = os.getenv("BUILDKIT_INLINE_CACHE", "1")
+            
+            logger.info(f"Environment DOCKER_BUILDKIT: {env_buildkit}")
+            logger.info(f"Environment BUILDKIT_INLINE_CACHE: {env_inline_cache}")
+            logger.info(f"Config BUILDKIT_ENABLED: {DockerConfig.BUILDKIT_ENABLED}")
+            
+            # Very conservative approach: only use BuildKit if explicitly enabled
+            # and environment variables are set to "1", AND we're in a development environment
+            if env_buildkit == "1" and env_inline_cache == "1":
+                # Additional safety check: only enable BuildKit in development
+                is_dev = os.getenv("AGENTHUB_ENV", "production").lower() in ["dev", "development", "test"]
+                if is_dev:
+                    logger.info("BuildKit environment variables are set to '1' and in dev environment, enabling BuildKit")
+                    return True
+                else:
+                    logger.info("BuildKit environment variables set but not in dev environment, disabling BuildKit for safety")
+                    return False
+            else:
+                logger.info("BuildKit environment variables not set to '1', disabling BuildKit")
+                return False
+                
+        except Exception as e:
+            logger.warning(f"Failed to check BuildKit availability: {e}")
+            return False
+    
+    def _generate_optimized_dockerfile(self, agent_type: str, use_buildkit: bool = True) -> str:
+        """Generate optimized Dockerfile based on BuildKit availability."""
+        if agent_type == "function":
+            return self._generate_function_dockerfile(use_buildkit)
+        elif agent_type == "persistent":
+            return self._generate_persistent_dockerfile(use_buildkit)
+        else:  # acp or other types
+            return self._generate_acp_dockerfile(use_buildkit)
+    
+    def _generate_function_dockerfile(self, use_buildkit: bool = True) -> str:
+        """Generate function agent Dockerfile with or without BuildKit optimizations."""
+        if use_buildkit:
+            return """# syntax=docker/dockerfile:1.7
+FROM python:3.11-slim-bookworm
+
+# 1) Basic, safe defaults for Python
+ENV PYTHONDONTWRITEBYTECODE=1 \\
+    PYTHONUNBUFFERED=1 \\
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \\
+    PIP_NO_WARN_SCRIPT_LOCATION=1
+
+WORKDIR /app
+
+# 2) Install only what you need, without recommends; keep certs for HTTPS
+RUN apt-get update && \\
+    apt-get install -y --no-install-recommends \\
+        ca-certificates \\
+        curl \\
+        && rm -rf /var/lib/apt/lists/* \\
+        && apt-get clean
+
+# 3) Leverage build cache for deps; speed up pip with BuildKit cache
+COPY requirements.txt .
+RUN --mount=type=cache,target=/root/.cache/pip \\
+    python -m pip install --no-cache-dir --no-deps -r requirements.txt
+
+# 4) Copy only the app code (make sure .dockerignore excludes junk)
+COPY . .
+
+# 5) Drop root for security
+RUN useradd -m -s /bin/bash appuser && \\
+    chown -R appuser:appuser /app
+USER appuser
+
+# 6) One-off task - function agents run once and exit
+CMD ["python", "main.py"]
+"""
+        else:
+            return """FROM python:3.11-slim-bookworm
+
+# 1) Basic, safe defaults for Python
+ENV PYTHONDONTWRITEBYTECODE=1 \\
+    PYTHONUNBUFFERED=1 \\
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \\
+    PIP_NO_WARN_SCRIPT_LOCATION=1
+
+WORKDIR /app
+
+# 2) Install only what you need, without recommends; keep certs for HTTPS
+RUN apt-get update && \\
+    apt-get install -y --no-install-recommends \\
+        ca-certificates \\
+        curl \\
+        && rm -rf /var/lib/apt/lists/* \\
+        && apt-get clean
+
+# 3) Install Python dependencies
+COPY requirements.txt .
+RUN python -m pip install --no-cache-dir -r requirements.txt
+
+# 4) Copy only the app code (make sure .dockerignore excludes junk)
+COPY . .
+
+# 5) Drop root for security
+RUN useradd -m -s /bin/bash appuser && \\
+    chown -R appuser:appuser /app
+USER appuser
+
+# 6) One-off task - function agents run once and exit
+CMD ["python", "main.py"]
+"""
+    
+    def _generate_persistent_dockerfile(self, use_buildkit: bool = True) -> str:
+        """Generate persistent agent Dockerfile with or without BuildKit optimizations."""
+        if use_buildkit:
+            return """# syntax=docker/dockerfile:1.7
+FROM python:3.11-slim-bookworm
+
+# 1) Basic, safe defaults for Python
+ENV PYTHONDONTWRITEBYTECODE=1 \\
+    PYTHONUNBUFFERED=1 \\
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \\
+    PIP_NO_WARN_SCRIPT_LOCATION=1 \\
+    PYTHONPATH=/app \\
+    STATE_DIR=/app/state
+
+WORKDIR /app
+
+# 2) Install only what you need, without recommends; keep certs for HTTPS
+RUN apt-get update && \\
+    apt-get install -y --no-install-recommends \\
+        ca-certificates \\
+        curl \\
+        && rm -rf /var/lib/apt/lists/* \\
+        && apt-get clean
+
+# 3) Leverage build cache for deps; speed up pip with BuildKit cache
+COPY requirements.txt .
+RUN --mount=type=cache,target=/root/.cache/pip \\
+    python -m pip install --no-cache-dir --no-deps -r requirements.txt
+
+# 4) Copy only the app code (make sure .dockerignore excludes junk)
+COPY . .
+
+# 5) Create state directory for persistent agents
+RUN mkdir -p /app/state
+
+# 6) Drop root for security
+RUN useradd -m -s /bin/bash appuser && \\
+    chown -R appuser:appuser /app
+USER appuser
+
+# 7) Keep container running for persistent agent execution
+CMD ["tail", "-f", "/dev/null"]
+"""
+        else:
+            return """FROM python:3.11-slim-bookworm
+
+# 1) Basic, safe defaults for Python
+ENV PYTHONDONTWRITEBYTECODE=1 \\
+    PYTHONUNBUFFERED=1 \\
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \\
+    PIP_NO_WARN_SCRIPT_LOCATION=1 \\
+    PYTHONPATH=/app \\
+    STATE_DIR=/app/state
+
+WORKDIR /app
+
+# 2) Install only what you need, without recommends; keep certs for HTTPS
+RUN apt-get update && \\
+    apt-get install -y --no-install-recommends \\
+        ca-certificates \\
+        curl \\
+        && rm -rf /var/lib/apt/lists/* \\
+        && apt-get clean
+
+# 3) Install Python dependencies
+COPY requirements.txt .
+RUN python -m pip install --no-cache-dir -r requirements.txt
+
+# 4) Copy only the app code (make sure .dockerignore excludes junk)
+COPY . .
+
+# 5) Create state directory for persistent agents
+RUN mkdir -p /app/state
+
+# 6) Drop root for security
+RUN useradd -m -s /bin/bash appuser && \\
+    chown -R appuser:appuser /app
+USER appuser
+
+# 7) Keep container running for persistent agent execution
+CMD ["tail", "-f", "/dev/null"]
+"""
+    
+    def _generate_acp_dockerfile(self, use_buildkit: bool = True) -> str:
+        """Generate ACP agent Dockerfile with or without BuildKit optimizations."""
+        if use_buildkit:
+            return """# syntax=docker/dockerfile:1.7
+FROM python:3.11-slim-bookworm
+
+# 1) Basic, safe defaults for Python
+ENV PYTHONDONTWRITEBYTECODE=1 \\
+    PYTHONUNBUFFERED=1 \\
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \\
+    PIP_NO_WARN_SCRIPT_LOCATION=1
+
+WORKDIR /app
+
+# 2) Install only what you need, without recommends; keep certs for HTTPS
+RUN apt-get update && \\
+    apt-get install -y --no-install-recommends \\
+        ca-certificates \\
+        curl \\
+        && rm -rf /var/lib/apt/lists/* \\
+        && apt-get clean
+
+# 3) Leverage build cache for deps; speed up pip with BuildKit cache
+COPY requirements.txt .
+RUN --mount=type=cache,target=/root/.cache/pip \\
+    python -m pip install --no-cache-dir --no-deps -r requirements.txt
+
+# 4) Copy only the app code (make sure .dockerignore excludes junk)
+COPY . .
+
+# 5) Drop root for security
+RUN useradd -m -s /bin/bash appuser && \\
+    chown -R appuser:appuser /app
+USER appuser
+
+# 6) Expose port
+EXPOSE 8001
+
+# 7) Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \\
+  CMD curl -f http://localhost:8001/health || exit 1
+
+# 8) Run the application
+CMD ["python", "main.py"]
+"""
+        else:
+            return """FROM python:3.11-slim-bookworm
+
+# 1) Basic, safe defaults for Python
+ENV PYTHONDONTWRITEBYTECODE=1 \\
+    PYTHONUNBUFFERED=1 \\
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \\
+    PIP_NO_WARN_SCRIPT_LOCATION=1
+
+WORKDIR /app
+
+# 2) Install only what you need, without recommends; keep certs for HTTPS
+RUN apt-get update && \\
+    apt-get install -y --no-install-recommends \\
+        ca-certificates \\
+        curl \\
+        && rm -rf /var/lib/apt/lists/* \\
+        && apt-get clean
+
+# 3) Install Python dependencies
+COPY requirements.txt .
+RUN python -m pip install --no-cache-dir -r requirements.txt
+
+# 4) Copy only the app code (make sure .dockerignore excludes junk)
+COPY . .
+
+# 5) Drop root for security
+RUN useradd -m -s /bin/bash appuser && \\
+    chown -R appuser:appuser /app
+USER appuser
+
+# 6) Expose port
+EXPOSE 8001
+
+# 7) Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \\
+  CMD curl -f http://localhost:8001/health || exit 1
+
+# 8) Run the application
+CMD ["python", "main.py"]
+"""
