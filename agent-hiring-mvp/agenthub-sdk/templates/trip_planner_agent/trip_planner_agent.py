@@ -1974,6 +1974,99 @@ def main(input_data: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         }
 
 
+def execute(input_data: Dict[str, Any], context: Dict[str, Any] = None) -> Dict[str, Any]:
+    """
+    Execute function for the Trip Planner Agent.
+    
+    This is the main entry point that matches the config.json schema requirements.
+    
+    Args:
+        input_data: Dictionary containing trip planning parameters as defined in config.json
+        context: Dictionary containing execution context (optional)
+    
+    Returns:
+        Dictionary containing comprehensive trip itinerary and recommendations as defined in config.json
+    """
+    try:
+        # Set default context if none provided
+        if context is None:
+            context = {}
+        
+        # Call the main function which handles the actual trip planning
+        result = main(input_data, context)
+        
+        # Transform the result to match the expected output schema from config.json
+        if result.get('status') == 'success':
+            # Extract the final itinerary from the result
+            final_itinerary = result.get('final_itinerary', {})
+            
+            # Transform to match config.json output schema
+            transformed_result = {
+                "itinerary": {
+                    "trip_itinerary": final_itinerary.get('trip_itinerary', ''),
+                    "trip_understanding": final_itinerary.get('trip_understanding', ''),
+                    "day_plans": final_itinerary.get('day_plans', []),
+                    "special_considerations": final_itinerary.get('special_considerations', '')
+                },
+                "destination": result.get('destination', ''),
+                "travel_days": result.get('travel_days', 7),
+                "budget_level": final_itinerary.get('budget_level', ''),
+                "trip_type": final_itinerary.get('trip_type', ''),
+                "accommodations": final_itinerary.get('accommodations', []),
+                "activities": final_itinerary.get('activities', []),
+                "dining_recommendations": final_itinerary.get('restaurants', []),
+                "transportation": {
+                    "recommendations": "Walking and public transport recommended for city exploration",
+                    "tips": "Use local public transportation for longer distances"
+                },
+                "weather_info": {
+                    "destination": result.get('destination', ''),
+                    "best_time_to_visit": final_itinerary.get('destination_info', {}).get('best_time_to_visit', ''),
+                    "current_info": final_itinerary.get('destination_info', {}).get('weather_info', '')
+                },
+                "safety_tips": [
+                    final_itinerary.get('destination_info', {}).get('safety_tips', ''),
+                    final_itinerary.get('destination_info', {}).get('local_customs', '')
+                ] if final_itinerary.get('destination_info') else [],
+                "total_estimated_cost": {
+                    "per_day": "$100-200",
+                    "total": f"${100 * result.get('travel_days', 7)}-{200 * result.get('travel_days', 7)}",
+                    "currency": "USD",
+                    "breakdown": {
+                        "accommodation": "40-60%",
+                        "food": "20-30%",
+                        "activities": "15-25%",
+                        "transportation": "5-10%"
+                    }
+                },
+                "metadata": {
+                    "processing_time": result.get('execution_time', 0),
+                    "models_used": [
+                        input_data.get('planning_model', 'openai:gpt-4o'),
+                        input_data.get('final_report_model', 'openai:gpt-4o')
+                    ],
+                    "timestamp": result.get('generated_at', datetime.now().isoformat())
+                }
+            }
+            
+            return transformed_result
+        else:
+            # Return error response
+            return {
+                "error": result.get('error', 'Unknown error occurred'),
+                "destination": result.get('destination', 'Unknown'),
+                "status": "error"
+            }
+            
+    except Exception as e:
+        logger.error(f"Error in execute function: {e}")
+        return {
+            "error": str(e),
+            "destination": input_data.get('destination', 'Unknown'),
+            "status": "error"
+        }
+
+
 if __name__ == "__main__":
     # Test the agent
     test_input = {
