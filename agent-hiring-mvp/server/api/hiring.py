@@ -352,18 +352,18 @@ async def activate_hiring(
         
         # Check if hiring is already active
         if hiring.status == HiringStatus.ACTIVE:
-            return {
-                "message": "Hiring is already active",
-                "hiring_id": hiring_id,
-                "status": hiring.status.value,
-                "already_active": True
-            }
+                    return {
+            "message": "Hiring is already active",
+            "hiring_id": hiring_id,
+            "status": hiring.status,
+            "already_active": True
+        }
         
         # Check if hiring is suspended (can only activate suspended hirings)
         if hiring.status != HiringStatus.SUSPENDED:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Cannot activate hiring with status: {hiring.status.value}. Only suspended hirings can be activated."
+                detail=f"Cannot activate hiring with status: {hiring.status}. Only suspended hirings can be activated."
             )
         
         # Activate the hiring
@@ -376,7 +376,7 @@ async def activate_hiring(
         response = {
             "message": "Hiring activated successfully",
             "hiring_id": hiring_id,
-            "status": updated_hiring.status.value,
+            "status": updated_hiring.status,
             "activated_at": updated_hiring.activated_at.isoformat() if updated_hiring.activated_at else None,
             "agent_id": hiring.agent_id,
             "agent_name": agent.name if agent else f"Agent {hiring.agent_id}",
@@ -440,18 +440,18 @@ async def suspend_hiring(
         
         # Check if hiring is already suspended
         if hiring.status == HiringStatus.SUSPENDED:
-            return {
-                "message": "Hiring is already suspended",
-                "hiring_id": hiring_id,
-                "status": hiring.status.value,
-                "already_suspended": True
-            }
+                    return {
+            "message": "Hiring is already suspended",
+            "hiring_id": hiring_id,
+            "status": hiring.status,
+            "already_suspended": True
+        }
         
         # Check if hiring is active (can only suspend active hirings)
         if hiring.status != HiringStatus.ACTIVE:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Cannot suspend hiring with status: {hiring.status.value}. Only active hirings can be suspended."
+                detail=f"Cannot suspend hiring with status: {hiring.status}. Only active hirings can be suspended."
             )
         
         # Suspend the hiring
@@ -464,7 +464,7 @@ async def suspend_hiring(
         response = {
             "message": "Hiring suspended successfully",
             "hiring_id": hiring_id,
-            "status": updated_hiring.status.value,
+            "status": updated_hiring.status,
             "suspended_at": updated_hiring.suspended_at.isoformat() if updated_hiring.suspended_at else None,
             "agent_id": hiring.agent_id,
             "agent_name": agent.name if agent else f"Agent {hiring.agent_id}",
@@ -544,7 +544,7 @@ async def cancel_hiring(
             )
         
         # Cancel the hiring
-        updated_hiring = hiring_service.cancel_hiring(hiring_id, notes, timeout)
+        updated_hiring = await hiring_service.cancel_hiring(hiring_id, notes)
         
         # Get agent information
         from ..models.agent import Agent
@@ -553,8 +553,8 @@ async def cancel_hiring(
         response = {
             "message": "Hiring cancelled successfully",
             "hiring_id": hiring_id,
-            "status": updated_hiring.status.value,
-            "cancelled_at": updated_hiring.cancelled_at.isoformat() if updated_hiring.cancelled_at else None,
+            "status": updated_hiring.status,
+            "cancelled_at": updated_hiring.last_executed_at.isoformat() if updated_hiring.last_executed_at else None,
             "agent_id": hiring.agent_id,
             "agent_name": agent.name if agent else f"Agent {hiring.agent_id}",
             "agent_type": agent.agent_type if agent else "unknown",
