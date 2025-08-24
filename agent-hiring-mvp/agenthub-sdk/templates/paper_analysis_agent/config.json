@@ -1,0 +1,284 @@
+{
+  "name": "Paper Analysis Agent",
+  "description": "A persistent agent that analyzes academic papers, extracts metadata, and performs similarity analysis using vector embeddings and research APIs",
+  "version": "1.0.0",
+  "entry_point": "paper_analysis_agent.py",
+  "agent_type": "persistent",
+  "agent_class": "PaperAnalysisAgent",
+  "requires_initialization": true,
+  "author": "AgentHub Team",
+  "email": "team@agenthub.com",
+  "pricing_model": "per_use",
+  "price_per_use": 0.5,
+  "requirements": [
+    "langchain",
+    "langchain-openai",
+    "langchain-community",
+    "faiss-cpu",
+    "requests",
+    "python-dotenv",
+    "beautifulsoup4",
+    "arxiv",
+    "scholarly",
+    "openai"
+  ],
+  "lifecycle": {
+    "initialize": "initialize",
+    "execute": "execute",
+    "cleanup": "cleanup"
+  },
+  "config_schema": {
+    "functions": [
+      {
+        "name": "initialize",
+        "description": "Initialize the paper analysis agent by processing multi-line text containing paper titles and authors, then enriching with research data",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "paper_list_content": {
+              "type": "string",
+              "description": "Multi-line text containing paper titles and authors (one title per line, followed by authors on next line)",
+              "minLength": 10,
+              "multiline": true,
+              "placeholder": "Enter paper titles and authors here...\n\nExample format:\nPaper Title 1\nAuthor1, Author2, Author3\nPaper Title 2\nAuthor4, Author5"
+            },
+            "model_name": {
+              "type": "string",
+              "description": "OpenAI model to use for LLM processing",
+              "enum": [
+                "gpt-4o-mini",
+                "gpt-3.5-turbo",
+                "gpt-4",
+                "gpt-4o"
+              ],
+              "default": "gpt-4o-mini"
+            },
+            "temperature": {
+              "type": "number",
+              "description": "Temperature for LLM responses",
+              "minimum": 0,
+              "maximum": 2,
+              "default": 0
+            },
+            "chunk_size": {
+              "type": "integer",
+              "description": "Size of text chunks for processing",
+              "minimum": 100,
+              "maximum": 4000,
+              "default": 1000
+            },
+            "chunk_overlap": {
+              "type": "integer",
+              "description": "Overlap between text chunks",
+              "minimum": 0,
+              "maximum": 1000,
+              "default": 200
+            },
+            "agent_id": {
+              "type": "string",
+              "description": "Unique identifier for this agent instance (used for storage isolation)",
+              "default": "default"
+            }
+          },
+          "required": [
+            "paper_list_content"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "description": "Initialization status",
+              "enum": [
+                "success",
+                "error"
+              ]
+            },
+            "message": {
+              "type": "string",
+              "description": "Initialization result message"
+            },
+            "papers_processed": {
+              "type": "integer",
+              "description": "Number of papers successfully processed and indexed"
+            },
+            "total_embeddings": {
+              "type": "integer",
+              "description": "Total number of embeddings created"
+            },
+            "storage_location": {
+              "type": "string",
+              "description": "Location where paper database and embeddings are stored"
+            }
+          },
+          "required": [
+            "status",
+            "message"
+          ],
+          "additionalProperties": false
+        }
+      },
+      {
+        "name": "execute",
+        "description": "Analyze a paper and find related papers from the indexed database based on similarity ranking",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "paper_content": {
+              "type": "string",
+              "description": "Content of the paper to analyze for finding related papers",
+              "minLength": 1,
+              "multiline": true,
+              "placeholder": "Enter the paper content, abstract, or description to find related papers..."
+            },
+            "max_results": {
+              "type": "integer",
+              "description": "Maximum number of related papers to return",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 10
+            }
+          },
+          "required": [
+            "paper_content"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "description": "Execution status",
+              "enum": ["success", "error"]
+            },
+            "message": {
+              "type": "string",
+              "description": "Error message if status is error"
+            },
+            "input_paper": {
+              "type": "string",
+              "description": "The paper content that was analyzed"
+            },
+            "related_papers": {
+              "type": "array",
+              "description": "List of related papers with similarity scores",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string"
+                  },
+                  "authors": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "abstract": {
+                    "type": "string"
+                  },
+                  "similarity_score": {
+                    "type": "number"
+                  },
+                  "url": {
+                    "type": "string"
+                  },
+                  "source": {
+                    "type": "string"
+                  },
+                  "paper_id": {
+                    "type": "integer"
+                  }
+                }
+              }
+            },
+            "total_papers_analyzed": {
+              "type": "integer",
+              "description": "Total number of papers in the database"
+            },
+            "max_results": {
+              "type": "integer",
+              "description": "Maximum number of results requested"
+            },
+            "vectorstore_loaded": {
+              "type": "boolean",
+              "description": "Whether the vector store was successfully loaded"
+            },
+            "papers_database_size": {
+              "type": "integer",
+              "description": "Size of the papers database"
+            }
+          },
+          "required": [
+            "status",
+            "input_paper",
+            "related_papers"
+          ],
+          "additionalProperties": false
+        }
+      },
+      {
+        "name": "cleanup",
+        "description": "Clean up resources and perform cleanup operations",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "description": "Cleanup status",
+              "enum": [
+                "success",
+                "error"
+              ]
+            },
+            "message": {
+              "type": "string",
+              "description": "Cleanup result message"
+            },
+            "resources_freed": {
+              "type": "array",
+              "description": "List of resources that were freed",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "status",
+            "message"
+          ],
+          "additionalProperties": false
+        }
+      }
+    ]
+  },
+  "capabilities": [
+    "paper_analysis",
+    "metadata_extraction",
+    "research_enrichment",
+    "similarity_ranking",
+    "vector_embeddings",
+    "persistent_storage",
+    "academic_search"
+  ],
+  "tags": [
+    "academic",
+    "research",
+    "paper-analysis",
+    "similarity-search",
+    "vector-embeddings",
+    "persistent",
+    "openai",
+    "langchain",
+    "text-processing"
+  ],
+  "category": "research"
+}
