@@ -1,6 +1,12 @@
 # Copy this content to your .env file in the agent-hiring-mvp directory
 # Replace the values with your actual configuration
 
+# Admin User Configuration
+ADMIN_EMAIL=admin@agenthub.net
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=q1q1q1
+ADMIN_FULL_NAME=System Administrator
+
 # Email Configuration
 GMAIL_SMTP_SERVER=smtp.gmail.com
 GMAIL_SMTP_PORT=587

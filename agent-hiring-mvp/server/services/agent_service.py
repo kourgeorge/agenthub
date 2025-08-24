@@ -96,6 +96,9 @@ class AgentService:
         # Create agent file records
         self._create_agent_file_records(agent.id, agent_files)
         
+        # Ensure agent object is properly loaded with its relationships
+        self.db.refresh(agent)
+        
         # Pre-build Docker image if requested
         if build_image:
             try:

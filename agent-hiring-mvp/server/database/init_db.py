@@ -10,18 +10,36 @@ from ..models.base import Base
 logger = logging.getLogger(__name__)
 
 def is_database_initialized() -> bool:
-    """Check if the database is already initialized by checking if key tables exist."""
+    """Check if the database is already initialized by checking if key tables and permissions exist."""
     try:
         database_url = get_database_url()
         engine = create_engine(database_url)
         
-        # Check if a key table exists (users table is a good indicator)
+        # Check if key tables exist
         with engine.connect() as connection:
+            # Check if users table exists
             result = connection.execute(text("""
                 SELECT name FROM sqlite_master 
                 WHERE type='table' AND name='users'
             """))
-            return result.fetchone() is not None
+            if not result.fetchone():
+                return False
+            
+            # Check if permissions table exists and has data
+            result = connection.execute(text("""
+                SELECT name FROM sqlite_master 
+                WHERE type='table' AND name='permissions'
+            """))
+            if not result.fetchone():
+                return False
+            
+            # Check if permissions have been seeded
+            result = connection.execute(text("""
+                SELECT COUNT(*) FROM permissions
+            """))
+            permission_count = result.fetchone()[0]
+            return permission_count > 0
+            
     except Exception as e:
         logger.warning(f"Could not check database initialization status: {e}")
         return False
@@ -60,6 +78,33 @@ def safe_init_database():
         
         # Create session factory
         SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+        
+        # Seed default permissions and roles ONLY if they don't exist
+        try:
+            from .seed_permissions import PermissionSeeder
+            session = SessionLocal()
+            
+            # Check if system is already fully initialized
+            if PermissionSeeder.is_system_initialized(session):
+                logger.info("System already fully initialized, skipping seeding")
+            else:
+                logger.info("System not fully initialized, running initial seeding...")
+                try:
+                    PermissionSeeder.seed_all(session)
+                    logger.info("Default permissions and roles seeded successfully")
+                except Exception as seeding_error:
+                    logger.warning(f"Permission seeding failed: {seeding_error}")
+                    # Check if another process might have succeeded
+                    if PermissionSeeder.is_system_initialized(session):
+                        logger.info("System appears to be initialized by another process")
+                    else:
+                        logger.error("Permission system initialization failed completely")
+            
+            session.close()
+        except Exception as e:
+            logger.warning(f"Could not check or seed permissions: {e}")
+            # Don't fail the entire initialization if permission seeding fails
+            # The system can still function with manual permission setup
         
         logger.info("Database initialization completed successfully")
         return engine, SessionLocal

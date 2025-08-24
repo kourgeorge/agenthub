@@ -15,13 +15,15 @@ from ..models.agent import Agent
 from ..models.hiring import Hiring
 from ..models.user import User
 from ..middleware.auth import get_current_user
+from ..middleware.permissions import require_admin_permission
 
 router = APIRouter(prefix="/diagnostic", tags=["diagnostic"])
 
 
 @router.get("/admin/analysis")
+@require_admin_permission("view")
 def get_system_analysis(
-    current_user = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Get comprehensive system analysis (Available to all authenticated users - READ-ONLY)."""
@@ -47,8 +49,9 @@ def get_system_analysis(
 
 
 @router.get("/admin/hirings")
+@require_admin_permission("view")
 def get_hirings_diagnostic(
-    current_user = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Get detailed hiring information for system diagnostics (Available to all authenticated users)."""

@@ -10,6 +10,7 @@ from ..services.hiring_service import HiringService, HiringCreateRequest
 from ..models.hiring import Hiring, HiringStatus
 from ..models.deployment import AgentDeployment
 from ..middleware.auth import get_current_user, get_current_user_optional, get_current_user_required, require_same_user
+from ..middleware.permissions import require_hiring_permission
 from ..models.user import User
 
 # Configure logging
@@ -19,6 +20,7 @@ router = APIRouter(prefix="/hiring", tags=["hiring"])
 
 
 @router.post("/", response_model=dict)
+@require_hiring_permission("create")
 def create_hiring(
     hiring_data: HiringCreateRequest,
     current_user: User = Depends(get_current_user_required),
@@ -76,6 +78,7 @@ def create_hiring(
 
 
 @router.get("/user", response_model=List[dict])
+@require_hiring_permission("view")
 def get_current_user_hirings(
     status: Optional[str] = None,
     current_user: User = Depends(get_current_user_required),

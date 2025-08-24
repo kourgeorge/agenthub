@@ -5,11 +5,14 @@ from typing import Optional
 from sqlalchemy.orm import Session
 from passlib.context import CryptContext
 from pydantic import EmailStr
+import logging
 
 from ..models.user import User
 
 # Password hashing context
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+logger = logging.getLogger(__name__)
 
 class AuthService:
     """Service for authentication-related operations."""
@@ -87,6 +90,16 @@ class AuthService:
         db.add(user)
         db.commit()
         db.refresh(user)
+        
+        # Assign default user role
+        try:
+            from ..database.seed_permissions import PermissionSeeder
+            PermissionSeeder.assign_default_role_to_user(db, user.id, "user")
+            logger.info(f"Assigned default 'user' role to new user {user.id}")
+        except Exception as e:
+            logger.warning(f"Failed to assign default role to user {user.id}: {e}")
+            # Don't fail user creation if role assignment fails
+        
         return user
     
     @staticmethod

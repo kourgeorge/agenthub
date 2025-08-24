@@ -411,6 +411,15 @@ CMD ["python", "main.py"]
     
     def _extract_agent_files(self, agent: Agent, deploy_dir: Path):
         """Extract all agent files to deployment directory."""
+        # Ensure agent.files is properly loaded and not a coroutine
+        if hasattr(agent.files, '__await__'):
+            logger.error("agent.files is a coroutine - this indicates a database session issue")
+            raise RuntimeError("agent.files is a coroutine - database session issue")
+        
+        if not agent.files:
+            logger.warning(f"No files found for agent {agent.id}")
+            return
+            
         for agent_file in agent.files:
             # Create directory structure if needed
             file_path = deploy_dir / agent_file.file_path

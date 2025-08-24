@@ -136,7 +136,9 @@ class AgentHubClient:
         
         # Validate agent configuration
         config = agent.get_config()
-        errors = config.validate()
+        # Use the correct validation method - validate_agent_config function
+        from .config_validator import validate_agent_config
+        errors = validate_agent_config(config.config_path)
         if errors:
             raise ValueError(f"Agent validation failed: {errors}")
         

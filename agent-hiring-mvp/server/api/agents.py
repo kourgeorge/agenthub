@@ -21,6 +21,7 @@ from ..services.execution_service import ExecutionService, ExecutionCreateReques
 from ..models.agent import Agent, AgentStatus
 from ..models.user import User
 from ..middleware.auth import get_current_user, get_current_user_optional
+from ..middleware.permissions import require_permission, require_agent_permission, require_agent_owner
 from ..models.execution import Execution
 from ..models.hiring import Hiring
 from ..models.resource_usage import ExecutionResourceUsage
@@ -90,6 +91,7 @@ router = APIRouter(prefix="/agents", tags=["agents"])
 
 
 @router.post("/submit")
+@require_agent_permission("create")
 async def submit_agent(
     name: str = Form(...),
     description: str = Form(...),
@@ -211,7 +213,7 @@ async def list_agents(
     else:
         # Non-logged-in user: get only public, approved agents
         if query or category:
-            agents = agent_service.search_agents(query or "", category)
+            agents = agent_service.search_agents(query, category)
         else:
             agents = agent_service.get_public_agents(skip, limit)
     
@@ -437,8 +439,10 @@ async def get_my_agent(
 
 
 @router.put("/{agent_id}/approve")
+@require_agent_permission("approve")
 async def approve_agent(
     agent_id: str,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_session_dependency),
 ):
     """Approve an agent (admin only)."""
@@ -456,9 +460,11 @@ async def approve_agent(
 
 
 @router.put("/{agent_id}/reject")
+@require_agent_permission("reject")
 async def reject_agent(
     agent_id: str,
     reason: str,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_session_dependency),
 ):
     """Reject an agent (admin only)."""
@@ -500,8 +506,10 @@ async def get_reject_progress(
 
 
 @router.delete("/{agent_id}")
+@require_agent_permission("delete")
 async def delete_agent(
     agent_id: str,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_session_dependency),
 ):
     """Delete an agent (admin only)."""

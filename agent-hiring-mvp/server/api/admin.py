@@ -11,14 +11,18 @@ from ..database import get_db
 from ..models.user import User
 from ..models.invoice import Invoice
 from ..models.execution import Execution
+from ..middleware.auth import get_current_user
+from ..middleware.permissions import require_admin_permission
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 
 @router.get("/billing/customers")
+@require_admin_permission("view")
 async def get_all_customer_billing(
     limit: int = Query(100, description="Maximum number of customers to return"),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Get billing summary for all customers (admin only)."""

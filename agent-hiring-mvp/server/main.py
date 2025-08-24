@@ -95,10 +95,20 @@ async def collect_container_metrics():
             # Get a fresh database session for this iteration
             db = get_current_session()
             try:
-                # Get all running deployments
-                running_deployments = db.query(AgentDeployment).join(Hiring).filter(
-                    AgentDeployment.status == "running"
-                ).all()
+                # Check if the required tables exist before querying
+                try:
+                    # Simple check if tables exist by doing a basic query
+                    db.execute(db.query(AgentDeployment).limit(1).statement)
+                    
+                    # Get all running deployments
+                    running_deployments = db.query(AgentDeployment).join(Hiring).filter(
+                        AgentDeployment.status == "running"
+                    ).all()
+                except Exception as table_error:
+                    # Tables might not be ready yet, skip this iteration
+                    logger.debug(f"Tables not ready for metrics collection: {table_error}")
+                    await asyncio.sleep(30)
+                    continue
                 
                 if running_deployments:
                     logger.info(f"Collecting metrics for {len(running_deployments)} running deployments")
@@ -372,7 +382,7 @@ def main():
         port=args.port,
         reload=args.reload,
         log_level="debug" if args.dev else "info",
-        workers=1 if args.reload else 4,  # Use 1 worker if reload is enabled
+        workers=1,  # Use 1 worker if reload is enabled
     )
 
 

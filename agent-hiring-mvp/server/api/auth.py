@@ -102,6 +102,14 @@ def register(
             password=register_data.password
         )
         
+        # Ensure user has default role (AuthService should handle this, but double-check)
+        try:
+            from ..database.seed_permissions import PermissionSeeder
+            PermissionSeeder.assign_default_role_to_user(db, user.id, "user")
+        except Exception as e:
+            # Log but don't fail registration
+            print(f"Warning: Failed to assign default role to user {user.id}: {e}")
+        
         # Generate verification token and send verification email
         verification_token = TokenService.store_verification_token(register_data.email, user.id)
         verification_url = f"{AUTH_VERIFY_EMAIL_PATH}?token={verification_token}"

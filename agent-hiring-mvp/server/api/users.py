@@ -11,6 +11,7 @@ from ..models.user import User
 from ..services.auth_service import AuthService
 from ..services.email_service import EmailService
 from ..middleware.auth import get_current_user
+from ..services.permission_service import PermissionService
 
 router = APIRouter(tags=["users"])
 
@@ -120,6 +121,14 @@ def create_user(
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
+    
+    # Assign default user role
+    try:
+        from ..database.seed_permissions import PermissionSeeder
+        PermissionSeeder.assign_default_role_to_user(db, new_user.id, "user")
+    except Exception as e:
+        # Log but don't fail user creation
+        print(f"Warning: Failed to assign default role to user {new_user.id}: {e}")
     
     # Send welcome email
     try:
@@ -406,4 +415,60 @@ def get_current_user_profile(
         "created_at": current_user.created_at.isoformat(),
         "updated_at": current_user.updated_at.isoformat(),
         "preferences": current_user.preferences,
+    } 
+
+
+@router.get("/users/{user_id}/profile", response_model=UserResponse)
+def get_user_profile(
+    user_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session_dependency)
+):
+    """Get a user's public profile."""
+    # Users can only see their own profile or admin users can see any profile
+    if current_user.id != user_id and not PermissionService.has_permission(db, current_user.id, "admin:view"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only view your own profile"
+        )
+    
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    return user
+
+
+@router.get("/users/{user_id}/permissions")
+def get_user_permissions(
+    user_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session_dependency)
+):
+    """Get permissions for a specific user."""
+    # Users can only see their own permissions or admin users can see any user's permissions
+    if current_user.id != user_id and not PermissionService.has_permission(db, current_user.id, "admin:view"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only view your own permissions"
+        )
+    
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    # Get user permissions
+    permissions = PermissionService.get_user_permissions(db, user_id)
+    roles = PermissionService.get_user_roles(db, user_id)
+    
+    return {
+        "user_id": user_id,
+        "permissions": list(permissions),
+        "roles": roles  # roles is already a list of strings
     } 

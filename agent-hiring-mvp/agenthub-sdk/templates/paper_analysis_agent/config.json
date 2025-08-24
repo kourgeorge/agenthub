@@ -281,7 +281,8 @@
     "persistent",
     "openai",
     "langchain",
-    "text-processing"
+    "text-processing",
+    "metadata-extraction"
   ],
   "category": "research"
 }

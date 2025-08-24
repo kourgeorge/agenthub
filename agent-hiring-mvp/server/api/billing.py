@@ -20,6 +20,8 @@ from ..config.payment_config import PaymentConfig
 from ..services.payment_service import PaymentService
 from ..services.invoice_service import InvoiceService
 from ..services.enhanced_billing_service import EnhancedBillingService
+from ..middleware.auth import get_current_user
+from ..middleware.permissions import require_billing_permission
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/billing", tags=["billing"])
@@ -44,9 +46,11 @@ class AddPaymentMethodRequest(BaseModel):
 
 
 @router.get("/summary")
+@require_billing_permission("view")
 async def get_billing_summary(
     user_id: int = Query(..., description="User ID to get billing for"),
     months: int = Query(12, description="Number of months to fetch"),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Get billing summary for the last N months for a specific user."""

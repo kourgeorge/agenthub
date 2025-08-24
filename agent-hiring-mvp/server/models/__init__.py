@@ -11,6 +11,9 @@ from .user_api_key import UserApiKey
 from .invoice import Invoice
 from .deployment import AgentDeployment, DeploymentStatus
 from .container_resource_usage import ContainerResourceUsage, AgentActivityLog, ResourcePricing, UsageAggregation
+from .role import Role
+from .user_role import UserRole
+from .permission import Permission
 
 
 __all__ = [
@@ -34,5 +37,7 @@ __all__ = [
     "AgentActivityLog",
     "ResourcePricing",
     "UsageAggregation",
-
+    "Role",
+    "UserRole",
+    "Permission",
 ] 
