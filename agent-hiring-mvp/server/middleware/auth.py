@@ -264,3 +264,16 @@ def require_verified_user(current_user: User = Depends(get_current_user)) -> Use
             detail="Email verification required"
         )
     return current_user
+
+def get_current_user_required(
+    current_user = Depends(get_current_user_optional)
+) -> User:
+    """Dependency that requires authentication and returns the user.
+    If no user is authenticated, raises HTTP 401 error automatically."""
+    if not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required. Please log in again.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return current_user
