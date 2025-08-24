@@ -188,7 +188,14 @@ def get_execution(
     response = {
         "status": execution.status,
         "execution_id": execution.execution_id,
+        "execution_type": execution.execution_type,
+        "created_at": execution.created_at.isoformat(),
+        "completed_at": execution.completed_at.isoformat() if execution.completed_at else None,
+        "input_data": execution.input_data,
+        "output_data": execution.output_data,
         "result": execution.output_data,  # Agent's output according to outputSchema
+        "error_message": execution.error_message,
+        "duration_ms": execution.duration_ms,
         "execution_time": execution.duration_ms / 1000.0 if execution.duration_ms else 0.0,
         "usage_summary": {
             "total_cost": total_cost,
@@ -458,7 +465,14 @@ async def get_hiring_executions(
         execution_response = {
             "execution_id": execution.execution_id,
             "status": execution.status,
+            "execution_type": execution.execution_type,
+            "created_at": execution.created_at.isoformat(),
+            "completed_at": execution.completed_at.isoformat() if execution.completed_at else None,
+            "input_data": execution.input_data,
+            "output_data": execution.output_data,
             "result": execution.output_data,  # Agent's output according to outputSchema
+            "error_message": execution.error_message,
+            "duration_ms": execution.duration_ms,
             "execution_time": execution.duration_ms / 1000.0 if execution.duration_ms else 0.0,
             "usage_summary": {
                 "total_cost": total_cost,
