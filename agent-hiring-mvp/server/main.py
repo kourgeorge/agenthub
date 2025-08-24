@@ -130,9 +130,7 @@ async def collect_container_metrics():
                                     deployment.deployment_id
                                 )
                                 
-                                if resource_usage:
-                                    logger.debug(f"Collected metrics for deployment {deployment.deployment_id}: cost=${resource_usage.total_cost:.6f}")
-                                else:
+                                if not resource_usage:
                                     logger.debug(f"No metrics collected for deployment {deployment.deployment_id} (container may not be accessible)")
                                     
                             else:

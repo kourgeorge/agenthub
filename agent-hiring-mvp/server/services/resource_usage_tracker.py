@@ -87,24 +87,9 @@ class ResourceUsageTracker:
                     logger.warning(f"Container {deployment.container_name} returned incomplete stats")
                     return None
                 
-                # Enhanced debug logging for stats structure
-                logger.debug(f"Container {deployment.container_name} stats keys: {list(stats.keys())}")
-                if 'cpu_stats' in stats:
-                    logger.debug(f"CPU stats keys: {list(stats['cpu_stats'].keys())}")
-                    if 'cpu_usage' in stats['cpu_stats']:
-                        logger.debug(f"CPU usage keys: {list(stats['cpu_stats']['cpu_usage'].keys())}")
-                    if 'system_cpu_usage' in stats['cpu_stats']:
-                        logger.debug(f"System CPU usage available: {stats['cpu_stats']['system_cpu_usage']}")
-                    else:
-                        logger.debug(f"System CPU usage NOT available for {deployment.container_name}")
-                if 'precpu_stats' in stats:
-                    logger.debug(f"PreCPU stats keys: {list(stats['precpu_stats'].keys())}")
-                    if 'cpu_usage' in stats['precpu_stats']:
-                        logger.debug(f"PreCPU usage keys: {list(stats['precpu_stats']['cpu_usage'].keys())}")
-                    if 'system_cpu_usage' in stats['precpu_stats']:
-                        logger.debug(f"PreCPU system CPU usage available: {stats['precpu_stats']['system_cpu_usage']}")
-                    else:
-                        logger.debug(f"PreCPU system CPU usage NOT available for {deployment.container_name}")
+                # Basic debug logging for stats structure (reduced verbosity)
+                if 'cpu_stats' not in stats or 'precpu_stats' not in stats:
+                    logger.debug(f"Container {deployment.container_name} missing required CPU stats")
                 
             except docker.errors.NotFound:
                 logger.warning(f"Container {deployment.container_name} not found")
@@ -248,11 +233,7 @@ class ResourceUsageTracker:
             # Total cost for this snapshot
             total_cost = cpu_cost + memory_cost + network_cost + storage_cost
             
-            # Debug logging for cost breakdown
-            logger.debug(f"Cost breakdown for {deployment.container_name}: "
-                        f"CPU=${cpu_cost:.6f}, Memory=${memory_cost:.6f}, "
-                        f"Network=${network_cost:.6f}, Storage=${storage_cost:.6f}, "
-                        f"Total=${total_cost:.6f}")
+
             
             # Create resource usage record
             resource_usage = ContainerResourceUsage(
@@ -306,8 +287,7 @@ class ResourceUsageTracker:
             # Calculate memory in GB for logging
             memory_gb = memory_usage / (1024**3) if memory_usage else 0
             
-            logger.debug(f"Collected metrics for {deployment.container_name}: CPU={cpu_usage_percent:.1f}%, "
-                        f"Memory={memory_gb:.2f}GB, Cost=${total_cost:.6f}")
+
             
             return resource_usage
             
