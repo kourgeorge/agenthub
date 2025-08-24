@@ -147,8 +147,10 @@ class PermissionService:
             True if user has the role, False otherwise
         """
         try:
-            # Get user's active roles
-            user_roles = db.query(UserRole).join(Role).filter(
+            # Get user's active roles with explicit join
+            user_roles = db.query(UserRole).join(
+                Role, UserRole.role_id == Role.id
+            ).filter(
                 and_(
                     UserRole.user_id == user_id,
                     UserRole.is_active == True,
@@ -181,8 +183,10 @@ class PermissionService:
             List of role names
         """
         try:
-            # Get user's active roles
-            user_roles = db.query(UserRole).join(Role).filter(
+            # Get user's active roles with explicit join
+            user_roles = db.query(UserRole).join(
+                Role, UserRole.role_id == Role.id
+            ).filter(
                 and_(
                     UserRole.user_id == user_id,
                     UserRole.is_active == True,
@@ -214,8 +218,10 @@ class PermissionService:
             List of role details including name, description, assigned date, etc.
         """
         try:
-            # Get user's active roles with details
-            user_roles = db.query(UserRole).join(Role).filter(
+            # Get user's active roles with details and explicit join
+            user_roles = db.query(UserRole).join(
+                Role, UserRole.role_id == Role.id
+            ).filter(
                 and_(
                     UserRole.user_id == user_id,
                     UserRole.is_active == True,
@@ -283,15 +289,27 @@ class PermissionService:
                 existing_user_role.assigned_by = assigned_by
                 if expires_at:
                     from datetime import datetime
-                    existing_user_role.expires_at = datetime.fromisoformat(expires_at)
+                    try:
+                        existing_user_role.expires_at = datetime.fromisoformat(expires_at)
+                    except ValueError as e:
+                        print(f"Invalid expires_at format: {expires_at}, error: {e}")
+                        return False
             else:
                 # Create new role assignment
                 from datetime import datetime
+                expires_datetime = None
+                if expires_at:
+                    try:
+                        expires_datetime = datetime.fromisoformat(expires_at)
+                    except ValueError as e:
+                        print(f"Invalid expires_at format: {expires_at}, error: {e}")
+                        return False
+                
                 user_role = UserRole(
                     user_id=user_id,
                     role_id=role.id,
                     assigned_by=assigned_by,
-                    expires_at=datetime.fromisoformat(expires_at) if expires_at else None
+                    expires_at=expires_datetime
                 )
                 db.add(user_role)
             
