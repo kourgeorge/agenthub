@@ -53,12 +53,15 @@
               ],
               "default": "gpt-4o-mini"
             },
-            "temperature": {
-              "type": "number",
-              "description": "Temperature for LLM responses",
-              "minimum": 0,
-              "maximum": 2,
-              "default": 0
+            "embedding_model": {
+              "type": "string",
+              "description": "OpenAI model to use for generating embeddings",
+              "enum": [
+                "text-embedding-3-small",
+                "text-embedding-3-large",
+                "text-embedding-ada-002"
+              ],
+              "default": "text-embedding-3-small"
             },
             "chunk_size": {
               "type": "integer",

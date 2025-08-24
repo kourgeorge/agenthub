@@ -188,7 +188,7 @@ class PaperAnalysisAgent(PersistentAgent):
             self._set_state("agent_id", config.get("agent_id", "default"))  # Store agent ID for storage paths
             self._set_state("papers_count", len(self.papers_database))
             self._set_state("model_name", config.get("model_name", "gpt-4o-mini"))
-            self._set_state("temperature", config.get("temperature", 0))
+            self._set_state("embedding_model", config.get("embedding_model", "text-embedding-3-small"))
             self._set_state("is_initialized", True)
 
             # Save to disk AFTER setting agent_id in state
@@ -330,8 +330,8 @@ class PaperAnalysisAgent(PersistentAgent):
             return {
                 "status": "success",  # Must match schema enum: ["success", "error"]
                 "message": "Agent resources cleaned up successfully",
-                "resources_freed": ["vectorstore", "llm", "papers_database", "paper_list_content", "papers_processed",
-                                    "total_embeddings", "model_name", "temperature", "chunk_size", "chunk_overlap"]
+                "resources_freed": ["vectorstore", "papers_database", "paper_list_content", "papers_processed",
+                                    "total_embeddings", "model_name", "embedding_model", "chunk_size", "chunk_overlap"]
                 # Must match schema: list of resources freed
             }
         except Exception as e:
@@ -355,7 +355,6 @@ class PaperAnalysisAgent(PersistentAgent):
 
             # Get model name from config
             model_name = config.get("model_name", "gpt-4o-mini")
-            temperature = config.get("temperature", 0)
 
             prompt = f"""
             Extract paper titles and authors from the following content. 
@@ -376,8 +375,7 @@ class PaperAnalysisAgent(PersistentAgent):
                          "content": "You are an expert at extracting structured paper metadata from text content."},
                         {"role": "user", "content": prompt}
                     ],
-                    response_format=PaperMetadataList,
-                    temperature=temperature
+                    response_format=PaperMetadataList
                 )
 
                 # Get the parsed, validated data
@@ -399,8 +397,7 @@ class PaperAnalysisAgent(PersistentAgent):
                          "content": "You are an expert at extracting structured paper metadata. Return only valid JSON."},
                         {"role": "user", "content": prompt}
                     ],
-                    response_format={"type": "json_object"},
-                    temperature=temperature
+                    response_format={"type": "json_object"}
                 )
 
                 response_text = response.choices[0].message.content.strip()
@@ -568,7 +565,10 @@ class PaperAnalysisAgent(PersistentAgent):
             logger.info(f"Split papers into {len(split_docs)} chunks")
 
             # Create embeddings and vectorstore
-            embeddings = OpenAIEmbeddings(openai_api_key=api_key)
+            embeddings = OpenAIEmbeddings(
+                openai_api_key=api_key,
+                model=config.get("embedding_model", "text-embedding-3-small")
+            )
             vectorstore = FAISS.from_documents(split_docs, embeddings)
 
             # Store vectorstore for later use
@@ -687,7 +687,8 @@ class PaperAnalysisAgent(PersistentAgent):
             logger.info(f"Loaded papers database with {len(self.papers_database)} papers")
             
             # Load FAISS index
-            embeddings = OpenAIEmbeddings()
+            embedding_model = self._get_state("embedding_model", "text-embedding-3-small")
+            embeddings = OpenAIEmbeddings(model=embedding_model)
             self.vectorstore = FAISS.load_local(str(index_path), embeddings, allow_dangerous_deserialization=True)
             logger.info(f"Loaded FAISS index successfully")
             
@@ -711,7 +712,6 @@ class PaperAnalysisAgent(PersistentAgent):
 
             # Get model name from config
             model_name = config.get("model_name", "gpt-4o-mini")
-            temperature = config.get("temperature", 0)
 
             prompt = f"""
             Analyze the following content and extract research paper information.
@@ -732,8 +732,7 @@ class PaperAnalysisAgent(PersistentAgent):
                          "content": "You are an expert research analyst. Extract structured paper metadata from the given content."},
                         {"role": "user", "content": prompt}
                     ],
-                    response_format=PaperMetadataList,
-                    temperature=temperature
+                    response_format=PaperMetadataList
                 )
 
                 # Get the parsed, validated data
@@ -786,7 +785,7 @@ if __name__ == "__main__":
         "paper_list_content": "Paper Title 1\nAuthor1, Author2\nPaper Title 2\nAuthor3, Author4",
         # Replace with actual content
         "model_name": "gpt-4o-mini",
-        "temperature": 0,
+        "embedding_model": "text-embedding-3-small",
         "agent_id": "test_paper_agent"
     })
     print(json.dumps(init_result, indent=2))
@@ -796,7 +795,7 @@ if __name__ == "__main__":
         print("\n2. Testing Structured Outputs extraction...")
         structured_result = agent.extract_papers_with_structured_outputs(
             "This paper discusses machine learning algorithms for natural language processing. Authors: Smith, J. and Johnson, A.",
-            {"model_name": "gpt-4o-mini", "temperature": 0}
+            {"model_name": "gpt-4o-mini"}
         )
         print(json.dumps(structured_result, indent=2))
 
