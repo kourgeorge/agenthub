@@ -69,6 +69,11 @@
               "minimum": 0,
               "maximum": 1000,
               "default": 200
+            },
+            "agent_id": {
+              "type": "string",
+              "description": "Unique identifier for this agent instance (used for storage isolation)",
+              "default": "default"
             }
           },
           "required": [

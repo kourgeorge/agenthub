@@ -7,6 +7,7 @@ This is a clean implementation of a persistent agent that demonstrates:
 2. Proper state management using _get_state/_set_state
 3. Clean separation of initialize/execute/cleanup phases
 4. Focus on business logic only - no platform concerns
+5. Persistent vector database storage on disk
 
 The platform will:
 - Load this class using importlib
@@ -60,6 +61,7 @@ class RAGAgent(PersistentAgent):
     3. Use _get_state()/_set_state() for state management
     4. Use _is_initialized()/_mark_initialized() for lifecycle management
     5. Focus on business logic only - no platform concerns
+    6. Persist vector database on disk for efficient reuse
     
     The platform will call these methods directly:
     - initialize(config) -> called once to set up the agent
@@ -74,6 +76,23 @@ class RAGAgent(PersistentAgent):
         self.vectorstore = None
         self.llm = None
         self.qa_chain = None
+        # Base directory for persistent storage
+        self.base_storage_dir = Path("/tmp/agenthub_persistent_rag")
+        self.base_storage_dir.mkdir(exist_ok=True)
+
+    def _get_storage_path(self, identifier: str) -> Path:
+        """Get storage path for this agent instance."""
+        # Use agent ID from state if available, otherwise use a fallback
+        agent_id = self._get_state("agent_id") or "default"
+        return self.base_storage_dir / f"agent_{agent_id}" / identifier
+
+    def _get_index_path(self) -> Path:
+        """Get the path for the FAISS index."""
+        return self._get_storage_path("faiss_index")
+
+    def _get_documents_path(self) -> Path:
+        """Get the path for the documents metadata."""
+        return self._get_storage_path("documents.json")
 
     def initialize(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -86,6 +105,7 @@ class RAGAgent(PersistentAgent):
         3. Set up any required components
         4. Store configuration in state
         5. Mark as initialized
+        6. Save vector database to disk for persistence
         
         Args:
             config: Configuration data containing website_url and other settings
@@ -110,21 +130,65 @@ class RAGAgent(PersistentAgent):
 
             logger.info(f"Initializing RAG agent with website: {website_url}")
 
-            # Load document content
-            logger.info("Loading document content...")
-            content = self._load_document_from_url(website_url)
-            logger.info(f"Document loaded, content length: {len(content)} characters")
+            # Check if we have a saved index to load
+            index_path = self._get_index_path()
+            documents_path = self._get_documents_path()
+            
+            if index_path.exists() and documents_path.exists():
+                logger.info("Found existing index, loading from disk...")
+                try:
+                    # Load existing index
+                    embeddings = OpenAIEmbeddings()
+                    vectorstore = FAISS.load_local(str(index_path), embeddings)
+                    
+                    # Load documents metadata
+                    with open(documents_path, 'r') as f:
+                        documents_data = json.load(f)
+                    
+                    index_size = documents_data.get("total_chunks", 0)
+                    content = documents_data.get("content", "")
+                    
+                    logger.info(f"Successfully loaded existing index with {index_size} chunks")
+                    
+                except Exception as e:
+                    logger.warning(f"Failed to load existing index: {e}, will create new one")
+                    # Fall through to create new index
+                    vectorstore = None
+                    index_size = 0
+                    content = ""
+            else:
+                vectorstore = None
+                index_size = 0
+                content = ""
 
-            if not content.strip():
-                raise ValueError("No content found in the document")
+            # If no existing index, create a new one
+            if vectorstore is None:
+                logger.info("Creating new vector database...")
+                # Load document content
+                logger.info("Loading document content...")
+                content = self._load_document_from_url(website_url)
+                logger.info(f"Document loaded, content length: {len(content)} characters")
 
-            # Create vectorstore and setup LLM
+                if not content.strip():
+                    raise ValueError("No content found in the document")
+
+                # Create vectorstore and setup LLM
+                if LANGCHAIN_AVAILABLE:
+                    logger.info("Creating vectorstore...")
+                    vectorstore, index_size = self._create_vectorstore(content, config)
+                    logger.info(f"Vectorstore created with {index_size} chunks")
+
+                    # Save the index to disk for persistence
+                    logger.info("Saving vector database to disk...")
+                    self._save_vectorstore_to_disk(vectorstore, content, index_size)
+                    logger.info("Vector database saved successfully")
+                else:
+                    # Fallback: store content for simple text search
+                    index_size = len(content.split())
+                    logger.warning("LangChain not available, using fallback implementation")
+
+            # Setup LLM and QA chain
             if LANGCHAIN_AVAILABLE:
-                logger.info("Creating vectorstore...")
-                vectorstore, index_size = self._create_vectorstore(content, config)
-                logger.info(f"Vectorstore created with {index_size} chunks")
-
-                # Setup LLM and QA chain
                 llm = ChatOpenAI(
                     temperature=config.get("temperature", 0),
                     model_name=config.get("model_name", "gpt-4o-mini")
@@ -136,20 +200,14 @@ class RAGAgent(PersistentAgent):
                     retriever=vectorstore.as_retriever()
                 )
 
-                # Store only serializable data in state
-                # Don't store the actual objects as they contain non-serializable components
-            else:
-                # Fallback: store content for simple text search
-                index_size = len(content.split())
-                logger.warning("LangChain not available, using fallback implementation")
-
             # Store configuration and content in state (persisted by platform)
             self._set_state("website_url", website_url)
             self._set_state("index_size", index_size)
             self._set_state("model_name", config.get("model_name", "gpt-4o-mini"))
             self._set_state("temperature", config.get("temperature", 0))
             self._set_state("langchain_available", LANGCHAIN_AVAILABLE)
-            self._set_state("content", content)  # Store content for recreation
+            self._set_state("content", content)  # Store content for recreation if needed
+            self._set_state("agent_id", config.get("agent_id", "default"))  # Store agent ID for storage paths
 
             # Mark as initialized (important for platform)
             self._mark_initialized()
@@ -180,8 +238,9 @@ class RAGAgent(PersistentAgent):
         It should:
         1. Check if agent is initialized
         2. Validate input data
-        3. Process the query
-        4. Return the result
+        3. Load vector database from disk
+        4. Process the query
+        5. Return the result
         
         Args:
             input_data: Input data containing the question
@@ -203,14 +262,10 @@ class RAGAgent(PersistentAgent):
 
             # Execute query
             if LANGCHAIN_AVAILABLE and self._get_state("langchain_available"):
-                # Recreate components from stored content
-                content = self._get_state("content")
-                if content:
-                    vectorstore, _ = self._create_vectorstore(content, {
-                        "model_name": self._get_state("model_name"),
-                        "temperature": self._get_state("temperature")
-                    })
-                    
+                # Load vector database from disk
+                vectorstore = self._load_vectorstore_from_disk()
+                if vectorstore:
+                    # Setup LLM and QA chain
                     llm = ChatOpenAI(
                         temperature=self._get_state("temperature", 0),
                         model_name=self._get_state("model_name", "gpt-4o-mini")
@@ -224,7 +279,29 @@ class RAGAgent(PersistentAgent):
                     
                     answer = qa_chain.run(question)
                 else:
-                    answer = "Error: No content available for query"
+                    # Fallback: recreate from stored content
+                    logger.warning("Failed to load vector database, recreating from content...")
+                    content = self._get_state("content")
+                    if content:
+                        vectorstore, _ = self._create_vectorstore(content, {
+                            "model_name": self._get_state("model_name"),
+                            "temperature": self._get_state("temperature")
+                        })
+                        
+                        llm = ChatOpenAI(
+                            temperature=self._get_state("temperature", 0),
+                            model_name=self._get_state("model_name", "gpt-4o-mini")
+                        )
+                        
+                        qa_chain = RetrievalQA.from_chain_type(
+                            llm=llm,
+                            chain_type="stuff",
+                            retriever=vectorstore.as_retriever()
+                        )
+                        
+                        answer = qa_chain.run(question)
+                    else:
+                        answer = "Error: No content available for query"
             else:
                 # Fallback: simple text search
                 answer = f"Fallback response: I found information about '{question}' in the indexed content. (LangChain not available for advanced retrieval)"
@@ -263,6 +340,7 @@ class RAGAgent(PersistentAgent):
         1. Clean up any resources (files, connections, etc.)
         2. Clear instance variables
         3. Clear state (platform will handle persistence)
+        4. Optionally clean up disk storage
         
         Returns:
             Dict with cleanup result (no platform concerns)
@@ -285,6 +363,84 @@ class RAGAgent(PersistentAgent):
                 "status": "error",  # Must match schema enum: ["success", "error"]
                 "message": f"Cleanup failed: {str(e)}",  # Must match schema: message field
                 "resources_freed": []  # Must match schema: list of resources freed
+            }
+
+    def _save_vectorstore_to_disk(self, vectorstore: FAISS, content: str, index_size: int):
+        """Save the FAISS vectorstore and documents metadata to disk."""
+        try:
+            # Create storage directory
+            index_path = self._get_index_path()
+            index_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Save FAISS index
+            vectorstore.save_local(str(index_path))
+            logger.info(f"FAISS index saved to {index_path}")
+            
+            # Save documents metadata
+            documents_path = self._get_documents_path()
+            documents_data = {
+                "content": content,
+                "total_chunks": index_size,
+                "website_url": self._get_state("website_url"),
+                "model_name": self._get_state("model_name"),
+                "temperature": self._get_state("temperature")
+            }
+            
+            with open(documents_path, 'w') as f:
+                json.dump(documents_data, f, indent=2)
+            logger.info(f"Documents metadata saved to {documents_path}")
+            
+        except Exception as e:
+            logger.error(f"Error saving vectorstore to disk: {e}")
+            raise
+
+    def _load_vectorstore_from_disk(self) -> Optional[FAISS]:
+        """Load the FAISS vectorstore from disk."""
+        try:
+            index_path = self._get_index_path()
+            documents_path = self._get_documents_path()
+            
+            if not index_path.exists() or not documents_path.exists():
+                logger.warning("No saved vector database found on disk")
+                return None
+            
+            # Load FAISS index
+            embeddings = OpenAIEmbeddings()
+            vectorstore = FAISS.load_local(str(index_path), embeddings)
+            logger.info(f"FAISS index loaded from {index_path}")
+            
+            return vectorstore
+            
+        except Exception as e:
+            logger.error(f"Error loading vectorstore from disk: {e}")
+            return None
+
+    def get_storage_status(self) -> Dict[str, Any]:
+        """Get the current storage status of the vector database."""
+        try:
+            index_path = self._get_index_path()
+            documents_path = self._get_documents_path()
+            
+            status = {
+                "storage_directory": str(self.base_storage_dir),
+                "agent_storage_path": str(self._get_storage_path("")),
+                "index_path": str(index_path),
+                "documents_path": str(documents_path),
+                "index_exists": index_path.exists(),
+                "documents_exist": documents_path.exists(),
+                "index_size_bytes": index_path.stat().st_size if index_path.exists() else 0,
+                "documents_size_bytes": documents_path.stat().st_size if documents_path.exists() else 0,
+                "is_initialized": self._is_initialized(),
+                "website_url": self._get_state("website_url"),
+                "total_chunks": self._get_state("index_size", 0)
+            }
+            
+            return status
+        except Exception as e:
+            return {
+                "error": str(e),
+                "storage_directory": str(self.base_storage_dir),
+                "is_initialized": self._is_initialized()
             }
 
     def _load_document_from_url(self, url: str) -> str:
@@ -361,7 +517,8 @@ if __name__ == "__main__":
     init_result = agent.initialize({
         "website_url": "http://kour.me",
         "model_name": "gpt-4o-mini",
-        "temperature": 0
+        "temperature": 0,
+        "agent_id": "test_agent"
     })
     print(json.dumps(init_result, indent=2))
 
@@ -373,7 +530,7 @@ if __name__ == "__main__":
         })
         print(json.dumps(exec_result1, indent=2))
 
-        # Test second execution (should use same state)
+        # Test second execution (should use same state and loaded index)
         print("\n3. Testing second execution...")
         exec_result2 = agent.execute({
             "question": "who was the phd supervisor?"
