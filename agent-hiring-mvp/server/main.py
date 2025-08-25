@@ -52,7 +52,6 @@ from .api import (
     contact_router,
     webhooks_router,
     admin_router,
-    admin_permissions_router,
     metrics_router
 )
 
@@ -245,7 +244,6 @@ app.include_router(earnings_router, prefix="/api/v1")
 app.include_router(contact_router, prefix="/api/v1")
 app.include_router(webhooks_router, prefix="/api/v1")
 app.include_router(admin_router, prefix="/api/v1")
-app.include_router(admin_permissions_router, prefix="/api/v1")
 app.include_router(metrics_router, prefix="/api/v1")
 
 
