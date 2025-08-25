@@ -364,7 +364,6 @@ async def get_execution_resources(
                     agent_type = agent.agent_type
                 
                 # Get deployment information for container resources
-                from ..models.deployment import AgentDeployment
                 deployment = db.query(AgentDeployment).filter(
                     AgentDeployment.hiring_id == hiring.id
                 ).first()
@@ -634,192 +633,10 @@ async def get_hiring_resources(
         )
 
 
-@router.get("/resources/summary")
-async def get_user_resource_summary(
-    user_id: int = Query(..., description="User ID to get resource summary for"),
-    months: int = Query(1, description="Number of months to fetch", ge=1, le=12),
-    db: Session = Depends(get_db)
-):
-    """Get comprehensive resource usage summary for a user including container resources."""
-    try:
-        # Calculate date range
-        end_date = datetime.now(timezone.utc)
-        start_date = end_date - timedelta(days=months * 30)
-        
-        # Get container resource costs
-        try:
-            enhanced_billing_service = EnhancedBillingService(db)
-            container_costs = await enhanced_billing_service._get_container_resource_costs(user_id, start_date, end_date)
-            
-            # Calculate totals
-            total_cpu_hours = container_costs.get("total_cpu_hours", 0.0)
-            total_memory_gb_hours = container_costs.get("total_memory_gb_hours", 0.0)
-            total_storage_gb = container_costs.get("total_storage_gb", 0.0)
-            total_network_gb = container_costs.get("total_network_gb", 0.0)
-            total_container_cost = sum(deployment.get("total_cost", 0) for deployment in container_costs.get("deployments", []))
-            
-            # Get deployment breakdown
-            deployments = []
-            for deployment in container_costs.get("deployments", []):
-                deployments.append({
-                    "deployment_id": deployment.get("deployment_id"),
-                    "agent_type": deployment.get("agent_type"),
-                    "cpu_hours": deployment.get("cpu_hours", 0.0),
-                    "memory_gb_hours": deployment.get("memory_gb_hours", 0.0),
-                    "storage_gb": deployment.get("storage_gb", 0.0),
-                    "network_gb": deployment.get("network_gb", 0.0),
-                    "total_cost": deployment.get("total_cost", 0.0),
-                    "start_time": deployment.get("start_time"),
-                    "end_time": deployment.get("end_time")
-                })
-            
-            return {
-                "user_id": user_id,
-                "period": {
-                    "start": start_date.isoformat(),
-                    "end": end_date.isoformat(),
-                    "months": months
-                },
-                "resource_summary": {
-                    "total_cpu_hours": round(total_cpu_hours, 4),
-                    "total_memory_gb_hours": round(total_memory_gb_hours, 4),
-                    "total_storage_gb": round(total_storage_gb, 4),
-                    "total_network_gb": round(total_network_gb, 4),
-                    "total_container_cost": round(total_container_cost, 6),
-                    "currency": "USD"
-                },
-                "deployments": deployments,
-                "deployment_count": len(deployments)
-            }
-            
-        except Exception as e:
-            logger.warning(f"Failed to get container resource costs: {e}")
-            return {
-                "user_id": user_id,
-                "period": {
-                    "start": start_date.isoformat(),
-                    "end": end_date.isoformat(),
-                    "months": months
-                },
-                "error": f"Resource usage data unavailable: {str(e)}",
-                "resource_summary": {
-                    "total_cpu_hours": 0.0,
-                    "total_memory_gb_hours": 0.0,
-                    "total_storage_gb": 0.0,
-                    "total_network_gb": 0.0,
-                    "total_container_cost": 0.0,
-                    "currency": "USD"
-                },
-                "deployments": [],
-                "deployment_count": 0
-            }
-            
-    except Exception as e:
-        logger.error(f"Error fetching resource summary for user {user_id}: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch resource summary: {str(e)}"
-        )
 
 
-@router.get("/deployment/{deployment_id}/resources")
-async def get_deployment_resources(
-    deployment_id: str,
-    user_id: int = Query(..., description="User ID to verify access"),
-    db: Session = Depends(get_db)
-):
-    """Get detailed container resource usage for a specific deployment."""
-    try:
-        # Get deployment information
-        from ..models.deployment import AgentDeployment
-        deployment = db.query(AgentDeployment).filter(
-            AgentDeployment.deployment_id == deployment_id
-        ).first()
-        
-        if not deployment:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Deployment not found"
-            )
-        
-        # Verify that the deployment belongs to the requesting user
-        if deployment.hiring.user_id != user_id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied: You can only view your own deployments"
-            )
-        
-        # Get container resource usage
-        try:
-            enhanced_billing_service = EnhancedBillingService(db)
-            container_costs = await enhanced_billing_service._get_container_resource_costs(
-                user_id, 
-                deployment.created_at, 
-                datetime.now(timezone.utc)
-            )
-            
-            # Find the specific deployment
-            deployment_resources = None
-            for dep in container_costs.get("deployments", []):
-                if dep.get("deployment_id") == deployment_id:
-                    deployment_resources = {
-                        "deployment_id": deployment_id,
-                        "agent_id": deployment.agent_id,
-                        "agent_type": deployment.deployment_type,
-                        "status": deployment.status,
-                        "created_at": deployment.created_at.isoformat(),
-                        "started_at": deployment.started_at.isoformat() if deployment.started_at else None,
-                        "cpu_hours": dep.get("cpu_hours", 0.0),
-                        "memory_gb_hours": dep.get("memory_gb_hours", 0.0),
-                        "storage_gb": dep.get("storage_gb", 0.0),
-                        "network_gb": dep.get("network_gb", 0.0),
-                        "total_cost": dep.get("total_cost", 0.0),
-                        "start_time": dep.get("start_time"),
-                        "end_time": dep.get("end_time"),
-                        "hourly_breakdown": dep.get("hourly_breakdown", [])
-                    }
-                    break
-            
-            if not deployment_resources:
-                # If no detailed data, provide basic deployment info
-                deployment_resources = {
-                    "deployment_id": deployment_id,
-                    "agent_id": deployment.agent_id,
-                    "agent_type": deployment.deployment_type,
-                    "status": deployment.status,
-                    "created_at": deployment.created_at.isoformat(),
-                    "started_at": deployment.started_at.isoformat() if deployment.started_at else None,
-                    "cpu_hours": 0.0,
-                    "memory_gb_hours": 0.0,
-                    "storage_gb": 0.0,
-                    "network_gb": 0.0,
-                    "total_cost": 0.0,
-                    "note": "Resource usage data not available yet"
-                }
-            
-            return deployment_resources
-            
-        except Exception as e:
-            logger.warning(f"Failed to get container resource costs for deployment {deployment_id}: {e}")
-            # Return basic deployment info if resource data is unavailable
-            return {
-                "deployment_id": deployment_id,
-                "agent_id": deployment.agent_id,
-                "agent_type": deployment.deployment_type,
-                "status": deployment.status,
-                "created_at": deployment.created_at.isoformat(),
-                "started_at": deployment.started_at.isoformat() if deployment.started_at else None,
-                "note": f"Resource usage data unavailable: {str(e)}"
-            }
-            
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error fetching deployment resources: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch deployment resources: {str(e)}"
-        )
+
+
 
 
 @router.get("/invoice/{month}")
@@ -978,167 +795,19 @@ async def download_invoice(
         )
 
 
-@router.post("/invoice/{month}/create")
-async def create_monthly_invoice(
-    month: str,
-    user_id: int = Query(..., description="User ID to create invoice for"),
-    db: Session = Depends(get_db)
-):
-    """Create a payable invoice for a specific month"""
-    try:
-        # Get user email for Stripe customer creation
-        user = db.query(User).filter(User.id == user_id).first()
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
-            )
-        
-        # Create invoice service
-        invoice_service = InvoiceService(db)
-        
-        # Create invoice
-        invoice = await invoice_service.create_monthly_invoice(
-            user_id=user_id,
-            month=month,
-            customer_email=user.email
-        )
-        
-        return {
-            "success": True,
-            "invoice_id": invoice['invoice_id'],
-            "invoice_number": invoice['invoice_number'],
-            "amount": invoice['amount'],
-            "payment_url": invoice['payment_url'],
-            "status": invoice['status'],
-            "due_date": invoice['due_date']
-        }
-        
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
-    except Exception as e:
-        logger.error(f"Error creating invoice: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create invoice: {str(e)}"
-        )
 
 
-@router.post("/invoice/{invoice_id}/pay")
-async def pay_invoice(
-    invoice_id: int,
-    payment_method_id: str,
-    user_id: int = Query(..., description="User ID to verify access"),
-    db: Session = Depends(get_db)
-):
-    """Process payment for an invoice"""
-    try:
-        # Create invoice service
-        invoice_service = InvoiceService(db)
-        
-        # Process payment
-        result = await invoice_service.process_payment(
-            invoice_id=invoice_id,
-            user_id=user_id,
-            payment_method_id=payment_method_id
-        )
-        
-        return result
-        
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
-    except Exception as e:
-        logger.error(f"Payment failed: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Payment failed: {str(e)}"
-        )
 
 
-@router.get("/invoices")
-async def get_user_invoices(
-    user_id: int = Query(..., description="User ID to get invoices for"),
-    limit: int = Query(50, description="Maximum number of invoices to return"),
-    db: Session = Depends(get_db)
-):
-    """Get all invoices for a user"""
-    try:
-        invoice_service = InvoiceService(db)
-        invoices = await invoice_service.get_user_invoices(user_id, limit)
-        
-        return {
-            "user_id": user_id,
-            "invoices": invoices,
-            "total_count": len(invoices)
-        }
-        
-    except Exception as e:
-        logger.error(f"Error fetching invoices: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch invoices: {str(e)}"
-        )
 
 
-@router.get("/invoice/{invoice_id}")
-async def get_invoice_details(
-    invoice_id: int,
-    user_id: int = Query(..., description="User ID to verify access"),
-    db: Session = Depends(get_db)
-):
-    """Get detailed invoice information"""
-    try:
-        invoice_service = InvoiceService(db)
-        invoice = await invoice_service.get_invoice_details(invoice_id, user_id)
-        
-        if not invoice:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Invoice not found"
-            )
-        
-        return invoice
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error fetching invoice details: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch invoice details: {str(e)}"
-        )
 
 
-@router.post("/invoice/{invoice_id}/cancel")
-async def cancel_invoice(
-    invoice_id: int,
-    user_id: int = Query(..., description="User ID to verify access"),
-    db: Session = Depends(get_db)
-):
-    """Cancel an unpaid invoice"""
-    try:
-        invoice_service = InvoiceService(db)
-        result = await invoice_service.cancel_invoice(invoice_id, user_id)
-        
-        return result
-        
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
-    except Exception as e:
-        logger.error(f"Error cancelling invoice: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to cancel invoice: {str(e)}"
-        )
+
+
+
+
+
 
 
 @router.get("/payment-methods")
@@ -1403,7 +1072,6 @@ async def get_deployment_costs(
 ):
     """Get detailed cost breakdown for a specific deployment."""
     try:
-        from ..models.deployment import AgentDeployment
         from ..models.container_resource_usage import ContainerResourceUsage
         
         # Get deployment info
