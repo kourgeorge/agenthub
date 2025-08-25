@@ -99,37 +99,8 @@ class AgentService:
         # Ensure agent object is properly loaded with its relationships
         self.db.refresh(agent)
         
-        # Pre-build Docker image if requested
-        if build_image:
-            try:
-                logger.info(f"Pre-building Docker image for agent {agent.id}")
-                
-                # Import here to avoid circular imports
-                from ..services.deployment_service import DeploymentService
-                deployment_service = DeploymentService(self.db)
-                
-                # If agent already has a pre-built image, remove it first
-                if agent.docker_image:
-                    logger.info(f"Agent already has pre-built image {agent.docker_image}, removing old image before building new one")
-                    try:
-                        deployment_service.remove_prebuilt_image(agent.docker_image)
-                        logger.info(f"Removed old pre-built image {agent.docker_image}")
-                    except Exception as e:
-                        logger.warning(f"Failed to remove old pre-built image {agent.docker_image}: {e}")
-                
-                # Pre-build the Docker image and wait for completion
-                image_name = deployment_service.pre_build_agent_image(agent)
-                
-                if image_name:
-                    agent.docker_image = image_name
-                    self.db.commit()
-                    logger.info(f"Successfully pre-built Docker image {image_name} for agent {agent.id}")
-                    logger.info(f"💾 Stored image name '{image_name}' in agent.docker_image field")
-                else:
-                    logger.warning(f"Failed to pre-build Docker image for agent {agent.id}")
-            except Exception as e:
-                logger.error(f"Error pre-building Docker image for agent {agent.id}: {e}")
-                # Don't fail the agent creation if image building fails
+        # Note: Docker image building is now handled by background tasks in the API layer
+        # This prevents FastAPI from blocking during long Docker builds
         
         logger.info(f"Created agent: {agent.name} (ID: {agent.id}) with {len(agent_files.get('files', []))} files for owner {owner_id}")
         return agent

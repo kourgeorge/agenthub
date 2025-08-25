@@ -110,6 +110,7 @@ async def submit_agent(
     acp_manifest: Optional[str] = Form(None),  # JSON string - New field
     build_image: bool = Form(False),  # New field for pre-building Docker image
     code_file: UploadFile = File(...),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_session_dependency),
 ):
@@ -171,15 +172,33 @@ async def submit_agent(
                 )
             
             # Create agent
-            agent = agent_service.create_agent(agent_data, temp_file_path, current_user.id, build_image)
+            agent = agent_service.create_agent(agent_data, temp_file_path, current_user.id, False)  # Don't build image here
             
-            return {
-                "message": "Agent submitted successfully",
-                "agent_id": agent.id,
-                "status": agent.status,
-                "agent_type": agent.agent_type,
-                "image_built": agent.docker_image is not None if build_image else False,
-            }
+            # If build_image is requested, start it in background
+            if build_image:
+                background_tasks.add_task(
+                    build_docker_image_background,
+                    agent.id,
+                    current_user.id,
+                    db
+                )
+                
+                return {
+                    "message": "Agent submitted successfully, Docker build started in background",
+                    "agent_id": agent.id,
+                    "status": agent.status,
+                    "agent_type": agent.agent_type,
+                    "build_status": "started",
+                    "image_built": False,
+                }
+            else:
+                return {
+                    "message": "Agent submitted successfully",
+                    "agent_id": agent.id,
+                    "status": agent.status,
+                    "agent_type": agent.agent_type,
+                    "image_built": False,
+                }
         
         finally:
             # Clean up temporary file
@@ -589,6 +608,59 @@ async def get_agent_file_content(
     }
 
 
+@router.get("/{agent_id}/build-status")
+async def get_agent_build_status(
+    agent_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session_dependency)
+):
+    """Get the Docker build status for an agent."""
+    try:
+        agent_service = AgentService(db)
+        agent = agent_service.get_agent(agent_id)
+        
+        if not agent:
+            raise HTTPException(status_code=404, detail="Agent not found")
+        
+        # Check if user has permission to view this agent
+        if not agent.is_public and agent.owner_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Access denied")
+        
+        # Determine build status based on docker_image field
+        if agent.docker_image:
+            return {
+                "agent_id": agent_id,
+                "status": "completed",
+                "image_name": agent.docker_image,
+                "message": "Docker image built successfully",
+                "completed_at": agent.updated_at.isoformat() if agent.updated_at else None
+            }
+        else:
+            # Check if this agent was recently submitted (within last 10 minutes)
+            # to determine if build is in progress
+            from datetime import datetime, timezone, timedelta
+            now = datetime.now(timezone.utc)
+            ten_minutes_ago = now - timedelta(minutes=10)
+            
+            if agent.created_at and agent.created_at > ten_minutes_ago:
+                return {
+                    "agent_id": agent_id,
+                    "status": "building",
+                    "message": "Docker build in progress",
+                    "started_at": agent.created_at.isoformat()
+                }
+            else:
+                return {
+                    "agent_id": agent_id,
+                    "status": "not_started",
+                    "message": "Docker build has not been started"
+                }
+            
+    except Exception as e:
+        logger.error(f"Error getting build status for agent {agent_id}: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
 # =============================================================================
 # SIMPLIFIED API ENDPOINTS FOR EASY INTEGRATION (N8N, etc.)
 # =============================================================================
@@ -669,6 +741,61 @@ async def hire_and_deploy_agent(
         raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
 
 
-
-
+async def build_docker_image_background(agent_id: str, user_id: int, db: Session):
+    """Background task to build Docker image for an agent."""
+    try:
+        logger.info(f"Starting background Docker build for agent {agent_id}")
+        
+        # Import here to avoid circular imports
+        from ..services.agent_service import AgentService
+        from ..services.deployment_service import DeploymentService
+        
+        # Create new database session for background task
+        from ..database.config import get_session_dependency
+        background_db = next(get_session_dependency())
+        
+        try:
+            # Get agent
+            agent_service = AgentService(background_db)
+            agent = background_db.query(Agent).filter(Agent.id == agent_id).first()
+            
+            if not agent:
+                logger.error(f"Agent {agent_id} not found for background Docker build")
+                return
+            
+            logger.info(f"Found agent {agent.name} (ID: {agent.id}) for Docker build")
+            
+            # If agent already has a pre-built image, remove it first
+            if agent.docker_image:
+                logger.info(f"Agent already has pre-built image {agent.docker_image}, removing old image before building new one")
+                try:
+                    deployment_service = DeploymentService(background_db)
+                    deployment_service.remove_prebuilt_image(agent.docker_image)
+                    logger.info(f"Removed old pre-built image {agent.docker_image}")
+                    
+                    # Clear the old image reference
+                    agent.docker_image = None
+                    background_db.commit()
+                except Exception as e:
+                    logger.warning(f"Failed to remove old pre-built image {agent.docker_image}: {e}")
+            
+            # Pre-build Docker image
+            logger.info(f"Starting Docker build for agent {agent_id}")
+            deployment_service = DeploymentService(background_db)
+            image_name = deployment_service.pre_build_agent_image(agent)
+            
+            if image_name:
+                # Update agent with built image
+                agent.docker_image = image_name
+                background_db.commit()
+                logger.info(f"Background Docker build completed successfully for agent {agent_id}: {image_name}")
+            else:
+                logger.error(f"Background Docker build failed for agent {agent_id}")
+                
+        finally:
+            background_db.close()
+            
+    except Exception as e:
+        logger.error(f"Error in background Docker build for agent {agent_id}: {e}")
+        # Don't raise - background tasks should not fail the main request
 

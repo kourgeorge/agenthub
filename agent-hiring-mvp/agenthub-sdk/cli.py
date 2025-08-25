@@ -679,25 +679,64 @@ def publish(ctx, directory, base_url, dry_run, build):
         # Publish the agent
         if build:
             echo(style("📤 Publishing agent with Docker image pre-build...", fg='blue'))
-            echo(style("⏳ Building Docker image - this will take several minutes...", fg='yellow'))
-            echo(style("   Please wait while the image is being built on the server...", fg='yellow'))
+            echo(style("⏳ This will start the Docker build in the background...", fg='yellow'))
         else:
             echo(style("📤 Publishing agent...", fg='blue'))
         
         async def publish_agent():
             async with AgentHubClient(base_url, api_key=api_key) as client:
                 result = await client.submit_agent(agent, str(agent_dir), build_image=build)
-                return result
+                
+                # If build was requested, poll for completion
+                if build and result.get('build_status') == 'started':
+                    echo(style("✓ Agent published successfully!", fg='green'))
+                    echo(f"  Agent ID: {result.get('agent_id', 'Unknown')}")
+                    echo(f"  Status: {result.get('status', 'Unknown')}")
+                    echo(style("  🐳 Docker build started in background", fg='cyan'))
+                    echo(style("⏳ Waiting for Docker build to complete...", fg='yellow'))
+                    
+                    while True:
+                        await asyncio.sleep(5)  # Check every 5 seconds
+                        try:
+                            status = await client.get_build_status(result['agent_id'])
+                            
+                            if status['status'] == 'completed':
+                                echo(style("✓ Docker build completed!", fg='green'))
+                                echo(f"  Image: {status.get('image_name', 'Unknown')}")
+                                if status.get('completed_at'):
+                                    echo(f"  Completed at: {status['completed_at']}")
+                                break
+                            elif status['status'] == 'building':
+                                echo(style("⏳ Still building...", fg='yellow'))
+                                if status.get('started_at'):
+                                    echo(f"  Started at: {status['started_at']}")
+                            elif status['status'] == 'failed':
+                                echo(style("✗ Docker build failed!", fg='red'))
+                                break
+                            elif status['status'] == 'not_started':
+                                echo(style("⚠ Build not started yet, waiting...", fg='yellow'))
+                            
+                        except Exception as e:
+                            echo(style(f"⚠ Warning: Could not check build status: {e}", fg='yellow'))
+                            # Continue waiting even if status check fails
+                    
+                    return result
+                else:
+                    # No build requested or build failed to start
+                    return result
         
         result = asyncio.run(publish_agent())
         
-        echo(style("✓ Agent published successfully!", fg='green'))
-        echo(f"  Agent ID: {result.get('agent_id', 'Unknown')}")
-        echo(f"  Status: {result.get('status', 'Unknown')}")
-        if build and result.get('image_built'):
-            echo(style("  🐳 Docker image pre-built successfully!", fg='cyan'))
-        elif build:
-            echo(style("  ⏳ Docker image building in background...", fg='yellow'))
+        # Show final results for non-build cases
+        if not build or result.get('build_status') != 'started':
+            echo(style("✓ Agent published successfully!", fg='green'))
+            echo(f"  Agent ID: {result.get('agent_id', 'Unknown')}")
+            echo(f"  Status: {result.get('status', 'Unknown')}")
+            if build and result.get('image_built'):
+                echo(style("  🐳 Docker image pre-built successfully!", fg='cyan'))
+            elif build:
+                echo(style("  ⚠ Docker build failed to start", fg='red'))
+        
         show_next_steps("agent publish", agent_id=result.get('agent_id'))
         
         if verbose:

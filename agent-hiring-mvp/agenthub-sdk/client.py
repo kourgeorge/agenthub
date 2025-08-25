@@ -229,6 +229,26 @@ class AgentHubClient:
             if os.path.exists(zip_path):
                 os.unlink(zip_path)
     
+    async def get_build_status(self, agent_id: str) -> Dict[str, Any]:
+        """Get the Docker build status for an agent."""
+        if not self.session:
+            raise RuntimeError("Client not initialized. Use async context manager.")
+        
+        headers = self._get_headers()
+        
+        async with self.session.get(
+            f"{self.api_base}/agents/{agent_id}/build-status",
+            headers=headers,
+        ) as response:
+            if response.status == 200:
+                result = await response.json()
+                logger.debug(f"Build status retrieved: {result}")
+                return result
+            else:
+                error_text = await response.text()
+                logger.error(f"Failed to get build status: {error_text}")
+                raise Exception(f"Failed to get build status: {error_text}")
+    
     async def _validate_main_function(self, code_directory: str, config) -> List[str]:
         """Validate that the agent has the correct structure for its type."""
         errors = []
