@@ -2464,8 +2464,10 @@ def history_deployments(ctx, agent_id, base_url):
 @deploy.command()
 @click.argument('deployment_id', type=str)
 @click.option('--base-url', help='Base URL of the AgentHub server')
+@click.option('--no-wait', is_flag=True, help='Return immediately without waiting for completion')
+@click.option('--timeout', '-t', default=300, help='Timeout in seconds (when waiting)')
 @click.pass_context
-def restart(ctx, deployment_id, base_url):
+def restart(ctx, deployment_id, base_url, no_wait, timeout):
     """Restart a stopped deployment."""
     verbose = ctx.obj.get('verbose', False)
     
