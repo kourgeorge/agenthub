@@ -41,7 +41,6 @@ from .api import (
     acp_router, 
     users_router, 
     billing_router,
-    enhanced_billing_router,
     deployment_router,
     diagnostic_router,
     agent_proxy_router,
@@ -234,7 +233,7 @@ app.include_router(execution_router, prefix="/api/v1")
 app.include_router(acp_router, prefix="/api/v1")
 app.include_router(users_router, prefix="/api/v1")
 app.include_router(billing_router, prefix="/api/v1")
-app.include_router(enhanced_billing_router, prefix="/api/v1")
+
 app.include_router(deployment_router, prefix="/api/v1")
 app.include_router(diagnostic_router, prefix="/api/v1")
 app.include_router(agent_proxy_router, prefix="/api/v1")
@@ -265,7 +264,6 @@ async def root():
             "execution": "/api/v1/execution",
             "acp": "/api/v1/acp",
             "billing": "/api/v1/billing",
-            "enhanced_billing": "/api/v1/enhanced-billing",
             "deployment": "/api/v1/deployment",
         }
     }
