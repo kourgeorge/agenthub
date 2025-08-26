@@ -48,6 +48,11 @@ def require_permission(permission: str):
                 elif isinstance(value, Session):
                     db = value
             
+            # Debug logging
+            logger.info(f"Permission decorator debug - Args: {args}, Kwargs: {kwargs}")
+            logger.info(f"Permission decorator debug - Found current_user: {current_user}, db: {db}")
+            logger.info(f"Permission decorator debug - Required permission: {permission}")
+            
             # If not found in parameters, this is a critical error
             # The permission decorator should only be used with functions that have these dependencies
             if not current_user or not db:
@@ -86,6 +91,11 @@ def require_permission(permission: str):
                     current_user = value
                 elif isinstance(value, Session):
                     db = value
+            
+            # Debug logging
+            logger.info(f"Permission decorator debug - Args: {args}, Kwargs: {kwargs}")
+            logger.info(f"Permission decorator debug - Found current_user: {current_user}, db: {db}")
+            logger.info(f"Permission decorator debug - Required permission: {permission}")
             
             # If not found in parameters, this is a critical error
             # The permission decorator should only be used with functions that have these dependencies

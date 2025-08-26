@@ -539,38 +539,44 @@ async def delete_role(
 ):
     """Delete a role (admin only)."""
     try:
+        logger.info(f"Attempting to delete role with ID: {role_id}")
+        
         role = db.query(Role).filter(Role.id == role_id).first()
         if not role:
+            logger.warning(f"Role with ID {role_id} not found")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Role not found"
             )
         
+        logger.info(f"Found role: {role.name} (system_role: {role.is_system_role})")
+        
         # Prevent deletion of system roles
         if role.is_system_role:
+            logger.warning(f"Attempted to delete system role: {role.name}")
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Cannot delete system roles"
             )
         
-        # Check if role is assigned to any users
+        # Check if role is assigned to any users (both active and inactive)
         users_with_role = db.query(UserRole).filter(
-            and_(
-                UserRole.role_id == role_id,
-                UserRole.is_active == True
-            )
+            UserRole.role_id == role_id
         ).all()
         
-        if users_with_role:
-            user_count = len(users_with_role)
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Cannot delete role '{role.name}' as it is assigned to {user_count} user(s)"
-            )
+        logger.info(f"Role {role.name} is assigned to {len(users_with_role)} users (active and inactive)")
         
+        if users_with_role:
+            # Delete all user role assignments for this role first
+            logger.info(f"Deleting {len(users_with_role)} user role assignments for role: {role.name}")
+            for user_role in users_with_role:
+                db.delete(user_role)
+        
+        logger.info(f"Deleting role: {role.name}")
         db.delete(role)
         db.commit()
         
+        logger.info(f"Successfully deleted role: {role.name}")
         return {
             "success": True,
             "message": f"Role '{role.name}' deleted successfully"
@@ -705,20 +711,40 @@ async def assign_role_to_user(
                 detail="Role not found"
             )
         
-        # Check if role is already assigned to user
+        # Check if role is already assigned to user (active or inactive)
         existing_assignment = db.query(UserRole).filter(
             and_(
                 UserRole.user_id == assignment_data.user_id,
-                UserRole.role_id == role.id,
-                UserRole.is_active == True
+                UserRole.role_id == role.id
             )
         ).first()
         
         if existing_assignment:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"User already has role '{assignment_data.role_name}'"
-            )
+            if existing_assignment.is_active:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"User already has role '{assignment_data.role_name}'"
+                )
+            else:
+                # Reactivate the existing inactive assignment
+                logger.info(f"Reactivating existing inactive role assignment for user {assignment_data.user_id} and role '{assignment_data.role_name}'")
+                existing_assignment.is_active = True
+                existing_assignment.assigned_at = datetime.now(timezone.utc)
+                existing_assignment.assigned_by = current_user.id
+                
+                db.commit()
+                db.refresh(existing_assignment)
+                
+                return {
+                    "success": True,
+                    "message": f"Role '{assignment_data.role_name}' reactivated for user successfully",
+                    "assignment": {
+                        "user_id": existing_assignment.user_id,
+                        "role_name": role.name,
+                        "assigned_at": existing_assignment.assigned_at.isoformat() if existing_assignment.assigned_at else None,
+                        "assigned_by": existing_assignment.assigned_by
+                    }
+                }
         
         # Create new user role assignment
         new_user_role = UserRole(
@@ -806,8 +832,6 @@ async def remove_role_from_user(
         
         # Deactivate the user role assignment
         user_role.is_active = False
-        user_role.removed_at = datetime.now(timezone.utc)
-        user_role.removed_by = current_user.id
         
         db.commit()
         
