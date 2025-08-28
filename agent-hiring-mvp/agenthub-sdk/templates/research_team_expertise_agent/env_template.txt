@@ -1,0 +1,32 @@
+# Environment variables for Team Member Extractor
+# Copy this file to .env and fill in your actual values
+
+# Serper API Key for Google Scholar profile discovery
+# Get your free API key from: https://serper.dev/
+SERPER_API_KEY=your_serper_api_key_here
+
+# LLM Configuration
+# These can be set in config.json or as environment variables
+LLM_PROVIDER=azure  # or "openai"
+LLM_MODEL=gpt-4o-mini
+LLM_TEMPERATURE=0.1
+
+# Azure OpenAI Configuration (if using Azure)
+# These are the only parameters needed for litellm to work with Azure
+AZURE_API_BASE=your_azure_endpoint_here
+AZURE_API_KEY=your_azure_api_key_here
+AZURE_API_VERSION=2024-02-15-preview
+AZURE_MODEL=azure/gpt-4o-2024-08-06
+
+# OpenAI Configuration (if using OpenAI directly)
+OPENAI_API_KEY=your_openai_api_key_here
+
+# Optional: Set logging level
+# LOG_LEVEL=INFO
+
+# Note: This extractor uses:
+# - Serper API to find Google Scholar profile URLs
+# - scholarly library to extract publication data from Google Scholar
+# - Semantic Scholar API for additional data
+# - arXiv API for additional publications
+# - LLM for domain extraction and summary generation
