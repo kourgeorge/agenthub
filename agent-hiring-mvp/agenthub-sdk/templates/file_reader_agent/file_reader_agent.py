@@ -27,7 +27,7 @@ def execute(input_data: Dict[str, Any], config: Optional[Dict[str, Any]] = None)
         if len(file_references) > 1:
             raise ValueError("Only one file reference is supported")
         
-        # Get access_url from file_references (now contains full URLs)
+        # Get file URLs from file_references
         file_references = input_data.get('file_references', [])
         if not file_references or len(file_references) == 0:
             raise Exception("No file references provided")
@@ -149,6 +149,7 @@ def execute(input_data: Dict[str, Any], config: Optional[Dict[str, Any]] = None)
         # If still no host, use default
         if not server_host:
             server_host = 'host.docker.internal'
+            
         return {
             "content": f"Error: {str(e)}",
             "file_id": file_id,

@@ -30,7 +30,7 @@
               "description": "Array of full URLs for downloading the files to read",
               "items": {
                 "type": "string",
-                "format": "uri",
+                "format": "file-reference",
                 "description": "Full URL with embedded token for downloading the file"
               },
               "minItems": 1,
