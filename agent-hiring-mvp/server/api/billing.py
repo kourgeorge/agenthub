@@ -4,7 +4,7 @@ import logging
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Body
-from pydantic import BaseModel, validator
+from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
 
@@ -36,7 +36,8 @@ class AddPaymentMethodRequest(BaseModel):
         # Allow extra fields to be ignored
         extra = "ignore"
     
-    @validator('user_id')
+    @field_validator('user_id')
+    @classmethod
     def validate_user_id(cls, v):
         if v is None or v <= 0:
             raise ValueError('user_id must be a positive integer')
@@ -51,25 +52,29 @@ class CostEstimateRequest(BaseModel):
     avg_cpu_percent: float = 50.0
     avg_memory_gb: float = 1.0
     
-    @validator('deployment_type')
+    @field_validator('deployment_type')
+    @classmethod
     def validate_deployment_type(cls, v):
         if v not in ['acp', 'function', 'persistent']:
             raise ValueError('deployment_type must be one of: acp, function, persistent')
         return v
     
-    @validator('duration_hours')
+    @field_validator('duration_hours')
+    @classmethod
     def validate_duration_hours(cls, v):
         if v <= 0:
             raise ValueError('duration_hours must be positive')
         return v
     
-    @validator('avg_cpu_percent')
+    @field_validator('avg_cpu_percent')
+    @classmethod
     def validate_cpu_percent(cls, v):
         if v < 0 or v > 100:
             raise ValueError('avg_cpu_percent must be between 0 and 100')
         return v
     
-    @validator('avg_memory_gb')
+    @field_validator('avg_memory_gb')
+    @classmethod
     def validate_memory_gb(cls, v):
         if v <= 0:
             raise ValueError('avg_memory_gb must be positive')
