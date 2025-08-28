@@ -18,6 +18,7 @@ from .contact import router as contact_router
 from .webhooks import router as webhooks_router
 from .admin import router as admin_router
 from .metrics import router as metrics_router
+from .files import router as files_router
 
 __all__ = [
     "agents_router",
@@ -38,4 +39,5 @@ __all__ = [
     "webhooks_router",
     "admin_router",
     "metrics_router",
+    "files_router",
 ] 

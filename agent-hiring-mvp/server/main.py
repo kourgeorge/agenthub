@@ -52,7 +52,8 @@ from .api import (
     contact_router,
     webhooks_router,
     admin_router,
-    metrics_router
+    metrics_router,
+    files_router
 )
 
 # Configure logging
@@ -78,6 +79,33 @@ async def cleanup_tokens():
             logger.info("Token cleanup completed")
         except Exception as e:
             logger.error(f"Error during token cleanup: {e}")
+
+
+async def cleanup_expired_files():
+    """Background task to clean up expired temporary files."""
+    while True:
+        try:
+            await asyncio.sleep(3600)  # Run every hour
+            from .services.file_storage_service import FileStorageService
+            from .database.config import get_session_dependency
+            
+            # Get a fresh database session
+            db = get_session_dependency()
+            try:
+                file_service = FileStorageService(db)
+                cleaned_count = file_service.cleanup_expired_files()
+                if cleaned_count > 0:
+                    logger.info(f"File cleanup completed: {cleaned_count} expired files removed")
+                else:
+                    logger.debug("File cleanup completed: no expired files found")
+            except Exception as e:
+                logger.error(f"Error during file cleanup: {e}")
+            finally:
+                db.close()
+                
+        except Exception as e:
+            logger.error(f"Error during file cleanup: {e}")
+            await asyncio.sleep(300)  # Wait 5 minutes on error before retrying
 
 
 
@@ -173,6 +201,10 @@ async def lifespan(app: FastAPI):
         cleanup_task = asyncio.create_task(cleanup_tokens())
         logger.info("Token cleanup task started")
         
+        # Start file cleanup task
+        file_cleanup_task = asyncio.create_task(cleanup_expired_files())
+        logger.info("File cleanup task started")
+        
         # Start container metrics collection task
         metrics_task = asyncio.create_task(collect_container_metrics())
         metrics_collection_active = True
@@ -245,6 +277,7 @@ app.include_router(contact_router, prefix="/api/v1")
 app.include_router(webhooks_router, prefix="/api/v1")
 app.include_router(admin_router, prefix="/api/v1")
 app.include_router(metrics_router, prefix="/api/v1")
+app.include_router(files_router, prefix="/api/v1")
 
 
 @app.get("/")
@@ -263,6 +296,7 @@ async def root():
             "acp": "/api/v1/acp",
             "billing": "/api/v1/billing",
             "deployment": "/api/v1/deployment",
+            "files": "/api/v1/files",
         }
     }
 
@@ -276,6 +310,7 @@ async def health_check():
         "services": {
             "database": "connected",
             "token_cleanup": "active" if cleanup_task and not cleanup_task.done() else "inactive",
+            "file_cleanup": "active" if 'file_cleanup_task' in globals() and file_cleanup_task and not file_cleanup_task.done() else "inactive",
             "metrics_collection": "active" if metrics_collection_active and metrics_task and not metrics_task.done() else "inactive"
         },
         "metrics_collection": {

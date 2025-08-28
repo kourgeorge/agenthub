@@ -5,6 +5,7 @@ from .hiring_service import HiringService
 from .execution_service import ExecutionService
 from .acp_service import ACPService  # Simplified service for protocol info only
 from .permission_service import PermissionService
+from .file_storage_service import FileStorageService
 
 __all__ = [
     "AgentService",
@@ -12,4 +13,5 @@ __all__ = [
     "ExecutionService",
     "ACPService",
     "PermissionService",
+    "FileStorageService",
 ] 

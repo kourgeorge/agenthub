@@ -46,6 +46,7 @@ class User(Base):
     user_api_keys = relationship("UserApiKey", back_populates="user")
     invoices = relationship("Invoice", back_populates="user")
     user_roles = relationship("UserRole", foreign_keys="[UserRole.user_id]", back_populates="user")
+    temporary_files = relationship("TemporaryFile", back_populates="user", cascade="all, delete-orphan")
     
     def __repr__(self) -> str:
         return f"<User(id={self.id}, username='{self.username}', email='{self.email}')>" 

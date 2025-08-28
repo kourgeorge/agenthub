@@ -14,6 +14,7 @@ from .container_resource_usage import ContainerResourceUsage, AgentActivityLog, 
 from .role import Role
 from .user_role import UserRole
 from .permission import Permission
+from .temporary_file import TemporaryFile
 
 
 __all__ = [
@@ -40,4 +41,5 @@ __all__ = [
     "Role",
     "UserRole",
     "Permission",
+    "TemporaryFile",
 ] 
