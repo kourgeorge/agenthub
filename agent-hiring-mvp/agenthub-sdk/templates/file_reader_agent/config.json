@@ -1,0 +1,104 @@
+{
+  "name": "File Reader Agent",
+  "description": "A simple functional agent that reads a file and outputs its content with metadata",
+  "version": "1.0.0",
+  "entry_point": "file_reader_agent.py",
+  "agent_type": "function",
+  "author": "AgentHub Team",
+  "email": "team@agenthub.com",
+  "tags": [
+    "file",
+    "reading",
+    "simple",
+    "functional",
+    "text-processing",
+    "basic",
+    "demo"
+  ],
+  "pricing_model": "free",
+  "requirements": [],
+  "config_schema": {
+    "functions": [
+      {
+        "name": "execute",
+        "description": "Read a file and return its content with metadata",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "file_references": {
+              "type": "array",
+              "description": "Array of full URLs for downloading the files to read",
+              "items": {
+                "type": "string",
+                "format": "uri",
+                "description": "Full URL with embedded token for downloading the file"
+              },
+              "minItems": 1,
+              "maxItems": 1
+            },
+            "server_host": {
+              "type": "string",
+              "description": "Server host address (optional, priority: input > config > env > default)",
+              "default": "host.docker.internal"
+            },
+            "server_port": {
+              "type": "string",
+              "description": "Server port (optional, priority: input > config > env > default)",
+              "default": "8002"
+            }
+          },
+          "required": ["file_references"],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "content": {
+              "type": "string",
+              "description": "The content of the file"
+            },
+            "file_id": {
+              "type": "string",
+              "description": "The file ID that was read"
+            },
+            "filename": {
+              "type": "string",
+              "description": "The filename of the file"
+            },
+            "file_type": {
+              "type": "string",
+              "description": "The MIME type of the file"
+            },
+            "file_size_bytes": {
+              "type": "integer",
+              "description": "Size of the file in bytes"
+            },
+            "content_length": {
+              "type": "integer",
+              "description": "Length of the file content in characters"
+            },
+            "file_url": {
+              "type": "string",
+              "description": "URL to access file information on the server"
+            },
+            "download_url": {
+              "type": "string",
+              "description": "URL to download the file from the server"
+            },
+            "timestamp": {
+              "type": "string",
+              "description": "ISO timestamp of when the response was generated",
+              "format": "date-time"
+            },
+            "agent_type": {
+              "type": "string",
+              "description": "Type of agent that processed the request"
+            }
+          },
+          "required": ["content", "file_id", "filename", "file_type", "file_size_bytes", "content_length", "file_url", "download_url", "timestamp", "agent_type"],
+          "additionalProperties": false
+        }
+      }
+    ]
+  }
+}
