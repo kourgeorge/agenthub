@@ -54,6 +54,7 @@ class FileInfoResponse(BaseModel):
     last_accessed_at: Optional[str]
     created_at: str
     access_url: str
+    server_host: Optional[str] = None
 
 
 class FileListResponse(BaseModel):
@@ -240,6 +241,28 @@ class FileStorageService:
         
         logger.info(f"File {file_id} downloaded successfully: {temp_file.original_filename}")
         return file_path, temp_file.original_filename
+    
+    def get_file_by_token(self, file_id: str, access_token: str) -> Optional[TemporaryFile]:
+        """Get a temporary file by ID and access token (for metadata access)."""
+        logger.debug(f"Getting file metadata for {file_id} with access token")
+        
+        temp_file = self.db.query(TemporaryFile).filter(
+            TemporaryFile.id == file_id,
+            TemporaryFile.access_token == access_token,
+            TemporaryFile.is_deleted == False
+        ).first()
+        
+        if not temp_file:
+            logger.warning(f"File {file_id} not found or access denied for metadata access")
+            return None
+        
+        # Check if file has expired
+        if temp_file.is_expired():
+            logger.warning(f"File {file_id} has expired during metadata access")
+            return None
+        
+        logger.debug(f"File metadata retrieved successfully: {temp_file.original_filename}")
+        return temp_file
     
     def delete_file(self, file_id: str, user_id: int) -> bool:
         """Delete a file (soft delete)."""

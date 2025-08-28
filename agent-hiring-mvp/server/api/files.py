@@ -5,6 +5,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
+import os
 
 from ..database.config import get_session_dependency
 from ..models.user import User
@@ -80,6 +81,7 @@ async def upload_file(
             expires_at=temp_file.expires_at.isoformat(),
             access_token=temp_file.access_token,
             access_url=f"/api/v1/files/{temp_file.id}/download?token={temp_file.access_token}",
+            server_host=os.getenv("AGENTHUB_HOSTNAME", "host.docker.internal"),
             message="File uploaded successfully"
         )
         
@@ -188,6 +190,7 @@ async def get_file_info(
 async def download_file(
     file_id: str,
     token: str = Query(..., description="Access token for the file"),
+    include_metadata: bool = Query(False, description="Include file metadata in response headers"),
     db: Session = Depends(get_session_dependency)
 ):
     """Download a temporary file using access token."""
@@ -204,11 +207,25 @@ async def download_file(
         
         file_path, original_filename = result
         
-        return FileResponse(
+        # Create response with file content
+        response = FileResponse(
             path=file_path,
             filename=original_filename,
             media_type='application/octet-stream'
         )
+        
+        # Add metadata to response headers if requested
+        if include_metadata:
+            # Get additional file metadata
+            temp_file = file_service.get_file_by_token(file_id, token)
+            if temp_file:
+                response.headers["X-File-Name"] = temp_file.original_filename
+                response.headers["X-File-Type"] = temp_file.file_type or "application/octet-stream"
+                response.headers["X-File-Extension"] = temp_file.file_extension or ""
+                response.headers["X-File-Size"] = str(temp_file.file_size)
+                response.headers["X-File-Description"] = temp_file.description or ""
+        
+        return response
         
     except HTTPException:
         raise
