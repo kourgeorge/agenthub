@@ -12,7 +12,8 @@ import logging
 import tempfile
 from typing import Dict, Any, Optional, Tuple
 from pathlib import Path
-import requests
+from urllib.request import urlopen
+from urllib.error import HTTPError, URLError
 from dotenv import load_dotenv
 
 # Load environment variables and configure logging
@@ -61,8 +62,8 @@ class RAGAgent(PersistentAgent):
     def _download_file_from_url(self, file_url: str) -> Tuple[bytes, dict]:
         """Download file content directly from the full URL with access token."""
         try:
-            response = requests.get(file_url, timeout=60)
-            response.raise_for_status()
+            with urlopen(file_url, timeout=60) as response:
+                file_content = response.read()
             
             # Extract metadata from response headers
             metadata = {
@@ -73,7 +74,10 @@ class RAGAgent(PersistentAgent):
                 'description': response.headers.get('X-File-Description', '')
             }
             
-            return response.content, metadata
+            return file_content, metadata
+        except (HTTPError, URLError) as e:
+            logger.error(f"Error downloading file from {file_url}: {e}")
+            raise Exception(f"Failed to download file: {str(e)}")
         except Exception as e:
             logger.error(f"Error downloading file from {file_url}: {e}")
             raise Exception(f"Failed to download file: {str(e)}")
