@@ -62,18 +62,25 @@ class RAGAgent(PersistentAgent):
     def _download_file_from_url(self, file_url: str) -> Tuple[bytes, dict]:
         """Download file content directly from the full URL with access token."""
         try:
+            # Download file directly from the provided URL
+            logger.info(f"Downloading file from: {file_url}")
             with urlopen(file_url, timeout=60) as response:
                 file_content = response.read()
+            
+            file_size = len(file_content)
+            if file_size > 10 * 1024 * 1024:  # 10MB limit
+                raise ValueError(f"File too large ({file_size} bytes). Maximum size is 10MB.")
             
             # Extract metadata from response headers
             metadata = {
                 'filename': response.headers.get('X-File-Name', 'unknown_file'),
                 'file_type': response.headers.get('X-File-Type', 'application/octet-stream'),
                 'file_extension': response.headers.get('X-File-Extension', ''),
-                'file_size': int(response.headers.get('X-File-Size', 0)),
+                'file_size': file_size,
                 'description': response.headers.get('X-File-Description', '')
             }
             
+            logger.info(f"File downloaded successfully. File size: {file_size} bytes")
             return file_content, metadata
         except (HTTPError, URLError) as e:
             logger.error(f"Error downloading file from {file_url}: {e}")
