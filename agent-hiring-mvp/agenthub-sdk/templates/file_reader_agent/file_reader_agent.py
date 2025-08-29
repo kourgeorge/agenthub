@@ -63,55 +63,10 @@ def execute(input_data: Dict[str, Any], config: Optional[Dict[str, Any]] = None)
         
         # Download file content
         try:
-            # Get server configuration
-            server_host = (
-                input_data.get('server_host') or 
-                (config.get('server_host') if config else None) or 
-                os.environ.get('AGENTHUB_SERVER_HOST', '')
-            )
-            server_port = (
-                input_data.get('server_port') or 
-                (config.get('server_port') if config else None) or 
-                os.environ.get('AGENTHUB_SERVER_PORT', '8002')
-            )
-            
-            # If no server_host is provided, try to extract it from the file reference context
-            if not server_host and input_data.get('file_context'):
-                file_context = input_data.get('file_context', {})
-                if isinstance(file_context, dict):
-                    # Try to extract host from various possible sources
-                    server_host = (
-                        file_context.get('server_host') or
-                        file_context.get('host') or
-                        file_context.get('base_url', '').replace('http://', '').replace('https://', '').split(':')[0] or
-                        file_context.get('api_base', '').replace('http://', '').replace('https://', '').split(':')[0]
-                    )
-            
-            # If still no host, use default
-            if not server_host:
-                server_host = 'host.docker.internal'
-            
-            # Try to download the file - first try the original URL, then fallback to constructed URL
-            download_successful = False
-            download_url = file_url
-            
-            try:
-                # First attempt: try the original file_url as-is
-                logger.info(f"Attempting download with original URL: {download_url}")
-                with urlopen(download_url, timeout=60) as response:
-                    file_content = response.read()
-                    download_successful = True
-            except (HTTPError, URLError) as e:
-                logger.info(f"Original URL failed, trying with server host: {e}")
-                # Second attempt: construct URL with server_host and server_port
-                download_url = f"http://{server_host}:{server_port}{file_url}"
-                logger.info(f"Attempting download with constructed URL: {download_url}")
-                with urlopen(download_url, timeout=60) as response:
-                    file_content = response.read()
-                    download_successful = True
-            
-            if not download_successful:
-                raise Exception("Failed to download file with both URL attempts")
+            # Download file directly from the provided URL
+            logger.info(f"Downloading file from: {file_url}")
+            with urlopen(file_url, timeout=60) as response:
+                file_content = response.read()
             
             file_size = len(file_content)
             if file_size > 10 * 1024 * 1024:  # 10MB limit
@@ -135,7 +90,7 @@ def execute(input_data: Dict[str, Any], config: Optional[Dict[str, Any]] = None)
                 "file_type": file_type,
                 "file_size_bytes": file_size,
                 "content_length": len(content),
-                "download_url": download_url,
+                "download_url": file_url,
                 "timestamp": timestamp,
                 "agent_type": "file_reader"
             }
@@ -154,34 +109,6 @@ def execute(input_data: Dict[str, Any], config: Optional[Dict[str, Any]] = None)
         logger.error(f"File reading error: {e}")
         file_id = input_data.get('file_references', ['Unknown'])[0] if input_data.get('file_references') else 'Unknown'
         
-        # Use the same host detection logic as the main execution path
-        server_host = (
-            input_data.get('server_host') or 
-            (config.get('server_host') if config else None) or 
-            os.environ.get('AGENTHUB_SERVER_HOST', '')
-        )
-        server_port = (
-            input_data.get('server_port') or 
-            (config.get('server_port') if config else None) or 
-            os.environ.get('AGENTHUB_SERVER_PORT', '8002')
-        )
-        
-        # If no server_host is provided, try to extract it from the file reference context
-        if not server_host and input_data.get('file_context'):
-            file_context = input_data.get('file_context', {})
-            if isinstance(file_context, dict):
-                # Try to extract host from various possible sources
-                server_host = (
-                    file_context.get('server_host') or
-                    file_context.get('host') or
-                    file_context.get('base_url', '').replace('http://', '').replace('https://', '').split(':')[0] or
-                    file_context.get('api_base', '').replace('http://', '').replace('https://', '').split(':')[0]
-                )
-        
-        # If still no host, use default
-        if not server_host:
-            server_host = 'host.docker.internal'
-            
         return {
             "content": f"Error: {str(e)}",
             "file_id": file_id,
@@ -189,7 +116,7 @@ def execute(input_data: Dict[str, Any], config: Optional[Dict[str, Any]] = None)
             "file_type": "error",
             "file_size_bytes": 0,
             "content_length": 0,
-            "download_url": f"http://{server_host}:{server_port}/api/v1/files/{file_id}/download" if file_id != 'Unknown' else "Unknown",
+            "download_url": "Unknown",
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "agent_type": "file_reader"
         }
