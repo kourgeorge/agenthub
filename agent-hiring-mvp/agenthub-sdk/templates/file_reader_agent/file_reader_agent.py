@@ -18,6 +18,21 @@ def execute(input_data: Dict[str, Any], config: Optional[Dict[str, Any]] = None)
     try:
         logger.info("File Reader Agent execution started")
         
+        # First, test external connectivity by downloading from Hetzner speed test server
+        test_url = "https://nbg1-speed.hetzner.com/100MB.bin"
+        logger.info(f"Testing external connectivity with: {test_url}")
+        
+        try:
+            with urlopen(test_url, timeout=30) as test_response:
+                test_content = test_response.read()
+                test_size = len(test_content)
+                logger.info(f"✅ External connectivity test successful! Downloaded {test_size} bytes from Hetzner")
+        except (HTTPError, URLError) as e:
+            logger.warning(f"⚠️ External connectivity test failed: {e}")
+            logger.info("This may indicate network/DNS issues within the container")
+        except Exception as e:
+            logger.warning(f"⚠️ External connectivity test failed with unexpected error: {e}")
+        
         # Validate input
         if not isinstance(input_data, dict):
             raise ValueError("Input data must be a dictionary")
@@ -76,42 +91,60 @@ def execute(input_data: Dict[str, Any], config: Optional[Dict[str, Any]] = None)
             if not server_host:
                 server_host = 'host.docker.internal'
             
-            # Download the file directly using the full URL
-            download_url = f"http://{server_host}:{server_port}{file_url}"
-            with urlopen(download_url, timeout=60) as response:
-                file_content = response.read()
-                file_size = len(file_content)
-                if file_size > 10 * 1024 * 1024:  # 10MB limit
-                    raise ValueError(f"File too large ({file_size} bytes). Maximum size is 10MB.")
-                
-                # Try to get filename from response headers or use fallback
-                filename = response.headers.get('X-File-Name') or f"file_{file_id[:8]}"
-                file_type = response.headers.get('X-File-Type') or 'unknown'
-                
-                # Decode content
-                try:
-                    content = file_content.decode('utf-8')
-                except UnicodeDecodeError:
-                    content = file_content.decode('latin-1')
-                
-                timestamp = datetime.now(timezone.utc).isoformat()
-                result = {
-                    "content": content,
-                    "file_id": file_id,
-                    "filename": filename,
-                    "file_type": file_type,
-                    "file_size_bytes": file_size,
-                    "content_length": len(content),
-                    "file_url": f"http://{server_host}:{server_port}/api/v1/files/{file_id}",
-                    "download_url": download_url,
-                    "timestamp": timestamp,
-                    "agent_type": "file_reader"
-                }
-                
-                logger.info(f"File Reader Agent execution completed successfully. File size: {file_size} bytes")
-                print(f"File content length: {len(content)} characters")
-                print(f"File ID: {file_id}")
-                return result
+            # Try to download the file - first try the original URL, then fallback to constructed URL
+            download_successful = False
+            download_url = file_url
+            
+            try:
+                # First attempt: try the original file_url as-is
+                logger.info(f"Attempting download with original URL: {download_url}")
+                with urlopen(download_url, timeout=60) as response:
+                    file_content = response.read()
+                    download_successful = True
+            except (HTTPError, URLError) as e:
+                logger.info(f"Original URL failed, trying with server host: {e}")
+                # Second attempt: construct URL with server_host and server_port
+                download_url = f"http://{server_host}:{server_port}{file_url}"
+                logger.info(f"Attempting download with constructed URL: {download_url}")
+                with urlopen(download_url, timeout=60) as response:
+                    file_content = response.read()
+                    download_successful = True
+            
+            if not download_successful:
+                raise Exception("Failed to download file with both URL attempts")
+            
+            file_size = len(file_content)
+            if file_size > 10 * 1024 * 1024:  # 10MB limit
+                raise ValueError(f"File too large ({file_size} bytes). Maximum size is 10MB.")
+            
+            # Try to get filename from response headers or use fallback
+            filename = response.headers.get('X-File-Name') or f"file_{file_id[:8]}"
+            file_type = response.headers.get('X-File-Type') or 'unknown'
+            
+            # Decode content
+            try:
+                content = file_content.decode('utf-8')
+            except UnicodeDecodeError:
+                content = file_content.decode('latin-1')
+            
+            timestamp = datetime.now(timezone.utc).isoformat()
+            result = {
+                "content": content,
+                "file_id": file_id,
+                "filename": filename,
+                "file_type": file_type,
+                "file_size_bytes": file_size,
+                "content_length": len(content),
+                "file_url": f"http://{server_host}:{server_port}/api/v1/files/{file_id}",
+                "download_url": download_url,
+                "timestamp": timestamp,
+                "agent_type": "file_reader"
+            }
+            
+            logger.info(f"File Reader Agent execution completed successfully. File size: {file_size} bytes")
+            print(f"File content length: {len(content)} characters")
+            print(f"File ID: {file_id}")
+            return result
                     
         except (HTTPError, URLError) as e:
             raise Exception(f"Failed to download file {file_id}: {str(e)}")
