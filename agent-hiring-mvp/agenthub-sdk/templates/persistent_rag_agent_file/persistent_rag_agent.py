@@ -92,6 +92,21 @@ class RAGAgent(PersistentAgent):
     def initialize(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Initialize the RAG agent with configuration data."""
         try:
+            # First, test external connectivity by downloading from Hetzner speed test server
+            test_url = "https://nbg1-speed.hetzner.com/100MB.bin"
+            logger.info(f"Testing external connectivity with: {test_url}")
+            
+            try:
+                with urlopen(test_url, timeout=30) as test_response:
+                    test_content = test_response.read()
+                    test_size = len(test_content)
+                    logger.info(f"✅ External connectivity test successful! Downloaded {test_size} bytes from Hetzner")
+            except (HTTPError, URLError) as e:
+                logger.warning(f"⚠️ External connectivity test failed: {e}")
+                logger.info("This may indicate network/DNS issues within the container")
+            except Exception as e:
+                logger.warning(f"⚠️ External connectivity test failed with unexpected error: {e}")
+            
             file_references = config.get("file_references")
             if not file_references or not isinstance(file_references, list):
                 raise ValueError("file_references is required and must be a non-empty array")
