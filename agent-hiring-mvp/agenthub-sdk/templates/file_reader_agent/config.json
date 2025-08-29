@@ -35,16 +35,6 @@
               },
               "minItems": 1,
               "maxItems": 1
-            },
-            "server_host": {
-              "type": "string",
-              "description": "Server host address (optional, priority: input > config > env > default)",
-              "default": "host.docker.internal"
-            },
-            "server_port": {
-              "type": "string",
-              "description": "Server port (optional, priority: input > config > env > default)",
-              "default": "8002"
             }
           },
           "required": ["file_references"],
@@ -56,10 +46,6 @@
             "content": {
               "type": "string",
               "description": "The content of the file"
-            },
-            "file_id": {
-              "type": "string",
-              "description": "The file ID that was read"
             },
             "filename": {
               "type": "string",
@@ -95,7 +81,7 @@
               "description": "Type of agent that processed the request"
             }
           },
-          "required": ["content", "file_id", "filename", "file_type", "file_size_bytes", "content_length", "file_url", "download_url", "timestamp", "agent_type"],
+          "required": ["content", "filename", "file_type", "file_size_bytes", "content_length", "file_url", "download_url", "timestamp", "agent_type"],
           "additionalProperties": false
         }
       }

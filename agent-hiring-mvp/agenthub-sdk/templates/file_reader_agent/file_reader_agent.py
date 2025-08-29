@@ -3,8 +3,7 @@
 
 import json
 import logging
-import os
-from urllib.request import urlopen, Request
+from urllib.request import urlopen
 from urllib.error import HTTPError, URLError
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional
@@ -17,11 +16,11 @@ def execute(input_data: Dict[str, Any], config: Optional[Dict[str, Any]] = None)
     """Main execution function for the File Reader Agent."""
     try:
         logger.info("File Reader Agent execution started")
-        
+
         # First, test external connectivity by downloading from Hetzner speed test server
         test_url = "https://nbg1-speed.hetzner.com/100MB.bin"
         logger.info(f"Testing external connectivity with: {test_url}")
-        
+
         try:
             with urlopen(test_url, timeout=30) as test_response:
                 test_content = test_response.read()
@@ -32,7 +31,7 @@ def execute(input_data: Dict[str, Any], config: Optional[Dict[str, Any]] = None)
             logger.info("This may indicate network/DNS issues within the container")
         except Exception as e:
             logger.warning(f"⚠️ External connectivity test failed with unexpected error: {e}")
-        
+
         # Validate input
         if not isinstance(input_data, dict):
             raise ValueError("Input data must be a dictionary")
@@ -41,77 +40,51 @@ def execute(input_data: Dict[str, Any], config: Optional[Dict[str, Any]] = None)
             raise ValueError("'file_references' is required and must be a non-empty array")
         if len(file_references) > 1:
             raise ValueError("Only one file reference is supported")
-        
+
         # Get file URLs from file_references
         file_references = input_data.get('file_references', [])
         if not file_references or len(file_references) == 0:
             raise Exception("No file references provided")
-        
+
         # Get the first file URL
         file_url = file_references[0]
         if not isinstance(file_url, str):
             raise Exception("File reference must be a string URL")
-        
-        # Extract file_id from the URL for metadata
-        try:
-            # URL format: /api/v1/files/{file_id}/download?token={token}
-            file_id = file_url.split('/files/')[1].split('/download')[0]
-        except (IndexError, AttributeError):
-            file_id = f"file_{hash(file_url) % 10000:04d}"  # Fallback ID
-        
+
+        # Download file directly from the provided URL
         logger.info(f"Downloading file from: {file_url}")
-        
-        # Download file content
-        try:
-            # Download file directly from the provided URL
-            logger.info(f"Downloading file from: {file_url}")
-            with urlopen(file_url, timeout=60) as response:
-                file_content = response.read()
-            
-            file_size = len(file_content)
-            if file_size > 10 * 1024 * 1024:  # 10MB limit
-                raise ValueError(f"File too large ({file_size} bytes). Maximum size is 10MB.")
-            
-            # Try to get filename from response headers or use fallback
-            filename = response.headers.get('X-File-Name') or f"file_{file_id[:8]}"
-            file_type = response.headers.get('X-File-Type') or 'unknown'
-            
-            # Decode content
-            try:
-                content = file_content.decode('utf-8')
-            except UnicodeDecodeError:
-                content = file_content.decode('latin-1')
-            
-            timestamp = datetime.now(timezone.utc).isoformat()
-            result = {
-                "content": content,
-                "file_id": file_id,
-                "filename": filename,
-                "file_type": file_type,
-                "file_size_bytes": file_size,
-                "content_length": len(content),
-                "download_url": file_url,
-                "timestamp": timestamp,
-                "agent_type": "file_reader"
-            }
-            
-            logger.info(f"File Reader Agent execution completed successfully. File size: {file_size} bytes")
-            print(f"File content length: {len(content)} characters")
-            print(f"File ID: {file_id}")
-            return result
-                    
-        except (HTTPError, URLError) as e:
-            raise Exception(f"Failed to download file {file_id}: {str(e)}")
-        except Exception as e:
-            raise Exception(f"Failed to process file {file_id}: {str(e)}")
-        
+        with urlopen(file_url, timeout=60) as response:
+            file_content = response.read()
+
+        file_size = len(file_content)
+        if file_size > 10 * 1024 * 1024:  # 10MB limit
+            raise ValueError(f"File too large ({file_size} bytes). Maximum size is 10MB.")
+
+        # Try to get filename from response headers or use fallback
+        filename = response.headers.get('X-File-Name')
+        file_type = response.headers.get('X-File-Type')
+        content = file_content.decode('utf-8')
+
+        timestamp = datetime.now(timezone.utc).isoformat()
+        result = {
+            "content": content,
+            "filename": filename,
+            "file_type": file_type,
+            "file_size_bytes": file_size,
+            "content_length": len(content),
+            "download_url": file_url,
+            "timestamp": timestamp,
+            "agent_type": "file_reader"
+        }
+
+        logger.info(f"File Reader Agent execution completed successfully. File size: {file_size} bytes")
+        return result
+
     except (ValueError, Exception) as e:
         logger.error(f"File reading error: {e}")
-        file_id = input_data.get('file_references', ['Unknown'])[0] if input_data.get('file_references') else 'Unknown'
-        
+
         return {
             "content": f"Error: {str(e)}",
-            "file_id": file_id,
             "filename": "Error",
             "file_type": "error",
             "file_size_bytes": 0,
