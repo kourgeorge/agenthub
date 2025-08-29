@@ -1207,9 +1207,9 @@ class PersistentAgent(ABC):
         return json.loads(config_file.file_content)
 
     async def execute_persistent_agent(self, deployment_id: str, input_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute a persistent agent in its container via docker exec."""
+        """Execute a persistent agent in the deployed container asynchronously."""
         try:
-            # Get deployment information
+            # Get deployment
             deployment = self.db.query(AgentDeployment).filter(
                 AgentDeployment.deployment_id == deployment_id
             ).first()
@@ -1218,7 +1218,7 @@ class PersistentAgent(ABC):
                 return {"error": "Deployment not found"}
             
             if deployment.status != DeploymentStatus.RUNNING.value:
-                return {"error": "Deployment is not running"}
+                return {"error": f"Deployment is not running (status: {deployment.status})"}
             
             # Get agent configuration to determine entry point and class
             from ..models.agent import Agent
@@ -1239,6 +1239,121 @@ class PersistentAgent(ABC):
                     
             except Exception as e:
                 return {"error": f"Failed to get agent configuration: {str(e)}"}
+            
+            # IMPORTANT: For persistent agents, we need to execute in a non-blocking way
+            # so the execution status can be updated and the frontend can poll
+            logger.info(f"Starting non-blocking execution for persistent agent in container {deployment.container_id}")
+            
+            # Start execution in background thread to avoid blocking
+            import threading
+            
+            def execute_in_thread():
+                try:
+                    # Execute the persistent agent and get result
+                    result = self._execute_persistent_agent_sync(deployment_id, input_data)
+                    
+                    # Update execution status in database based on result
+                    if result.get("status") == "success":
+                        # Update execution to completed
+                        from ..models.execution import ExecutionStatus
+                        from ..services.execution_service import ExecutionService
+                        from ..database.config import get_session
+                        
+                        # Create a new database session for the background thread
+                        with get_session() as db_session:
+                            execution_service = ExecutionService(db_session)
+                            execution_service.update_execution_status(
+                                input_data.get("execution_id"), 
+                                ExecutionStatus.COMPLETED, 
+                                result.get("result"),
+                                container_logs=result.get("container_logs")
+                            )
+                        logger.info(f"✅ Persistent agent execution {input_data.get('execution_id')} completed successfully")
+                    else:
+                        # Update execution to failed
+                        from ..models.execution import ExecutionStatus
+                        from ..services.execution_service import ExecutionService
+                        from ..database.config import get_session
+                        
+                        # Create a new database session for the background thread
+                        with get_session() as db_session:
+                            execution_service = ExecutionService(db_session)
+                            execution_service.update_execution_status(
+                                input_data.get("execution_id"), 
+                                ExecutionStatus.FAILED, 
+                                error_message=result.get("error")
+                            )
+                        logger.error(f"❌ Persistent agent execution {input_data.get('execution_id')} failed: {result.get('error')}")
+                        
+                except Exception as e:
+                    logger.error(f"Background execution thread failed: {e}")
+                    # Update execution to failed
+                    try:
+                        from ..models.execution import ExecutionStatus
+                        from ..services.execution_service import ExecutionService
+                        from ..database.config import get_session
+                        
+                        # Create a new database session for the background thread
+                        with get_session() as db_session:
+                            execution_service = ExecutionService(db_session)
+                            execution_service.update_execution_status(
+                                input_data.get("execution_id"), 
+                                ExecutionStatus.FAILED, 
+                                error_message=str(e)
+                            )
+                    except Exception as update_error:
+                        logger.error(f"Failed to update execution status: {update_error}")
+            
+            # Start execution in background thread
+            thread = threading.Thread(target=execute_in_thread, daemon=True)
+            thread.start()
+            
+            # Return immediately with "started" status
+            return {
+                "status": "started",
+                "message": "Persistent agent execution started in background",
+                "deployment_id": deployment_id
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to start persistent agent execution in background: {e}")
+            return {"error": f"Failed to start execution: {str(e)}"}
+
+    def _execute_persistent_agent_sync(self, deployment_id: str, input_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute a persistent agent in its container synchronously (called from background thread)."""
+        try:
+            # Get deployment information with new database session
+            from ..database.config import get_session
+            with get_session() as db_session:
+                deployment = db_session.query(AgentDeployment).filter(
+                    AgentDeployment.deployment_id == deployment_id
+                ).first()
+                
+                if not deployment:
+                    return {"error": "Deployment not found"}
+                
+                if deployment.status != DeploymentStatus.RUNNING.value:
+                    return {"error": "Deployment is not running"}
+                
+                # Get agent configuration to determine entry point and class
+                from ..models.agent import Agent
+                agent = db_session.query(Agent).filter(Agent.id == deployment.agent_id).first()
+                if not agent:
+                    return {"error": "Agent not found"}
+                
+                # Get agent configuration from config.json file
+                try:
+                    agent_config = self._get_agent_config_from_files(deployment.agent_id)
+                    entry_point = agent_config.get('entry_point')
+                    agent_class = agent_config.get('agent_class')
+                    
+                    if not entry_point:
+                        return {"error": "Agent configuration missing 'entry_point' in config.json"}
+                    if not agent_class:
+                        return {"error": "Agent configuration missing 'agent_class' in config.json"}
+                        
+                except Exception as e:
+                    return {"error": f"Failed to get agent configuration: {str(e)}"}
             
             # Execute in container - use centralized container naming
             container_name = generate_container_name(deployment)
@@ -1269,7 +1384,7 @@ class PersistentAgent(ABC):
             return {"error": str(e)}
 
     def initialize_persistent_agent(self, deployment_id: str, init_config: Dict[str, Any]) -> Dict[str, Any]:
-        """Initialize a persistent agent in its container via docker exec."""
+        """Initialize a persistent agent in background thread (non-blocking)."""
         try:
             # Get deployment information
             deployment = self.db.query(AgentDeployment).filter(
@@ -1302,6 +1417,121 @@ class PersistentAgent(ABC):
             except Exception as e:
                 return {"error": f"Failed to get agent configuration: {str(e)}"}
             
+            # IMPORTANT: For persistent agents, we need to initialize in a non-blocking way
+            # so the initialization status can be updated and the frontend can poll
+            logger.info(f"Starting non-blocking initialization for persistent agent in container {deployment.container_id}")
+            
+            # Start initialization in background thread to avoid blocking
+            import threading
+            
+            def initialize_in_thread():
+                try:
+                    # Initialize the persistent agent and get result
+                    result = self._initialize_persistent_agent_sync(deployment_id, init_config)
+                    
+                    # Update execution status in database based on result
+                    if result.get("status") == "success":
+                        # Update execution to completed
+                        from ..models.execution import ExecutionStatus
+                        from ..services.execution_service import ExecutionService
+                        from ..database.config import get_session
+                        
+                        # Create a new database session for the background thread
+                        with get_session() as db_session:
+                            execution_service = ExecutionService(db_session)
+                            execution_service.update_execution_status(
+                                init_config.get("execution_id"), 
+                                ExecutionStatus.COMPLETED, 
+                                result.get("result"),
+                                container_logs=result.get("container_logs")
+                            )
+                        logger.info(f"✅ Persistent agent initialization {init_config.get('execution_id')} completed successfully")
+                    else:
+                        # Update execution to failed
+                        from ..models.execution import ExecutionStatus
+                        from ..services.execution_service import ExecutionService
+                        from ..database.config import get_session
+                        
+                        # Create a new database session for the background thread
+                        with get_session() as db_session:
+                            execution_service = ExecutionService(db_session)
+                            execution_service.update_execution_status(
+                                init_config.get("execution_id"), 
+                                ExecutionStatus.FAILED, 
+                                error_message=result.get("error")
+                            )
+                        logger.error(f"❌ Persistent agent initialization {init_config.get('execution_id')} failed: {result.get('error')}")
+                        
+                except Exception as e:
+                    logger.error(f"Background initialization thread failed: {e}")
+                    # Update execution to failed
+                    try:
+                        from ..models.execution import ExecutionStatus
+                        from ..services.execution_service import ExecutionService
+                        from ..database.config import get_session
+                        
+                        # Create a new database session for the background thread
+                        with get_session() as db_session:
+                            execution_service = ExecutionService(db_session)
+                            execution_service.update_execution_status(
+                                init_config.get("execution_id"), 
+                                ExecutionStatus.FAILED, 
+                                error_message=str(e)
+                            )
+                    except Exception as update_error:
+                        logger.error(f"Failed to update execution status: {update_error}")
+            
+            # Start initialization in background thread
+            thread = threading.Thread(target=initialize_in_thread, daemon=True)
+            thread.start()
+            
+            # Return immediately with "started" status
+            return {
+                "status": "started",
+                "message": "Persistent agent initialization started in background",
+                "deployment_id": deployment_id
+            }
+                
+        except Exception as e:
+            logger.error(f"Error initializing persistent agent: {e}")
+            return {"error": str(e)}
+
+    def _initialize_persistent_agent_sync(self, deployment_id: str, init_config: Dict[str, Any]) -> Dict[str, Any]:
+        """Initialize a persistent agent in its container synchronously (called from background thread)."""
+        try:
+            # Get deployment information with new database session
+            from ..database.config import get_session
+            with get_session() as db_session:
+                deployment = db_session.query(AgentDeployment).filter(
+                    AgentDeployment.deployment_id == deployment_id
+                ).first()
+                
+                if not deployment:
+                    return {"error": "Deployment not found"}
+                
+                if deployment.status != DeploymentStatus.RUNNING.value:
+                    return {"error": "Deployment is not running"}
+                
+                # Get agent configuration to determine entry point and class
+                from ..models.agent import Agent
+                agent = db_session.query(Agent).filter(Agent.id == deployment.agent_id).first()
+                if not agent:
+                    return {"error": "Agent not found"}
+                
+                # Get agent configuration from config.json file
+                try:
+                    agent_config = self._get_agent_config_from_files(deployment.agent_id)
+                    entry_point = agent_config.get('entry_point')
+                    agent_class = agent_config.get('agent_class')
+                    
+                    if not entry_point:
+                        return {"error": "Agent configuration missing 'entry_point' in config.json"}
+                    if not agent_class:
+                        return {"error": "Agent configuration missing 'agent_class' in config.json"}
+                        
+                except Exception as e:
+                    return {"error": f"Failed to get agent configuration: {str(e)}"}
+            
             # Execute in container - use centralized container naming
             container_name = generate_container_name(deployment)
             exec_input = {
@@ -1313,10 +1543,10 @@ class PersistentAgent(ABC):
             
             result = self._execute_in_container(container_name, exec_input)
             
-            if result.get("status") == "success":
+            if result.get('status') == 'success':
                 # Update hiring state in database
                 try:
-                    hiring = self.db.query(Hiring).filter(Hiring.id == deployment.hiring_id).first()
+                    hiring = db_session.query(Hiring).filter(Hiring.id == deployment.hiring_id).first()
                     if hiring:
                         hiring.state = {
                             'status': 'ready',
@@ -1326,14 +1556,15 @@ class PersistentAgent(ABC):
                             'last_accessed': time.time(),
                             'execution_count': 0
                         }
-                        self.db.commit()
-                        logger.info(f"Updated hiring state for hiring {deployment.hiring_id}")
+                        db_session.commit()
+                        logger.info(f"Updated hiring state for {deployment.hiring_id}")
                 except Exception as e:
-                    logger.error(f"Failed to update hiring state: {e}")
+                    logger.warning(f"Failed to update hiring state: {e}")
                 
                 return {
                     "status": "success",
                     "result": result.get("result", {}),
+                    "message": result.get("message", "Initialization completed successfully"),
                     "container_logs": result.get("container_logs", "")
                 }
             else:

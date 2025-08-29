@@ -279,23 +279,33 @@ class ExecutionService:
                     from .deployment_service import DeploymentService
                     deployment_service = DeploymentService(self.db)
                     
-                    # Execute persistent agent directly (will run in background task)
+                    # Execute persistent agent (now non-blocking)
                     import time
                     start_time = time.time()
                     
                     result = await deployment_service.execute_persistent_agent(deployment.deployment_id, execution.input_data or {})
                     
-                    # Track execution time
-                    execution_time = time.time() - start_time
-                    logger.info(f"⏱️ Persistent agent execution completed in {execution_time:.2f}s")
-                    
-                    # Extract container logs from the result
-                    container_logs = result.get("container_logs", "")
-                    logger.info(f"Persistent agent execution for {execution_id}, status: {result.get('status')}, container logs length: {len(container_logs)}")
-                    if container_logs:
-                        logger.info(f"First 200 chars of container logs: {container_logs[:200]}...")
-                    
-                    if result.get("status") == "success":
+                    # Check if execution started successfully (non-blocking mode)
+                    if result.get("status") == "started":
+                        logger.info(f"🚀 Persistent agent execution started in background for {execution_id}")
+                        # Return RUNNING status for asynchronous execution
+                        runtime_result = RuntimeResult(
+                            status=RuntimeStatus.RUNNING,
+                            output=None,
+                            execution_time=0.0,
+                            container_logs="Persistent agent execution started in background"
+                        )
+                    elif result.get("status") == "success":
+                        # Handle immediate success (if any)
+                        execution_time = time.time() - start_time
+                        logger.info(f"⏱️ Persistent agent execution completed in {execution_time:.2f}s")
+                        
+                        # Extract container logs from the result
+                        container_logs = result.get("container_logs", "")
+                        logger.info(f"Persistent agent execution for {execution_id}, status: {result.get('status')}, container logs length: {len(container_logs)}")
+                        if container_logs:
+                            logger.info(f"First 200 chars of container logs: {container_logs[:200]}...")
+                        
                         runtime_result = RuntimeResult(
                             status=RuntimeStatus.COMPLETED,
                             output=result.get("result", {}),
@@ -303,11 +313,13 @@ class ExecutionService:
                             container_logs=container_logs
                         )
                     else:
+                        # Handle errors
+                        error_msg = result.get("error", "Execution failed")
+                        logger.error(f"Persistent agent execution failed: {error_msg}")
                         runtime_result = RuntimeResult(
                             status=RuntimeStatus.FAILED,
-                            error=result.get("error", "Execution failed"),
-                            execution_time=execution_time,
-                            container_logs=container_logs
+                            error=error_msg,
+                            container_logs=result.get("container_logs", "")
                         )
                 else:
                     # Persistent agents require Docker deployment - no in-process fallback
