@@ -35,10 +35,10 @@
           "properties": {
             "file_references": {
               "type": "array",
-              "description": "Array of file reference IDs for uploaded documents to index for RAG",
+              "description": "Array of full URLs with access tokens for uploaded documents to index for RAG",
               "items": {
                 "type": "string",
-                "format": "file-reference"
+                "format": "uri"
               },
               "minItems": 1,
               "maxItems": 10
@@ -79,14 +79,6 @@
               "type": "string",
               "description": "Unique identifier for this agent instance (used for storage isolation)",
               "default": "default"
-            },
-            "file_tokens": {
-              "type": "object",
-              "description": "Access tokens for the uploaded files (file_id -> access_token mapping)",
-              "additionalProperties": {
-                "type": "string"
-              },
-              "default": {}
             }
           },
           "required": [

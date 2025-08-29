@@ -1,13 +1,9 @@
 #!/usr/bin/env python3
 """
-Persistent RAG Agent - Refactored Implementation
+Persistent RAG Agent - Simplified Implementation
 
-A clean, efficient implementation of a persistent RAG agent that demonstrates:
-1. Inheritance from PersistentAgent base class
-2. Proper state management using _get_state/_set_state
-3. Clean separation of initialize/execute/cleanup phases
-4. Focus on business logic only - no platform concerns
-5. Persistent vector database storage on disk
+A clean, efficient implementation of a persistent RAG agent that handles
+full URLs with access tokens directly from the widget.
 """
 
 import os
@@ -41,7 +37,7 @@ from agenthub_sdk.agent import PersistentAgent
 
 
 class RAGAgent(PersistentAgent):
-    """Clean Persistent RAG Agent Implementation"""
+    """Simplified Persistent RAG Agent Implementation"""
 
     def __init__(self):
         super().__init__()
@@ -50,18 +46,6 @@ class RAGAgent(PersistentAgent):
         self.qa_chain = None
         self.base_storage_dir = Path("/tmp/agenthub_persistent_rag")
         self.base_storage_dir.mkdir(exist_ok=True)
-        
-        # Configure file service
-        self.file_service_url = self._get_backend_url()
-        self.api_key = os.getenv("API_KEY", "")
-        logger.info(f"File service URL: {self.file_service_url}")
-
-    def _get_backend_url(self) -> str:
-        """Get backend URL with fallbacks."""
-        backend_url = os.getenv("BACKEND_URL") or os.getenv("FILE_SERVICE_URL")
-        if not backend_url:
-            backend_url = "http://host.docker.internal:8002/api/v1/files" if os.path.exists("/.dockerenv") else "http://localhost:8002/api/v1/files"
-        return backend_url
 
     def _get_storage_path(self, identifier: str) -> Path:
         """Get storage path for this agent instance."""
@@ -74,26 +58,25 @@ class RAGAgent(PersistentAgent):
     def _get_documents_path(self) -> Path:
         return self._get_storage_path("documents.json")
 
-    def _download_file_from_service(self, file_id: str) -> Tuple[bytes, dict]:
-        """Download file content and metadata from the file service."""
-        access_token = self._get_state(f"file_token_{file_id}")
-        if not access_token:
-            raise Exception(f"No access token found for file {file_id}")
-        
-        download_url = f"{self.file_service_url}/{file_id}/download?token={access_token}&include_metadata=true"
-        response = requests.get(download_url, timeout=60)
-        response.raise_for_status()
-        
-        # Extract metadata from response headers
-        metadata = {
-            'filename': response.headers.get('X-File-Name', f'file_{file_id[:8]}'),
-            'file_type': response.headers.get('X-File-Type', 'application/octet-stream'),
-            'file_extension': response.headers.get('X-File-Extension', ''),
-            'file_size': int(response.headers.get('X-File-Size', 0)),
-            'description': response.headers.get('X-File-Description', '')
-        }
-        
-        return response.content, metadata
+    def _download_file_from_url(self, file_url: str) -> Tuple[bytes, dict]:
+        """Download file content directly from the full URL with access token."""
+        try:
+            response = requests.get(file_url, timeout=60)
+            response.raise_for_status()
+            
+            # Extract metadata from response headers
+            metadata = {
+                'filename': response.headers.get('X-File-Name', 'unknown_file'),
+                'file_type': response.headers.get('X-File-Type', 'application/octet-stream'),
+                'file_extension': response.headers.get('X-File-Extension', ''),
+                'file_size': int(response.headers.get('X-File-Size', 0)),
+                'description': response.headers.get('X-File-Description', '')
+            }
+            
+            return response.content, metadata
+        except Exception as e:
+            logger.error(f"Error downloading file from {file_url}: {e}")
+            raise Exception(f"Failed to download file: {str(e)}")
 
     def initialize(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Initialize the RAG agent with configuration data."""
@@ -102,16 +85,6 @@ class RAGAgent(PersistentAgent):
             if not file_references or not isinstance(file_references, list):
                 raise ValueError("file_references is required and must be a non-empty array")
             
-            # Store file tokens
-            file_tokens = config.get("file_tokens", {})
-            for key, value in config.items():
-                if key.endswith('_tokens') and isinstance(value, dict):
-                    file_tokens.update(value)
-            
-            for file_id in file_references:
-                if file_id in file_tokens:
-                    self._set_state(f"file_token_{file_id}", file_tokens[file_id])
-
             # Check if already initialized
             if self._is_initialized():
                 return self._create_response("success", f"Agent already initialized with {len(self._get_state('file_references', []))} files")
@@ -194,7 +167,7 @@ class RAGAgent(PersistentAgent):
                 logger.warning(f"Failed to load existing index: {e}")
 
         # Create new index
-        content, file_metadata = self._load_documents_from_files(file_references)
+        content, file_metadata = self._load_documents_from_urls(file_references)
         if not content.strip():
             raise ValueError("No content found in the uploaded files")
 
@@ -323,27 +296,27 @@ class RAGAgent(PersistentAgent):
             logger.error(f"Error loading vectorstore from disk: {e}")
             return None
 
-    def _load_documents_from_files(self, file_references: list) -> Tuple[str, list]:
-        """Load document content from file references."""
+    def _load_documents_from_urls(self, file_urls: list) -> Tuple[str, list]:
+        """Load document content directly from URLs."""
         all_content = []
         file_metadata = []
         
-        for file_id in file_references:
+        for file_url in file_urls:
             try:
-                file_content, metadata = self._download_file_from_service(file_id)
+                file_content, metadata = self._download_file_from_url(file_url)
                 content = self._process_file_content(file_content, metadata['filename'], metadata['file_type'])
                 
                 if content.strip():
                     all_content.append(content)
                     file_metadata.append({
-                        'file_id': file_id,
+                        'file_url': file_url,
                         'filename': metadata['filename'],
                         'file_type': metadata['file_type'],
                         'content_length': len(content)
                     })
                     
             except Exception as e:
-                logger.error(f"Error processing file {file_id}: {e}")
+                logger.error(f"Error processing file from {file_url}: {e}")
                 continue
         
         if not all_content:
@@ -433,7 +406,9 @@ if __name__ == "__main__":
     # Test initialization
     print("1. Testing initialization...")
     init_result = agent.initialize({
-        "file_references": ["test_file_1", "test_file_2"],
+        "file_references": [
+            "http://example.com/api/v1/files/test123/download?token=abc123"
+        ],
         "model_name": "gpt-4o-mini",
         "temperature": 0,
         "agent_id": "test_agent"

@@ -10,11 +10,11 @@ The JSON Schema format provides:
 - **Better Developer Experience**: Clear documentation of agent capabilities
 - **JSON Schema Compatibility**: Works with standard JSON Schema tools and validators
 
-## 🆕 What's New: File Upload Support
+## 🆕 What's New: Direct URL File Support
 
-The agent now supports **file uploads** instead of website URLs:
-- **File Processing**: Handles multiple file types (PDF, TXT, CSV, JSON, etc.)
-- **File Service Integration**: Downloads files from the AgentHub file service
+The agent now supports **direct file URLs** with embedded access tokens:
+- **Direct URL Processing**: Handles full URLs with embedded access tokens
+- **No Token Management**: Widget provides complete URLs, no separate token handling
 - **Multi-format Support**: Processes different document formats automatically
 - **File Metadata Tracking**: Maintains information about processed files
 
@@ -42,10 +42,10 @@ The agent uses a flat JSON Schema structure in `config_schema` for the main exec
           "properties": {
             "file_references": {
               "type": "array",
-              "description": "Array of file reference IDs for uploaded documents",
+              "description": "Array of full URLs with access tokens for uploaded documents",
               "items": {
                 "type": "string",
-                "format": "file-reference"
+                "format": "uri"
               },
               "minItems": 1,
               "maxItems": 10
@@ -174,15 +174,15 @@ The agent supports multiple file formats and automatically processes them:
 - **Other Formats**: Treated as text with fallback processing
 
 ### **File Processing Flow**
-1. **File Download**: Downloads files from AgentHub file service using file IDs
+1. **Direct URL Download**: Downloads files directly from provided URLs with embedded tokens
 2. **Type Detection**: Automatically detects file type from MIME type and extension
 3. **Content Extraction**: Uses appropriate LangChain loader for each file type
 4. **Text Processing**: Splits content into chunks for vector indexing
 5. **Metadata Tracking**: Maintains information about processed files
 
-### **File Service Integration**
-- **API Endpoint**: Configurable file service URL (default: `http://localhost:8002/api/v1/files`)
-- **Authentication**: Uses API key for secure file access
+### **URL Processing**
+- **Direct Downloads**: No intermediate file service calls needed
+- **Embedded Authentication**: Access tokens are part of the URL
 - **Error Handling**: Graceful fallback if individual files fail to process
 - **Batch Processing**: Handles multiple files in a single initialization
 
@@ -190,14 +190,13 @@ The agent supports multiple file formats and automatically processes them:
 
 ### Initialization
 ```bash
-# Initialize the agent with uploaded files
+# Initialize the agent with file URLs
 agenthub hired initialize <hiring_id> --config '{
-  "file_references": ["file_id_1", "file_id_2", "file_id_3"],
-  "file_tokens": {
-    "file_id_1": "access_token_1",
-    "file_id_2": "access_token_2", 
-    "file_id_3": "access_token_3"
-  },
+  "file_references": [
+    "http://example.com/api/v1/files/file_id_1/download?token=access_token_1",
+    "http://example.com/api/v1/files/file_id_2/download?token=access_token_2",
+    "http://example.com/api/v1/files/file_id_3/download?token=access_token_3"
+  ],
   "model_name": "gpt-4",
   "temperature": 0,
   "chunk_size": 1000,
@@ -207,7 +206,7 @@ agenthub hired initialize <hiring_id> --config '{
 
 **Note**: The `agent_id` parameter is optional but recommended for better storage isolation.
 
-**Important**: The `file_tokens` parameter is required for the agent to access uploaded files. Each file reference must have a corresponding access token that was returned when the file was uploaded.
+**Important**: The `file_references` parameter now expects full URLs with embedded access tokens. The widget will provide these complete URLs, eliminating the need for separate token management.
 
 ### Execution
 ```bash
@@ -269,7 +268,7 @@ agenthub agent validate --directory agenthub-sdk/templates/persistent_rag_agent
 agenthub agent publish --directory agenthub-sdk/templates/persistent_rag_agent
 
 # Test initialization
-agenthub hired initialize <hiring_id> --config '{"file_references": ["file_id_1", "file_id_2"]}'
+agenthub hired initialize <hiring_id> --config '{"file_references": ["http://example.com/api/v1/files/file_id_1/download?token=token1", "http://example.com/api/v1/files/file_id_2/download?token=token2"]}'
 
 # Test execution
 agenthub execute hiring <hiring_id> --input '{"question": "What is this about?"}'
@@ -370,6 +369,7 @@ If you have existing persistent agents, you can migrate them to JSON Schema form
 - Agent not initialized before execution
 - State not properly managed between calls
 - Initialization configuration missing required fields
+- Invalid file URLs (must be complete URLs with access tokens)
 
 ### Vector Database Issues
 - **Storage Permissions**: Ensure `/tmp` directory is writable
