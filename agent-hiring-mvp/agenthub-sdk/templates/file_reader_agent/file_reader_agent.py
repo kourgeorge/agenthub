@@ -135,7 +135,6 @@ def execute(input_data: Dict[str, Any], config: Optional[Dict[str, Any]] = None)
                 "file_type": file_type,
                 "file_size_bytes": file_size,
                 "content_length": len(content),
-                "file_url": f"http://{server_host}:{server_port}/api/v1/files/{file_id}",
                 "download_url": download_url,
                 "timestamp": timestamp,
                 "agent_type": "file_reader"
@@ -190,7 +189,6 @@ def execute(input_data: Dict[str, Any], config: Optional[Dict[str, Any]] = None)
             "file_type": "error",
             "file_size_bytes": 0,
             "content_length": 0,
-            "file_url": f"http://{server_host}:{server_port}/api/v1/files/{file_id}" if file_id != 'Unknown' else "Unknown",
             "download_url": f"http://{server_host}:{server_port}/api/v1/files/{file_id}/download" if file_id != 'Unknown' else "Unknown",
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "agent_type": "file_reader"
