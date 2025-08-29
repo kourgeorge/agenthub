@@ -1,6 +1,6 @@
-# Persistent RAG Agent (File-Based)
+# File RAG Agent
 
-This agent demonstrates the new **JSON Schema format** for AgentHub persistent agents with **file upload support**. It shows how to define clear input and output schemas using the flat JSON Schema structure while maintaining the persistent agent lifecycle and processing uploaded documents.
+This agent demonstrates the new **JSON Schema format** for AgentHub persistent agents with **direct file URL support**. It shows how to define clear input and output schemas using the flat JSON Schema structure while maintaining the persistent agent lifecycle and processing files directly from URLs with embedded access tokens.
 
 ## 🆕 What's New: JSON Schema Format
 

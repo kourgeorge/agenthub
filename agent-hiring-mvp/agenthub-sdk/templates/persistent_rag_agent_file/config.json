@@ -1,6 +1,6 @@
 {
   "name": "File RAG Agent",
-  "description": "A RAG (Retrieval-Augmented Generation) agent that demonstrates the new persistent agent architecture with separate initialization and execution phases using inheritance-based design.",
+  "description": "A RAG (Retrieval-Augmented Generation) agent that processes files directly from URLs with embedded access tokens, featuring persistent vector database storage and efficient document indexing.",
   "version": "1.0.0",
   "entry_point": "persistent_rag_agent.py",
   "agent_type": "persistent",

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Persistent RAG Agent - Simplified Implementation
+File RAG Agent - Simplified Implementation
 
-A clean, efficient implementation of a persistent RAG agent that handles
+A clean, efficient implementation of a RAG agent that handles
 full URLs with access tokens directly from the widget.
 """
 
@@ -37,7 +37,7 @@ from agenthub_sdk.agent import PersistentAgent
 
 
 class RAGAgent(PersistentAgent):
-    """Simplified Persistent RAG Agent Implementation"""
+    """Simplified File RAG Agent Implementation"""
 
     def __init__(self):
         super().__init__()
@@ -428,4 +428,4 @@ if __name__ == "__main__":
 
     print("\n=== Local testing completed ===")
 else:
-    print("Persistent agent loaded. The platform will use Docker exec to run agent methods.")
+    print("File RAG agent loaded. The platform will use Docker exec to run agent methods.")
