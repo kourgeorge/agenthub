@@ -1336,8 +1336,8 @@ class PersistentAgent(ABC):
         except Exception as e:
             logger.error(f"Error updating execution {execution_id} status: {e}")
 
-    def initialize_persistent_agent(self, deployment_id: str, init_config: Dict[str, Any]) -> Dict[str, Any]:
-        """Initialize a persistent agent in its container via docker exec."""
+    async def initialize_persistent_agent(self, deployment_id: str, init_config: Dict[str, Any], execution_id: Optional[str] = None) -> Dict[str, Any]:
+        """Initialize a persistent agent in its container via docker exec (non-blocking)."""
         try:
             # Get deployment information
             deployment = self.db.query(AgentDeployment).filter(
@@ -1370,7 +1370,35 @@ class PersistentAgent(ABC):
             except Exception as e:
                 return {"error": f"Failed to get agent configuration: {str(e)}"}
             
+            # Start initialization in background task
+            asyncio.create_task(
+                self._initialize_persistent_agent_background(deployment_id, init_config, entry_point, agent_class, execution_id)
+            )
+            
+            logger.info(f"🚀 Started background initialization for deployment {deployment_id}, execution_id: {execution_id}")
+            
+            return {
+                "status": "started",
+                "message": "Initialization started in background",
+                "execution_id": execution_id
+            }
+                
+        except Exception as e:
+            logger.error(f"Error starting persistent agent initialization: {e}")
+            return {"error": str(e)}
+
+    async def _initialize_persistent_agent_background(self, deployment_id: str, init_config: Dict[str, Any], entry_point: str, agent_class: str, execution_id: Optional[str] = None):
+        """Background task to initialize persistent agent."""
+        try:
             # Execute in container - use centralized container naming
+            deployment = self.db.query(AgentDeployment).filter(
+                AgentDeployment.deployment_id == deployment_id
+            ).first()
+            
+            if not deployment:
+                logger.error(f"Deployment not found for background initialization: {deployment_id}")
+                return
+            
             container_name = generate_container_name(deployment)
             exec_input = {
                 "operation": "initialize",
@@ -1379,41 +1407,53 @@ class PersistentAgent(ABC):
                 "agent_class": agent_class
             }
             
-            result = self._execute_in_container(container_name, exec_input)
+            # Run the blocking operation in a thread pool to avoid blocking the event loop
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                None, 
+                self._execute_in_container, 
+                container_name, 
+                exec_input
+            )
             
+            logger.info(f"✅ Background initialization completed for deployment {deployment_id}")
+            
+            # Update hiring state in database if initialization was successful
             if result.get("status") == "success":
-                # Update hiring state in database
                 try:
-                    hiring = self.db.query(Hiring).filter(Hiring.id == deployment.hiring_id).first()
-                    if hiring:
-                        hiring.state = {
-                            'status': 'ready',
-                            'config': init_config,
-                            'state_data': result.get("result", {}),
-                            'created_at': time.time(),
-                            'last_accessed': time.time(),
-                            'execution_count': 0
-                        }
-                        self.db.commit()
-                        logger.info(f"Updated hiring state for hiring {deployment.hiring_id}")
+                    from ..models.hiring import Hiring
+                    import time
+                    
+                    # Create a new session for this update
+                    from ..database.config import get_session
+                    session = get_session()
+                    try:
+                        hiring = session.query(Hiring).filter(Hiring.id == deployment.hiring_id).first()
+                        if hiring:
+                            hiring.state = {
+                                'status': 'ready',
+                                'config': init_config,
+                                'state_data': result.get("result", {}),
+                                'created_at': time.time(),
+                                'last_accessed': time.time(),
+                                'execution_count': 0
+                            }
+                            session.commit()
+                            logger.info(f"Updated hiring state for hiring {deployment.hiring_id}")
+                    finally:
+                        session.close()
                 except Exception as e:
                     logger.error(f"Failed to update hiring state: {e}")
-                
-                return {
-                    "status": "success",
-                    "result": result.get("result", {}),
-                    "container_logs": result.get("container_logs", "")
-                }
-            else:
-                return {
-                    "status": "error",
-                    "error": result.get("error", "Initialization failed"),
-                    "container_logs": result.get("container_logs", "")
-                }
-                
+            
+            # Update execution status if execution_id is provided
+            if execution_id:
+                await self._update_execution_status(execution_id, result)
+            
         except Exception as e:
-            logger.error(f"Error initializing persistent agent: {e}")
-            return {"error": str(e)}
+            logger.error(f"Error in background initialization for deployment {deployment_id}: {e}")
+            # Update execution status to failed if execution_id is provided
+            if execution_id:
+                await self._update_execution_status(execution_id, {"error": str(e)}, status="failed")
 
     def cleanup_persistent_agent(self, deployment_id: str) -> Dict[str, Any]:
         """Clean up a persistent agent in its container via docker exec (non-blocking)."""

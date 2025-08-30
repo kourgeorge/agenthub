@@ -764,21 +764,45 @@ class ExecutionService:
             from .deployment_service import DeploymentService
             deployment_service = DeploymentService(self.db)
             logger.info(f"Calling deployment service for persistent agent initialization: {deployment.deployment_id}")
-            result = deployment_service.initialize_persistent_agent(deployment.deployment_id, execution.input_data or {})
+            result = await deployment_service.initialize_persistent_agent(deployment.deployment_id, execution.input_data or {}, execution_id)
             logger.info(f"Deployment service result: {result}")
             
-            # End resource tracking and get usage summary
-            usage_summary = await self.resource_manager.end_execution(execution_id, "completed")
-            
-            if result.get('status') == 'success':
-                # Extract container logs from the result
+            if result.get('status') == 'started':
+                # Initialization started in background - update execution status to running
+                logger.info(f"🚀 Persistent agent initialization started in background for {execution_id}")
+                
+                # Update execution status to RUNNING (will be updated to COMPLETED/FAILED by background task)
+                execution_system = self._get_execution_system(execution_id)
+                if execution_system:
+                    execution_system.status = ExecutionStatus.RUNNING.value
+                    self.system_db.commit()
+                    logger.info(f"Execution status updated to RUNNING for background initialization: {execution_id}")
+                else:
+                    logger.error(f"Could not update execution status to RUNNING - execution not found in system session: {execution_id}")
+                
+                # Return RUNNING status for asynchronous initialization
+                return {
+                    "status": "running",
+                    "execution_id": execution_id,
+                    "message": "Initialization started in background",
+                    "metadata": {
+                        "agent_id": agent.id,
+                        "agent_name": agent.name,
+                        "agent_type": agent.agent_type,
+                        "execution_status": "running",
+                        "timestamp": datetime.utcnow().isoformat(),
+                        "status_type": "background_initialization"
+                    }
+                }
+            elif result.get('status') == 'success':
+                # Handle immediate success (if any)
                 container_logs = result.get('container_logs', '')
                 logger.info(f"Persistent agent initialization successful for {execution_id}, container logs length: {len(container_logs)}")
-                if container_logs:
-                    logger.info(f"First 200 chars of container logs: {container_logs[:200]}...")
                 
-                logger.info(f"Updating execution status to COMPLETED for {execution_id}")
-                # Use system database session for consistency
+                # End resource tracking and get usage summary
+                usage_summary = await self.resource_manager.end_execution(execution_id, "completed")
+                
+                # Update execution status to COMPLETED
                 execution_system = self._get_execution_system(execution_id)
                 if execution_system:
                     execution_system.status = ExecutionStatus.COMPLETED.value
@@ -801,31 +825,30 @@ class ExecutionService:
                     "container_logs": container_logs
                 }
             else:
-                # Don't call end_execution again - it was already called above for success case
+                # Handle errors
                 error_msg = result.get('error', 'Initialization failed')
-                container_logs = result.get('container_logs', '')
-                logger.info(f"Persistent agent initialization failed for {execution_id}, error: {error_msg}, container logs length: {len(container_logs)}")
-                if container_logs:
-                    logger.info(f"First 200 chars of container logs: {container_logs[:200]}...")
+                logger.error(f"Persistent agent initialization failed: {error_msg}")
                 
-                # Use system database session for consistency
+                # End resource tracking for failed execution
+                await self.resource_manager.end_execution(execution_id, "failed")
+                
+                # Update execution status to FAILED
                 execution_system = self._get_execution_system(execution_id)
                 if execution_system:
                     execution_system.status = ExecutionStatus.FAILED.value
                     execution_system.completed_at = datetime.utcnow()
                     execution_system.error_message = error_msg
-                    execution_system.container_logs = container_logs
                     if execution_system.started_at:
                         execution_system.duration_ms = int((execution_system.completed_at - execution_system.started_at).total_seconds() * 1000)
                     self.system_db.commit()
                     logger.info(f"Execution status updated to FAILED using system session for {execution_id}")
                 else:
                     logger.error(f"Could not update execution status to FAILED - execution not found in system session: {execution_id}")
+                
                 return {
                     "status": "error",
                     "execution_id": execution_id,
-                    "error": error_msg,
-                    "container_logs": container_logs
+                    "error": error_msg
                 }
         
         except Exception as e:
