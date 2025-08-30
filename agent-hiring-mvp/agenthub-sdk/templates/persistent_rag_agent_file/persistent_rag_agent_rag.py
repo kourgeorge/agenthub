@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-File RAG Agent - Simplified Implementation
+File RAG Agent - Simplified and Fixed Implementation
 
 A clean, efficient implementation of a RAG agent that handles
 full URLs with access tokens directly from the widget.
@@ -62,7 +62,6 @@ class RAGAgent(PersistentAgent):
     def _download_file_from_url(self, file_url: str) -> Tuple[bytes, dict]:
         """Download file content directly from the full URL with access token."""
         try:
-            # Download file directly from the provided URL
             logger.info(f"Downloading file from: {file_url}")
             with urlopen(file_url, timeout=60) as response:
                 file_content = response.read()
@@ -82,9 +81,6 @@ class RAGAgent(PersistentAgent):
             
             logger.info(f"File downloaded successfully. File size: {file_size} bytes")
             return file_content, metadata
-        except (HTTPError, URLError) as e:
-            logger.error(f"Error downloading file from {file_url}: {e}")
-            raise Exception(f"Failed to download file: {str(e)}")
         except Exception as e:
             logger.error(f"Error downloading file from {file_url}: {e}")
             raise Exception(f"Failed to download file: {str(e)}")
@@ -92,21 +88,6 @@ class RAGAgent(PersistentAgent):
     def initialize(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Initialize the RAG agent with configuration data."""
         try:
-            # First, test external connectivity by downloading from Hetzner speed test server
-            test_url = "https://nbg1-speed.hetzner.com/100MB.bin"
-            logger.info(f"Testing external connectivity with: {test_url}")
-            
-            try:
-                with urlopen(test_url, timeout=30) as test_response:
-                    test_content = test_response.read()
-                    test_size = len(test_content)
-                    logger.info(f"✅ External connectivity test successful! Downloaded {test_size} bytes from Hetzner")
-            except (HTTPError, URLError) as e:
-                logger.warning(f"⚠️ External connectivity test failed: {e}")
-                logger.info("This may indicate network/DNS issues within the container")
-            except Exception as e:
-                logger.warning(f"⚠️ External connectivity test failed with unexpected error: {e}")
-            
             file_references = config.get("file_references")
             if not file_references or not isinstance(file_references, list):
                 raise ValueError("file_references is required and must be a non-empty array")
@@ -118,8 +99,11 @@ class RAGAgent(PersistentAgent):
             # Try to load existing index or create new one
             vectorstore, index_size, content = self._load_or_create_index(file_references, config)
             
-            # Setup LLM and QA chain
-            if LANGCHAIN_AVAILABLE:
+            # Store the vectorstore instance
+            self.vectorstore = vectorstore
+            
+            # Setup LLM and QA chain only if vectorstore is available
+            if LANGCHAIN_AVAILABLE and vectorstore:
                 self._setup_llm_and_chain(config)
 
             # Store configuration in state
@@ -130,7 +114,7 @@ class RAGAgent(PersistentAgent):
 
         except Exception as e:
             logger.error(f"Error initializing RAG agent: {e}")
-            return self._create_response("error", f"Initialization failed: {str(e)}")
+            return self._create_response("error", f"Initialization failed!!!!!!: {str(e)}")
 
     def execute(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         """Execute RAG query."""
@@ -143,7 +127,7 @@ class RAGAgent(PersistentAgent):
                 raise ValueError("question is required for execution")
 
             # Execute query
-            if LANGCHAIN_AVAILABLE and self._get_state("langchain_available"):
+            if LANGCHAIN_AVAILABLE and self.vectorstore:
                 answer = self._execute_langchain_query(question)
             else:
                 answer = f"Fallback response: I found information about '{question}' in the indexed content."
@@ -171,6 +155,9 @@ class RAGAgent(PersistentAgent):
         try:
             self._state.clear()
             self._initialized = False
+            self.vectorstore = None
+            self.llm = None
+            self.qa_chain = None
             return self._create_cleanup_response("success", "Agent resources cleaned up successfully")
         except Exception as e:
             logger.error(f"Error cleaning up RAG agent: {e}")
@@ -188,11 +175,13 @@ class RAGAgent(PersistentAgent):
                 vectorstore = FAISS.load_local(str(index_path), embeddings)
                 with open(documents_path, 'r') as f:
                     documents_data = json.load(f)
+                logger.info("Successfully loaded existing index from disk")
                 return vectorstore, documents_data.get("total_chunks", 0), documents_data.get("content", "")
             except Exception as e:
                 logger.warning(f"Failed to load existing index: {e}")
 
         # Create new index
+        logger.info("Creating new index from uploaded files...")
         content, file_metadata = self._load_documents_from_urls(file_references)
         if not content.strip():
             raise ValueError("No content found in the uploaded files")
@@ -200,21 +189,31 @@ class RAGAgent(PersistentAgent):
         if LANGCHAIN_AVAILABLE:
             vectorstore, index_size = self._create_vectorstore(content, config)
             self._save_vectorstore_to_disk(vectorstore, content, index_size)
+            logger.info(f"Successfully created new index with {index_size} chunks")
             return vectorstore, index_size, content
         else:
+            logger.warning("LangChain not available, using fallback mode")
             return None, len(content.split()), content
 
     def _setup_llm_and_chain(self, config: Dict[str, Any]):
         """Setup LLM and QA chain."""
-        self.llm = ChatOpenAI(
-            temperature=config.get("temperature", 0),
-            model_name=config.get("model_name", "gpt-4o-mini")
-        )
-        self.qa_chain = RetrievalQA.from_chain_type(
-            llm=self.llm,
-            chain_type="stuff",
-            retriever=self.vectorstore.as_retriever()
-        )
+        if not self.vectorstore:
+            logger.warning("Cannot setup LLM and chain: vectorstore is None")
+            return
+            
+        try:
+            self.llm = ChatOpenAI(
+                temperature=config.get("temperature", 0),
+                model_name=config.get("model_name", "gpt-4o-mini")
+            )
+            self.qa_chain = RetrievalQA.from_chain_type(
+                llm=self.llm,
+                chain_type="stuff",
+                retriever=self.vectorstore.as_retriever()
+            )
+            logger.info("Successfully setup LLM and QA chain")
+        except Exception as e:
+            logger.error(f"Error setting up LLM and chain: {e}")
 
     def _store_config_in_state(self, config: Dict[str, Any], file_references: list, index_size: int, content: str):
         """Store configuration in state."""
@@ -228,26 +227,15 @@ class RAGAgent(PersistentAgent):
 
     def _execute_langchain_query(self, question: str) -> str:
         """Execute query using LangChain."""
-        vectorstore = self._load_vectorstore_from_disk()
-        if vectorstore:
-            llm = ChatOpenAI(
-                temperature=self._get_state("temperature", 0),
-                model_name=self._get_state("model_name", "gpt-4o-mini")
-            )
-            qa_chain = RetrievalQA.from_chain_type(
-                llm=llm,
-                chain_type="stuff",
-                retriever=vectorstore.as_retriever()
-            )
-            return qa_chain.run(question)
-        else:
-            # Fallback: recreate from stored content
-            content = self._get_state("content")
-            if content:
-                vectorstore, _ = self._create_vectorstore(content, {
-                    "model_name": self._get_state("model_name"),
-                    "temperature": self._get_state("temperature")
-                })
+        if not self.vectorstore:
+            logger.warning("Vectorstore not available, cannot execute query")
+            return "Error: Vectorstore not available for query"
+            
+        try:
+            if self.qa_chain:
+                return self.qa_chain.run(question)
+            else:
+                # Fallback: create chain on the fly
                 llm = ChatOpenAI(
                     temperature=self._get_state("temperature", 0),
                     model_name=self._get_state("model_name", "gpt-4o-mini")
@@ -255,11 +243,12 @@ class RAGAgent(PersistentAgent):
                 qa_chain = RetrievalQA.from_chain_type(
                     llm=llm,
                     chain_type="stuff",
-                    retriever=vectorstore.as_retriever()
+                    retriever=self.vectorstore.as_retriever()
                 )
                 return qa_chain.run(question)
-            else:
-                return "Error: No content available for query"
+        except Exception as e:
+            logger.error(f"Error executing LangChain query: {e}")
+            return f"Error executing query: {str(e)}"
 
     def _get_source_info(self) -> list:
         """Get source information for response."""
@@ -291,36 +280,28 @@ class RAGAgent(PersistentAgent):
 
     def _save_vectorstore_to_disk(self, vectorstore: FAISS, content: str, index_size: int):
         """Save the FAISS vectorstore and documents metadata to disk."""
-        index_path = self._get_index_path()
-        index_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        # Save FAISS index
-        vectorstore.save_local(str(index_path))
-        
-        # Save documents metadata
-        documents_path = self._get_documents_path()
-        documents_data = {
-            "content": content,
-            "total_chunks": index_size,
-            "model_name": self._get_state("model_name"),
-            "temperature": self._get_state("temperature")
-        }
-        
-        with open(documents_path, 'w') as f:
-            json.dump(documents_data, f, indent=2)
-
-    def _load_vectorstore_from_disk(self) -> Optional[FAISS]:
-        """Load the FAISS vectorstore from disk."""
         try:
             index_path = self._get_index_path()
-            if not index_path.exists():
-                return None
+            index_path.parent.mkdir(parents=True, exist_ok=True)
             
-            embeddings = OpenAIEmbeddings()
-            return FAISS.load_local(str(index_path), embeddings)
+            # Save FAISS index
+            vectorstore.save_local(str(index_path))
+            
+            # Save documents metadata
+            documents_path = self._get_documents_path()
+            documents_data = {
+                "content": content,
+                "total_chunks": index_size,
+                "model_name": self._get_state("model_name"),
+                "temperature": self._get_state("temperature")
+            }
+            
+            with open(documents_path, 'w') as f:
+                json.dump(documents_data, f, indent=2)
+                
+            logger.info(f"Successfully saved vectorstore to disk at {index_path}")
         except Exception as e:
-            logger.error(f"Error loading vectorstore from disk: {e}")
-            return None
+            logger.error(f"Error saving vectorstore to disk: {e}")
 
     def _load_documents_from_urls(self, file_urls: list) -> Tuple[str, list]:
         """Load document content directly from URLs."""
@@ -340,6 +321,7 @@ class RAGAgent(PersistentAgent):
                         'file_type': metadata['file_type'],
                         'content_length': len(content)
                     })
+                    logger.info(f"Successfully processed file: {metadata['filename']}")
                     
             except Exception as e:
                 logger.error(f"Error processing file from {file_url}: {e}")
@@ -347,6 +329,9 @@ class RAGAgent(PersistentAgent):
         
         if not all_content:
             raise Exception("No content could be extracted from any of the uploaded files")
+        
+        # Store file metadata in state
+        self._set_state("file_metadata", file_metadata)
         
         return "\n\n".join(all_content), file_metadata
 
@@ -415,7 +400,8 @@ class RAGAgent(PersistentAgent):
                 "documents_exist": documents_path.exists(),
                 "is_initialized": self._is_initialized(),
                 "file_count": len(self._get_state("file_references", [])),
-                "total_chunks": self._get_state("index_size", 0)
+                "total_chunks": self._get_state("index_size", 0),
+                "vectorstore_available": self.vectorstore is not None
             }
         except Exception as e:
             return {

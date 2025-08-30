@@ -2,7 +2,7 @@
   "name": "File RAG Agent",
   "description": "A RAG (Retrieval-Augmented Generation) agent that processes files directly from URLs with embedded access tokens, featuring persistent vector database storage and efficient document indexing.",
   "version": "1.0.0",
-  "entry_point": "persistent_rag_agent.py",
+  "entry_point": "persistent_rag_agent_file.py",
   "agent_type": "persistent",
   "agent_class": "RAGAgent",
   "requires_initialization": true,
