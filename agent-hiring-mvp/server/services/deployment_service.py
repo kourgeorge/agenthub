@@ -1312,6 +1312,7 @@ class PersistentAgent(ABC):
                     if status == "completed":
                         execution.status = ExecutionStatus.COMPLETED.value
                         execution.output_data = result.get("result", {})
+                        execution.container_logs = result.get("container_logs", "")
                         execution.completed_at = datetime.utcnow()
                         if execution.started_at:
                             execution.execution_time = (execution.completed_at - execution.started_at).total_seconds()
@@ -1319,6 +1320,7 @@ class PersistentAgent(ABC):
                     elif status == "failed":
                         execution.status = ExecutionStatus.FAILED.value
                         execution.error_message = result.get("error", "Execution failed")
+                        execution.container_logs = result.get("container_logs", "")
                         execution.completed_at = datetime.utcnow()
                         if execution.started_at:
                             execution.execution_time = (execution.completed_at - execution.started_at).total_seconds()
