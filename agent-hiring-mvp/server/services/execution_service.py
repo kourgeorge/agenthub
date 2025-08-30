@@ -61,11 +61,21 @@ class ExecutionService:
         # Initialize resource manager for usage tracking
         self.resource_manager = ResourceManager(self.db)
         
-        # Initialize persistent agent runtime
-        self.persistent_runtime = PersistentAgentRuntimeService()
+        # Initialize persistent agent runtime (shared instance)
+        self.persistent_runtime = self._get_shared_persistent_runtime()
         
         # Initialize JSON Schema validation service
         self.json_schema_validator = JSONSchemaValidationService()
+        logger.debug(f"ExecutionService instance created (id: {id(self)})")
+    
+    def _get_shared_persistent_runtime(self):
+        """Get or create a shared instance of PersistentAgentRuntimeService."""
+        if not hasattr(ExecutionService, '_shared_persistent_runtime'):
+            ExecutionService._shared_persistent_runtime = PersistentAgentRuntimeService()
+            logger.info("Created shared PersistentAgentRuntimeService instance")
+        else:
+            logger.debug("Reusing existing shared PersistentAgentRuntimeService instance")
+        return ExecutionService._shared_persistent_runtime
     
     def __del__(self):
         """Clean up database sessions if we own them."""
@@ -283,11 +293,22 @@ class ExecutionService:
                     import time
                     start_time = time.time()
                     
-                    result = await deployment_service.execute_persistent_agent(deployment.deployment_id, execution.input_data or {})
+                    result = await deployment_service.execute_persistent_agent(deployment.deployment_id, execution.input_data or {}, execution_id)
                     
                     # Check if execution started successfully (non-blocking mode)
                     if result.get("status") == "started":
                         logger.info(f"🚀 Persistent agent execution started in background for {execution_id}")
+                        
+                        # Store the task_id in the execution for later status checking
+                        task_id = result.get("task_id")
+                        if task_id:
+                            # Update execution with task_id for tracking
+                            execution.metadata = execution.metadata or {}
+                            execution.metadata["task_id"] = task_id
+                            execution.metadata["execution_started_at"] = time.time()
+                            self.db.commit()
+                            logger.info(f"📝 Stored task_id {task_id} for execution {execution_id}")
+                        
                         # Return RUNNING status for asynchronous execution
                         runtime_result = RuntimeResult(
                             status=RuntimeStatus.RUNNING,

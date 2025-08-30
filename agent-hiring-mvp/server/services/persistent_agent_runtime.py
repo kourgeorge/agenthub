@@ -1,19 +1,10 @@
 """Persistent agent runtime service for executing persistent agents with state management."""
 
-import os
-import sys
 import json
-import tempfile
-import subprocess
-import signal
 import logging
 import time
-import venv
-import shutil
-import pickle
 import importlib.util
-from pathlib import Path
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
 from enum import Enum
 
@@ -21,6 +12,7 @@ from .base_runtime import RuntimeResult, RuntimeStatus
 from ..database.config import get_engine
 from ..models.hiring import Hiring
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.exc import SQLAlchemyError
 
 logger = logging.getLogger(__name__)
 
@@ -49,83 +41,60 @@ class PersistentAgentState:
 
 
 class PersistentAgentRuntimeService:
-    """Service for managing and executing persistent agents."""
+    """Service for managing and executing persistent agents with database-only storage."""
     
-    def __init__(self, base_dir: Optional[str] = None):
-        self.base_dir = base_dir or os.path.join(os.getcwd(), "persistent_agent_runtime")
-        self.state_dir = os.path.join(self.base_dir, "states")
-
-        
-        # Create directories
-        os.makedirs(self.base_dir, exist_ok=True)
-        os.makedirs(self.state_dir, exist_ok=True)
-        
+    def __init__(self):
         # In-memory cache of agent states and instances
         self._agent_states: Dict[str, PersistentAgentState] = {}
         self._agent_instances: Dict[str, Any] = {}  # Store actual agent instances
         
-        # Load existing states from disk
+        # Load existing states from database
         self._load_existing_states()
+        logger.info("PersistentAgentRuntimeService initialized and loaded existing states")
     
-    def _get_state_file_path(self, agent_id: str) -> str:
-        """Get the path for storing agent state."""
-        return os.path.join(self.state_dir, f"agent_{agent_id}.json")
-    
-    def _save_agent_state(self, agent_state: PersistentAgentState, hiring_id: Optional[int] = None) -> None:
-        """Save agent state to database and disk."""
-        # Save to disk (for backward compatibility)
-        state_file = self._get_state_file_path(agent_state.agent_id)
-        
-        # Convert to serializable format (exclude agent_instance)
-        serializable_state = {
-            'agent_id': agent_state.agent_id,
-            'status': agent_state.status.value,
-            'config': agent_state.config,
-            'state_data': agent_state.state_data,
-            'created_at': agent_state.created_at,
-            'last_accessed': agent_state.last_accessed,
-            'execution_count': agent_state.execution_count
-        }
-        
-        with open(state_file, 'w') as f:
-            json.dump(serializable_state, f, indent=2)
-        
-        # Save to database
+    def _save_agent_state(self, agent_state: PersistentAgentState, hiring_id: Optional[int] = None) -> bool:
+        """Save agent state to database only. Returns True if successful, False otherwise."""
         try:
             engine = get_engine()
             Session = sessionmaker(bind=engine)
             with Session() as session:
-                # Find the hiring record - prefer hiring_id if provided, otherwise find by agent_id
-                if hiring_id:
-                    hiring = session.query(Hiring).filter(Hiring.id == hiring_id).first()
-                else:
-                    hiring = session.query(Hiring).filter(
-                        Hiring.agent_id == agent_state.agent_id
-                    ).first()
-                
-                if hiring:
-                    # Update the state in the database
-                    hiring.state = {
-                        'status': agent_state.status.value,
-                        'config': agent_state.config,
-                        'state_data': agent_state.state_data,
-                        'created_at': agent_state.created_at,
-                        'last_accessed': agent_state.last_accessed,
-                        'execution_count': agent_state.execution_count
-                    }
-                    session.commit()
-                    logger.info(f"Saved agent state to database for agent {agent_state.agent_id}, hiring {hiring.id}")
-                else:
-                    logger.warning(f"No hiring record found for agent {agent_state.agent_id}, hiring_id {hiring_id}")
+                try:
+                    # Find the hiring record - prefer hiring_id if provided, otherwise find by agent_id
+                    if hiring_id:
+                        hiring = session.query(Hiring).filter(Hiring.id == hiring_id).first()
+                    else:
+                        hiring = session.query(Hiring).filter(
+                            Hiring.agent_id == agent_state.agent_id
+                        ).first()
+                    
+                    if hiring:
+                        # Update the state in the database
+                        hiring.state = {
+                            'status': agent_state.status.value,
+                            'config': agent_state.config,
+                            'state_data': agent_state.state_data,
+                            'created_at': agent_state.created_at,
+                            'last_accessed': agent_state.last_accessed,
+                            'execution_count': agent_state.execution_count
+                        }
+                        session.commit()
+                        logger.info(f"Saved agent state to database for agent {agent_state.agent_id}, hiring {hiring.id}")
+                        return True
+                    else:
+                        logger.warning(f"No hiring record found for agent {agent_state.agent_id}, hiring_id {hiring_id}")
+                        return False
+                        
+                except SQLAlchemyError as e:
+                    session.rollback()
+                    logger.error(f"Database error saving agent state: {e}")
+                    return False
                     
         except Exception as e:
             logger.error(f"Failed to save agent state to database: {e}")
-        
-        logger.info(f"Saved agent state for {agent_state.agent_id}")
+            return False
     
     def _load_agent_state(self, agent_id: str) -> Optional[PersistentAgentState]:
-        """Load agent state from database first, then disk as fallback."""
-        # Try to load from database first
+        """Load agent state from database only."""
         try:
             engine = get_engine()
             Session = sessionmaker(bind=engine)
@@ -150,30 +119,7 @@ class PersistentAgentRuntimeService:
         except Exception as e:
             logger.error(f"Failed to load agent state from database: {e}")
         
-        # Fallback to disk
-        state_file = self._get_state_file_path(agent_id)
-        
-        if not os.path.exists(state_file):
-            return None
-        
-        try:
-            with open(state_file, 'r') as f:
-                data = json.load(f)
-            
-            logger.info(f"Loaded agent state from disk for {agent_id}")
-            return PersistentAgentState(
-                agent_id=data['agent_id'],
-                status=PersistentAgentStatus(data['status']),
-                config=data['config'],
-                state_data=data.get('state_data'),
-                created_at=data.get('created_at'),
-                last_accessed=data.get('last_accessed'),
-                execution_count=data.get('execution_count', 0),
-                agent_instance=None  # Will be recreated if needed
-            )
-        except Exception as e:
-            logger.error(f"Error loading agent state for {agent_id}: {e}")
-            return None
+        return None
     
     def _load_existing_states(self) -> None:
         """Load all existing agent states from database."""
@@ -187,32 +133,65 @@ class PersistentAgentRuntimeService:
                 ).all()
                 
                 for hiring in hirings:
-                    agent_state = self._load_agent_state(str(hiring.agent_id))
-                    if agent_state:
-                        self._agent_states[str(hiring.agent_id)] = agent_state
-                        logger.info(f"Loaded existing state for agent {hiring.agent_id} from database")
+                    agent_id_str = str(hiring.agent_id)
+                    
+                    # Skip if already loaded in memory
+                    if agent_id_str in self._agent_states:
+                        continue
+                    
+                    # Create agent state directly from hiring data (no additional database calls)
+                    if hiring.state:
+                        try:
+                            data = hiring.state
+                            agent_state = PersistentAgentState(
+                                agent_id=agent_id_str,
+                                status=PersistentAgentStatus(data['status']),
+                                config=data['config'],
+                                state_data=data.get('state_data'),
+                                created_at=data.get('created_at'),
+                                last_accessed=data.get('last_accessed'),
+                                execution_count=data.get('execution_count', 0),
+                                agent_instance=None  # Will be recreated if needed
+                            )
+                            
+                            self._agent_states[agent_id_str] = agent_state
+                            logger.info(f"Loaded existing state for agent {hiring.agent_id} from database")
+                            
+                        except Exception as e:
+                            logger.error(f"Error processing state data for agent {hiring.agent_id}: {e}")
+                            continue
         except Exception as e:
             logger.error(f"Error loading existing states from database: {e}")
-            
-        # Fallback: also check disk files for backward compatibility
-        for state_file in Path(self.state_dir).glob("agent_*.json"):
-            try:
-                agent_id = state_file.stem.replace("agent_", "")
-                # Only load from disk if not already loaded from database
-                if agent_id not in self._agent_states:
-                    agent_state = self._load_agent_state(agent_id)
-                    if agent_state:
-                        self._agent_states[agent_id] = agent_state
-                        logger.info(f"Loaded existing state for agent {agent_id} from disk (fallback)")
-            except Exception as e:
-                logger.error(f"Error loading state file {state_file}: {e}")
     
-    def _delete_agent_state(self, agent_id: str) -> None:
-        """Delete agent state from disk."""
-        state_file = self._get_state_file_path(agent_id)
-        if os.path.exists(state_file):
-            os.remove(state_file)
-            logger.info(f"Deleted agent state for {agent_id}")
+    def _delete_agent_state(self, agent_id: str) -> bool:
+        """Delete agent state from database only. Returns True if successful."""
+        try:
+            engine = get_engine()
+            Session = sessionmaker(bind=engine)
+            with Session() as session:
+                try:
+                    hiring = session.query(Hiring).filter(
+                        Hiring.agent_id == agent_id
+                    ).first()
+                    
+                    if hiring and hiring.state:
+                        # Clear the state but keep the hiring record
+                        hiring.state = None
+                        session.commit()
+                        logger.info(f"Deleted agent state from database for {agent_id}")
+                        return True
+                    else:
+                        logger.info(f"No state found to delete for agent {agent_id}")
+                        return True
+                        
+                except SQLAlchemyError as e:
+                    session.rollback()
+                    logger.error(f"Database error deleting agent state: {e}")
+                    return False
+                    
+        except Exception as e:
+            logger.error(f"Failed to delete agent state from database: {e}")
+            return False
     
     def _get_agent_config(self, agent_id: str, agent_files: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Extract agent configuration from agent files."""
@@ -226,7 +205,7 @@ class PersistentAgentRuntimeService:
         return {}
     
     def _load_agent_class(self, agent_files: List[Dict[str, Any]], entry_point: str, agent_class: str) -> Optional[Any]:
-        """Load an agent class from agent files."""
+        """Load an agent class from agent files using in-memory execution."""
         try:
             # Find the entry point file
             entry_file = None
@@ -239,17 +218,16 @@ class PersistentAgentRuntimeService:
                 logger.error(f"Entry point file {entry_point} not found in agent files")
                 return None
             
-            # Create a temporary file with the agent code
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
-                f.write(entry_file['file_content'])
-                temp_file_path = f.name
-            
+            # Execute code in memory instead of creating temporary files
             try:
-                # Load the module
-                spec = importlib.util.spec_from_file_location("agent_module", temp_file_path)
-                module = importlib.util.module_from_spec(spec)
-                sys.modules["agent_module"] = module
-                spec.loader.exec_module(module)
+                # Create a new module namespace
+                module_name = f"agent_module_{int(time.time())}"
+                module = importlib.util.module_from_spec(
+                    importlib.util.spec_from_loader(module_name, loader=None)
+                )
+                
+                # Execute the code in the module namespace
+                exec(entry_file['file_content'], module.__dict__)
                 
                 # Get the agent class
                 agent_class_obj = getattr(module, agent_class, None)
@@ -259,9 +237,9 @@ class PersistentAgentRuntimeService:
                     logger.error(f"Agent class {agent_class} not found in {entry_point}")
                     return None
                     
-            finally:
-                # Clean up temporary file
-                os.unlink(temp_file_path)
+            except Exception as e:
+                logger.error(f"Error executing agent code in memory: {e}")
+                return None
                 
         except Exception as e:
             logger.error(f"Error loading agent class: {e}")
@@ -284,7 +262,7 @@ class PersistentAgentRuntimeService:
     async def initialize_agent(self, agent_id: str, init_config: Dict[str, Any], 
                         agent_files: List[Dict[str, Any]], entry_point: Optional[str] = None, 
                         hiring_id: Optional[int] = None) -> RuntimeResult:
-        """Initialize a persistent agent using the new inheritance-based design."""
+        """Initialize a persistent agent using database-only storage."""
         agent_id_str = str(agent_id)
         
         try:
@@ -327,7 +305,13 @@ class PersistentAgentRuntimeService:
             )
             
             self._agent_states[agent_id_str] = agent_state
-            self._save_agent_state(agent_state, hiring_id)
+            
+            # Save to database first
+            if not self._save_agent_state(agent_state, hiring_id):
+                return RuntimeResult(
+                    status=RuntimeStatus.FAILED,
+                    error=f"Failed to save agent state to database for {agent_id}"
+                )
             
             # Create agent instance
             agent_instance = self._create_agent_instance(agent_id, agent_files, entry_point, agent_class)
@@ -384,13 +368,21 @@ class PersistentAgentRuntimeService:
                     agent_state.status = PersistentAgentStatus.READY
                     agent_state.state_data = init_result
                     agent_state.last_accessed = time.time()
-                    self._save_agent_state(agent_state, hiring_id)
                     
-                    logger.info(f"Successfully initialized persistent agent {agent_id}")
-                    return RuntimeResult(
-                        status=RuntimeStatus.COMPLETED,
-                        output=json.dumps(init_result) if isinstance(init_result, dict) else str(init_result)
-                    )
+                    if self._save_agent_state(agent_state, hiring_id):
+                        logger.info(f"Successfully initialized persistent agent {agent_id}")
+                        return RuntimeResult(
+                            status=RuntimeStatus.COMPLETED,
+                            output=json.dumps(init_result) if isinstance(init_result, dict) else str(init_result)
+                        )
+                    else:
+                        # Failed to save state
+                        agent_state.status = PersistentAgentStatus.ERROR
+                        self._save_agent_state(agent_state, hiring_id)
+                        return RuntimeResult(
+                            status=RuntimeStatus.FAILED,
+                            error=f"Failed to save agent state after successful initialization for {agent_id}"
+                        )
                 else:
                     # Initialization failed - add agent ID for consistency
                     if isinstance(init_result, dict):
@@ -433,7 +425,7 @@ class PersistentAgentRuntimeService:
     
     async def execute_agent(self, agent_id: str, input_data: Dict[str, Any],
                      agent_files: List[Dict[str, Any]], entry_point: Optional[str] = None) -> RuntimeResult:
-        """Execute a persistent agent using the new inheritance-based design."""
+        """Execute a persistent agent using database-only storage."""
         agent_id_str = str(agent_id)
         
         try:
@@ -482,7 +474,12 @@ class PersistentAgentRuntimeService:
             agent_state.status = PersistentAgentStatus.EXECUTING
             agent_state.last_accessed = time.time()
             agent_state.execution_count += 1
-            self._save_agent_state(agent_state)
+            
+            if not self._save_agent_state(agent_state):
+                return RuntimeResult(
+                    status=RuntimeStatus.FAILED,
+                    error=f"Failed to save agent state before execution for {agent_id}"
+                )
             
             # Execute the agent
             logger.info(f"Executing persistent agent {agent_id}")
@@ -499,12 +496,16 @@ class PersistentAgentRuntimeService:
                 
                 # Update state back to ready
                 agent_state.status = PersistentAgentStatus.READY
-                self._save_agent_state(agent_state)
-                
-                return RuntimeResult(
-                    status=RuntimeStatus.COMPLETED,
-                    output=json.dumps(result) if isinstance(result, dict) else str(result)
-                )
+                if self._save_agent_state(agent_state):
+                    return RuntimeResult(
+                        status=RuntimeStatus.COMPLETED,
+                        output=json.dumps(result) if isinstance(result, dict) else str(result)
+                    )
+                else:
+                    return RuntimeResult(
+                        status=RuntimeStatus.FAILED,
+                        error=f"Failed to save agent state after execution for {agent_id}"
+                    )
                 
             except Exception as e:
                 logger.error(f"Error during agent execution: {e}")
@@ -524,7 +525,7 @@ class PersistentAgentRuntimeService:
     
     def cleanup_agent(self, agent_id: str, agent_files: List[Dict[str, Any]], 
                      entry_point: Optional[str] = None) -> RuntimeResult:
-        """Clean up a persistent agent using the new inheritance-based design."""
+        """Clean up a persistent agent using database-only storage."""
         agent_id_str = str(agent_id)
         
         try:
@@ -561,25 +562,34 @@ class PersistentAgentRuntimeService:
             # Update state to cleaned up
             agent_state.status = PersistentAgentStatus.CLEANED_UP
             agent_state.last_accessed = time.time()
-            self._save_agent_state(agent_state)
             
-            # Remove from memory cache
-            if agent_id_str in self._agent_states:
-                del self._agent_states[agent_id_str]
-            if agent_id_str in self._agent_instances:
-                del self._agent_instances[agent_id_str]
-            
-            # Delete from disk (for backward compatibility)
-            self._delete_agent_state(agent_id_str)
-            
-            return RuntimeResult(
-                status=RuntimeStatus.COMPLETED,
-                output=json.dumps({
-                    "status": "cleaned_up",
-                    "message": f"Agent {agent_id} cleaned up successfully",
-                    "cleanup_result": cleanup_result
-                })
-            )
+            if self._save_agent_state(agent_state):
+                # Remove from memory cache
+                if agent_id_str in self._agent_states:
+                    del self._agent_states[agent_id_str]
+                if agent_id_str in self._agent_instances:
+                    del self._agent_instances[agent_id_str]
+                
+                # Delete from database
+                if self._delete_agent_state(agent_id_str):
+                    return RuntimeResult(
+                        status=RuntimeStatus.COMPLETED,
+                        output=json.dumps({
+                            "status": "cleaned_up",
+                            "message": f"Agent {agent_id} cleaned up successfully",
+                            "cleanup_result": cleanup_result
+                        })
+                    )
+                else:
+                    return RuntimeResult(
+                        status=RuntimeStatus.FAILED,
+                        error=f"Failed to delete agent state from database for {agent_id}"
+                    )
+            else:
+                return RuntimeResult(
+                    status=RuntimeStatus.FAILED,
+                    error=f"Failed to save agent state during cleanup for {agent_id}"
+                )
                 
         except Exception as e:
             logger.error(f"Error cleaning up persistent agent {agent_id}: {e}")
@@ -592,7 +602,7 @@ class PersistentAgentRuntimeService:
         """Get the status of a persistent agent."""
         agent_id_str = str(agent_id)
         
-        # Check memory cache first, then database
+        # Check memory cache first
         agent_state = self._agent_states.get(agent_id_str)
         if not agent_state:
             # Not in memory cache, try to load from database
@@ -613,7 +623,7 @@ class PersistentAgentRuntimeService:
         }
     
     def list_agents(self) -> List[Dict[str, Any]]:
-        """List all persistent agents."""
+        """List all persistent agents from database."""
         agents = []
         
         # First, ensure we have all agents from database loaded in memory
@@ -629,10 +639,26 @@ class PersistentAgentRuntimeService:
                 for hiring in hirings:
                     agent_id_str = str(hiring.agent_id)
                     if agent_id_str not in self._agent_states:
-                        # Load from database if not in memory
-                        agent_state = self._load_agent_state(agent_id_str)
-                        if agent_state:
-                            self._agent_states[agent_id_str] = agent_state
+                        # Create agent state directly from hiring data (no additional database calls)
+                        if hiring.state:
+                            try:
+                                data = hiring.state
+                                agent_state = PersistentAgentState(
+                                    agent_id=agent_id_str,
+                                    status=PersistentAgentStatus(data['status']),
+                                    config=data['config'],
+                                    state_data=data.get('state_data'),
+                                    created_at=data.get('created_at'),
+                                    last_accessed=data.get('last_accessed'),
+                                    execution_count=data.get('execution_count', 0),
+                                    agent_instance=None  # Will be recreated if needed
+                                )
+                                
+                                self._agent_states[agent_id_str] = agent_state
+                                
+                            except Exception as e:
+                                logger.error(f"Error processing state data for agent {hiring.agent_id}: {e}")
+                                continue
         except Exception as e:
             logger.error(f"Error loading agents from database: {e}")
         
@@ -665,11 +691,15 @@ class PersistentAgentRuntimeService:
                     # Remove from state cache
                     del self._agent_states[agent_id]
                     
-                    # Delete state file
-                    self._delete_agent_state(agent_id)
-                    
-                    cleaned_count += 1
+                    # Delete from database
+                    if self._delete_agent_state(agent_id):
+                        cleaned_count += 1
+                    else:
+                        logger.error(f"Failed to delete expired agent {agent_id} from database")
+                        
                 except Exception as e:
                     logger.error(f"Error cleaning up expired agent {agent_id}: {e}")
         
         return cleaned_count 
+
+ 
