@@ -16,6 +16,8 @@ class HiringStatus(str, Enum):
     EXPIRED = "expired"
     CANCELLED = "cancelled"
     SUSPENDED = "suspended"
+    CANCELLING = "cancelling"
+    CANCELLATION_FAILED = "cancellation_failed"
 
 
 class Hiring(Base):

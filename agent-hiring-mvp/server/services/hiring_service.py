@@ -221,15 +221,10 @@ class HiringService:
             self._handle_persistent_agent_suspension(hiring)
         elif status == HiringStatus.CANCELLED:
             hiring.last_executed_at = datetime.now(timezone.utc)
-            # For ACP agents, stop and remove the deployment
-            acp_cancellation_success = self._handle_acp_agent_cancellation(hiring, timeout=60)
-            # For function agents, stop and remove the deployment
-            function_cancellation_success = self._handle_function_agent_cancellation(hiring, timeout=60)
-            # For persistent agents, stop and remove the deployment
-            persistent_cancellation_success = self._handle_persistent_agent_cancellation(hiring, timeout=60)
-            
-            if not acp_cancellation_success or not function_cancellation_success or not persistent_cancellation_success:
-                logger.warning(f"Some resources may not have been fully terminated for hiring {hiring_id}")
+            # For cancellation, we now use the async background process
+            # The actual cancellation work is handled by perform_cancellation_work
+            # This method just updates the status and returns immediately
+            logger.info(f"Hiring {hiring_id} marked for cancellation - background process will handle cleanup")
         
         self.db.commit()
         self.db.refresh(hiring)
@@ -296,8 +291,10 @@ class HiringService:
         except Exception as e:
             logger.error(f"Exception handling ACP agent suspension: {e}")
     
-    def _handle_acp_agent_cancellation(self, hiring: Hiring, timeout: int = 60):
-        """Handle ACP agent cancellation (stop and remove deployment)."""
+
+    
+    async def _handle_acp_agent_cancellation_async(self, hiring: Hiring, timeout: int = 60):
+        """Async version of ACP agent cancellation - truly non-blocking."""
         try:
             agent = hiring.agent
             if agent and agent.agent_type == AgentType.ACP_SERVER.value:
@@ -310,10 +307,15 @@ class HiringService:
                 ).first()
                 
                 if deployment:
-                    logger.info(f"Starting cancellation process for deployment {deployment.deployment_id}")
+                    logger.info(f"Starting async cancellation process for deployment {deployment.deployment_id}")
                     
-                    # Stop and remove the deployment with timeout
-                    stop_result = deployment_service.stop_deployment(deployment.deployment_id, timeout=timeout)
+                    # Run the blocking operation in a thread pool to make it non-blocking
+                    loop = asyncio.get_event_loop()
+                    stop_result = await loop.run_in_executor(
+                        None, 
+                        lambda: deployment_service.stop_deployment(deployment.deployment_id, timeout=timeout)
+                    )
+                    
                     if "error" in stop_result:
                         logger.error(f"Failed to stop deployment {deployment.deployment_id}: {stop_result['error']}")
                         return False
@@ -329,7 +331,7 @@ class HiringService:
                     return True
             return True  # No deployment to cancel
         except Exception as e:
-            logger.error(f"Exception handling ACP agent cancellation: {e}")
+            logger.error(f"Exception handling async ACP agent cancellation: {e}")
             return False
     
     def _handle_function_agent_activation(self, hiring: Hiring):
@@ -378,8 +380,10 @@ class HiringService:
         except Exception as e:
             logger.error(f"Exception handling function agent suspension: {e}")
     
-    def _handle_function_agent_cancellation(self, hiring: Hiring, timeout: int = 60):
-        """Handle function agent cancellation (stop and remove deployment)."""
+
+    
+    async def _handle_function_agent_cancellation_async(self, hiring: Hiring, timeout: int = 60):
+        """Async version of function agent cancellation - truly non-blocking."""
         try:
             agent = hiring.agent
             if agent and agent.agent_type == AgentType.FUNCTION.value:
@@ -392,10 +396,15 @@ class HiringService:
                 ).first()
                 
                 if deployment:
-                    logger.info(f"Starting function cancellation process for deployment {deployment.deployment_id}")
+                    logger.info(f"Starting async function cancellation process for deployment {deployment.deployment_id}")
                     
-                    # Stop and remove the deployment with timeout
-                    stop_result = deployment_service.stop_function_deployment(deployment.deployment_id)
+                    # Run the blocking operation in a thread pool to make it non-blocking
+                    loop = asyncio.get_event_loop()
+                    stop_result = await loop.run_in_executor(
+                        None, 
+                        lambda: deployment_service.stop_function_deployment(deployment.deployment_id)
+                    )
+                    
                     if "error" in stop_result:
                         logger.error(f"Failed to stop function deployment {deployment.deployment_id}: {stop_result['error']}")
                         return False
@@ -411,11 +420,13 @@ class HiringService:
                     return True
             return True  # No deployment to cancel
         except Exception as e:
-            logger.error(f"Exception handling function agent cancellation: {e}")
+            logger.error(f"Exception handling async function agent cancellation: {e}")
             return False
     
-    def _handle_persistent_agent_cancellation(self, hiring: Hiring, timeout: int = 60):
-        """Handle persistent agent cancellation (cleanup and stop deployment)."""
+
+    
+    async def _handle_persistent_agent_cancellation_async(self, hiring: Hiring, timeout: int = 60):
+        """Async version of persistent agent cancellation - truly non-blocking."""
         try:
             agent = hiring.agent
             if agent and agent.agent_type == "persistent":
@@ -430,13 +441,23 @@ class HiringService:
                 ).first()
                 
                 if deployment:
-                    logger.info(f"Starting persistent agent cancellation process for deployment {deployment.deployment_id}")
+                    logger.info(f"Starting async persistent agent cancellation process for deployment {deployment.deployment_id}")
                     
-                    # Run cleanup synchronously to ensure it completes before continuing
-                    self._cleanup_persistent_agent_sync(deployment_service, deployment.deployment_id)
+                    # Run cleanup and stop operations in thread pool to make them non-blocking
+                    loop = asyncio.get_event_loop()
                     
-                    # Stop and remove the deployment with timeout (this is synchronous)
-                    stop_result = deployment_service.stop_deployment(deployment.deployment_id, timeout=timeout)
+                    # Run cleanup in thread pool
+                    cleanup_result = await loop.run_in_executor(
+                        None,
+                        lambda: self._cleanup_persistent_agent_sync(deployment_service, deployment.deployment_id)
+                    )
+                    
+                    # Run stop deployment in thread pool
+                    stop_result = await loop.run_in_executor(
+                        None,
+                        lambda: deployment_service.stop_deployment(deployment.deployment_id, timeout=timeout)
+                    )
+                    
                     if "error" in stop_result:
                         logger.error(f"Failed to stop persistent deployment {deployment.deployment_id}: {stop_result['error']}")
                         return False
@@ -452,7 +473,7 @@ class HiringService:
                     return True
             return True  # No deployment to cancel
         except Exception as e:
-            logger.error(f"Exception handling persistent agent cancellation: {e}")
+            logger.error(f"Exception handling async persistent agent cancellation: {e}")
             return False
     
     def _cleanup_persistent_agent_sync(self, deployment_service, deployment_id: str):
@@ -581,6 +602,130 @@ class HiringService:
     async def cancel_hiring(self, hiring_id: int, notes: Optional[str] = None) -> Optional[Hiring]:
         """Cancel a hiring."""
         return await self.update_hiring_status(hiring_id, HiringStatus.CANCELLED, notes)
+    
+    async def perform_cancellation_work(self, hiring_id: int, notes: Optional[str], timeout: int):
+        """Background method for actual cancellation work - truly non-blocking."""
+        try:
+            # Get the hiring with a fresh database session
+            from ..database.config import get_session_dependency
+            db = next(get_session_dependency())
+            hiring = db.query(Hiring).filter(Hiring.id == hiring_id).first()
+            
+            if not hiring:
+                logger.error(f"Hiring {hiring_id} not found during background cancellation")
+                return
+            
+            # Create a task that runs the blocking operations in a separate thread
+            # This ensures the main event loop is never blocked
+            loop = asyncio.get_event_loop()
+            
+            # Run the entire cancellation process in a thread pool
+            # This is the key - we move ALL blocking operations to a separate thread
+            result = await loop.run_in_executor(
+                None,  # Use default thread pool
+                self._perform_cancellation_sync,  # Run the sync version in thread
+                hiring_id, notes, timeout
+            )
+            
+            logger.info(f"Background cancellation completed for hiring {hiring_id}: {result}")
+            
+        except Exception as e:
+            logger.error(f"Exception during background cancellation for hiring {hiring_id}: {e}")
+            # Try to update status to failed
+            try:
+                from ..database.config import get_session_dependency
+                db = next(get_session_dependency())
+                hiring = db.query(Hiring).filter(Hiring.id == hiring_id).first()
+                if hiring:
+                    hiring.status = HiringStatus.CANCELLATION_FAILED.value
+                    hiring.last_executed_at = datetime.now(timezone.utc)
+                    db.commit()
+            except Exception as update_error:
+                logger.error(f"Failed to update hiring status to failed: {update_error}")
+    
+    def _perform_cancellation_sync(self, hiring_id: int, notes: Optional[str], timeout: int):
+        """Synchronous method that runs in a separate thread - truly non-blocking for main process."""
+        try:
+            # Get the hiring with a fresh database session for this thread
+            from ..database.config import get_session_dependency
+            db = next(get_session_dependency())
+            hiring = db.query(Hiring).filter(Hiring.id == hiring_id).first()
+            
+            if not hiring:
+                logger.error(f"Hiring {hiring_id} not found during sync cancellation")
+                return False
+            
+            logger.info(f"Starting sync cancellation for hiring {hiring_id} in thread")
+            
+            # Perform the actual cancellation operations using async methods
+            
+
+            
+            # Run each cancellation operation with timeout in parallel using async methods
+            # Since we're in a sync context, we need to create a new event loop for async operations
+            import asyncio
+            
+            async def run_async_cancellations():
+                """Run all cancellation operations asynchronously."""
+                try:
+                    # Run all operations concurrently with timeout
+                    results = await asyncio.wait_for(
+                        asyncio.gather(
+                            self._handle_acp_agent_cancellation_async(hiring, timeout),
+                            self._handle_function_agent_cancellation_async(hiring, timeout),
+                            self._handle_persistent_agent_cancellation_async(hiring, timeout),
+                            return_exceptions=True  # Don't fail if one operation fails
+                        ),
+                        timeout=timeout + 5  # Extra buffer
+                    )
+                    
+                    # Extract results, handling any exceptions
+                    acp_result = results[0] if not isinstance(results[0], Exception) else False
+                    function_result = results[1] if not isinstance(results[1], Exception) else False
+                    persistent_result = results[2] if not isinstance(results[2], Exception) else False
+                    
+                    return acp_result, function_result, persistent_result
+                    
+                except asyncio.TimeoutError:
+                    logger.warning(f"Async cancellation operations timed out for hiring {hiring_id}")
+                    return False, False, False
+                except Exception as e:
+                    logger.error(f"Exception during async cancellation operations: {e}")
+                    return False, False, False
+            
+            # Create new event loop for async operations
+            try:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                acp_cancellation_success, function_cancellation_success, persistent_cancellation_success = loop.run_until_complete(run_async_cancellations())
+            finally:
+                loop.close()
+            
+            # Update final status based on results
+            if acp_cancellation_success and function_cancellation_success and persistent_cancellation_success:
+                hiring.status = HiringStatus.CANCELLED.value
+                logger.info(f"Successfully cancelled hiring {hiring_id}")
+            else:
+                hiring.status = HiringStatus.CANCELLATION_FAILED.value
+                logger.warning(f"Some resources may not have been fully terminated for hiring {hiring_id}")
+            
+            hiring.last_executed_at = datetime.now(timezone.utc)
+            db.commit()
+            db.refresh(hiring)
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Exception during sync cancellation for hiring {hiring_id}: {e}")
+            # Try to update status to failed
+            try:
+                if hiring:
+                    hiring.status = HiringStatus.CANCELLATION_FAILED.value
+                    hiring.last_executed_at = datetime.now(timezone.utc)
+                    db.commit()
+            except Exception as update_error:
+                logger.error(f"Failed to update hiring status to failed: {update_error}")
+            return False
     
     def get_hiring_stats(self, user_id: Optional[int] = None, agent_id: Optional[str] = None) -> Dict[str, Any]:
         """Get hiring statistics."""

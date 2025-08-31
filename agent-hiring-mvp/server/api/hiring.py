@@ -2,7 +2,7 @@
 
 import logging
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
 
 from ..database.config import get_session_dependency
@@ -12,6 +12,7 @@ from ..models.deployment import AgentDeployment
 from ..middleware.auth import get_current_user, get_current_user_optional, get_current_user_required, require_same_user
 from ..middleware.permissions import require_hiring_permission
 from ..models.user import User
+from datetime import datetime, timezone
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -509,10 +510,11 @@ async def cancel_hiring(
     hiring_id: int,
     notes: Optional[str] = None,
     timeout: Optional[int] = 60,
+    background_tasks: BackgroundTasks = BackgroundTasks(),
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_session_dependency)
 ):
-    """Cancel a hiring and automatically stop associated deployments."""
+    """Cancel a hiring and automatically stop associated deployments asynchronously."""
     hiring_service = HiringService(db)
     
     try:
@@ -546,18 +548,28 @@ async def cancel_hiring(
                 detail=f"Cannot cancel hiring with status: {hiring.status.value}. Only active or suspended hirings can be cancelled."
             )
         
-        # Cancel the hiring
-        updated_hiring = await hiring_service.cancel_hiring(hiring_id, notes)
+        # Mark hiring as cancelling immediately for better UX
+        hiring.status = HiringStatus.CANCELLING.value
+        hiring.last_executed_at = datetime.now(timezone.utc)
+        db.commit()
+        
+        # Add the actual cancellation work to background tasks
+        background_tasks.add_task(
+            hiring_service.perform_cancellation_work,
+            hiring_id,
+            notes,
+            timeout
+        )
         
         # Get agent information
         from ..models.agent import Agent
         agent = db.query(Agent).filter(Agent.id == hiring.agent_id).first()
         
         response = {
-            "message": "Hiring cancelled successfully",
+            "message": "Hiring cancellation started",
             "hiring_id": hiring_id,
-            "status": updated_hiring.status,
-            "cancelled_at": updated_hiring.last_executed_at.isoformat() if updated_hiring.last_executed_at else None,
+            "status": HiringStatus.CANCELLING.value,
+            "cancellation_started_at": hiring.last_executed_at.isoformat() if hiring.last_executed_at else None,
             "agent_id": hiring.agent_id,
             "agent_name": agent.name if agent else f"Agent {hiring.agent_id}",
             "agent_type": agent.agent_type if agent else "unknown",
@@ -586,10 +598,10 @@ async def cancel_hiring(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error cancelling hiring {hiring_id}: {str(e)}")
+        logger.error(f"Error starting cancellation for hiring {hiring_id}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to cancel hiring: {str(e)}"
+            detail=f"Failed to start hiring cancellation: {str(e)}"
         )
 
 
