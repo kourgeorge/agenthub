@@ -10,7 +10,7 @@ semanticscholar
 # Web scraping and search
 beautifulsoup4
 lxml
-duckduckgo-search
+ddgs
 
 # Data processing
 pandas

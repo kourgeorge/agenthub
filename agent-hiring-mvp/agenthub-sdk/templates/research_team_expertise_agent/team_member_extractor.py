@@ -24,7 +24,7 @@ from langchain.schema import HumanMessage, SystemMessage
 load_dotenv()
 
 # Import additional packages
-from duckduckgo_search import DDGS
+from ddgs import DDGS
 from semanticscholar import SemanticScholar
 from scholarly import scholarly
 
@@ -672,7 +672,9 @@ class TeamMemberExtractor:
             collaborators = set()
             research_timeline = {}
 
-            for i, result in enumerate(search.results()):
+            # Use the newer Client.results() approach to avoid deprecation warnings
+            client = arxiv.Client()
+            for i, result in enumerate(client.results(search)):
                 try:
                     # Extract co-authors
                     authors = [author.name for author in result.authors]
@@ -1178,7 +1180,9 @@ Based on these publications, please provide a 1-4 paragraph summary of {name}'s 
                 sort_by=arxiv.SortCriterion.Relevance
             )
 
-            for result in search.results():
+            # Use the newer Client.results() approach to avoid deprecation warnings
+            client = arxiv.Client()
+            for result in client.results(search):
                 return {
                     "abstract": result.summary,
                     "url": result.entry_id,
@@ -1247,7 +1251,17 @@ Based on these publications, please provide a 1-4 paragraph summary of {name}'s 
                 ]
                 
                 response = self.llm.invoke(messages)
-                content = response.content.strip()
+                # Handle different response formats to reduce Pydantic warnings
+                if hasattr(response, 'content'):
+                    content = response.content.strip()
+                elif hasattr(response, 'message') and hasattr(response.message, 'content'):
+                    content = response.message.content.strip()
+                elif isinstance(response, str):
+                    content = response.strip()
+                else:
+                    logger.warning(f"Unexpected LLM response format: {type(response)}")
+                    content = str(response)
+                
                 logger.info("Successfully called LLM via provided handler")
                 return content
                 

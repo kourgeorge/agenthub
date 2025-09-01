@@ -258,7 +258,6 @@ class TeamExpertiseAgent(PersistentAgent):
             if not team_data or not team_publications: return {}
             
             team_expertise_domains = {}
-            member_contributions = {}
             
             # Process each publication to build expertise map
             for pub in team_publications:
@@ -284,19 +283,10 @@ class TeamExpertiseAgent(PersistentAgent):
                     team_expertise_domains[domain]["contributing_members"].update(contributors)
                 
                 # Track member contributions
-                for member_name in contributors:
-                    if member_name not in member_contributions:
-                        member_contributions[member_name] = {"publications": [], "domains": set(), "total_citations": 0}
-                    
-                    member_contributions[member_name]["publications"].append({"title": title, "year": year, "citations": citations})
-                    member_contributions[member_name]["domains"].update(publication_domains)
-                    member_contributions[member_name]["total_citations"] += citations
-            
+                      
             # Convert sets to lists for JSON serialization
             for domain_data in team_expertise_domains.values():
                 domain_data["contributing_members"] = list(domain_data["contributing_members"])
-            for member_data in member_contributions.values():
-                member_data["domains"] = list(member_data["domains"])
             
             # Calculate key metrics
             total_domains = len(team_expertise_domains)
@@ -306,7 +296,6 @@ class TeamExpertiseAgent(PersistentAgent):
             # Build analysis
             team_analysis = {
                 "expertise_domains": team_expertise_domains,
-                "member_contributions": member_contributions,
                 "team_metrics": {
                     "total_domains": total_domains,
                     "total_publications": total_publications,
@@ -388,14 +377,24 @@ class TeamExpertiseAgent(PersistentAgent):
     def _generate_comprehensive_team_summary(self, individual_profiles: Dict[str, Any], team_analysis: Dict[str, Any]) -> Dict[str, Any]:
         """Generate team summary with key insights."""
         try:
-            # Extract key metrics
-            team_size = len(individual_profiles)
-            total_publications = team_analysis.get("team_metrics", {}).get("total_publications", 0)
-            total_domains = team_analysis.get("team_metrics", {}).get("total_domains", 0)
+            # Handle case where team_analysis might be None or empty
+            if not team_analysis:
+                team_analysis = {}
             
-            # Get top expertise domains
+            # Extract key metrics with safe defaults
+            team_size = len(individual_profiles)
+            team_metrics = team_analysis.get("team_metrics", {})
+            total_publications = team_metrics.get("total_publications", 0) if team_metrics else 0
+            total_domains = team_metrics.get("total_domains", 0) if team_metrics else 0
+            
+            # Get top expertise domains with safe defaults
             expertise_domains = team_analysis.get("expertise_domains", {})
-            top_domains = sorted(expertise_domains.items(), key=lambda x: x[1]["count"], reverse=True)[:3]
+            top_domains = []
+            if expertise_domains:
+                try:
+                    top_domains = sorted(expertise_domains.items(), key=lambda x: x[1].get("count", 0) if isinstance(x[1], dict) else 0, reverse=True)[:3]
+                except (KeyError, TypeError):
+                    top_domains = []
             
             # Identify most influential members
             influential_members = []
@@ -420,14 +419,26 @@ class TeamExpertiseAgent(PersistentAgent):
             if hasattr(self, 'llm') and self.llm:
                 from langchain.schema import HumanMessage, SystemMessage
                 
+                # Build domain summary safely
+                domain_summary = "None identified"
+                if top_domains:
+                    try:
+                        domain_summary = ', '.join([f'{domain} ({data.get("count", 0) if isinstance(data, dict) else 0} pubs)' for domain, data in top_domains])
+                    except (KeyError, TypeError):
+                        domain_summary = "Multiple domains identified"
+                
                 prompt = f"""Summarize this research team in 2-3 paragraphs:
                 Team: {team_size} members, {total_publications} publications, {total_domains} expertise domains
-                Top domains: {', '.join([f'{domain} ({data["count"]} pubs)' for domain, data in top_domains])}
+                Top domains: {domain_summary}
                 Top members: {', '.join([f'{m["member_name"]} (H-index: {m["h_index"]}, {m["total_citations"]} citations)' for m in top_influential])}"""
                 
                 messages = [SystemMessage(content="You are a research analyst."), HumanMessage(content=prompt)]
-                response = self.llm.invoke(messages)
-                summary_text = response.content
+                try:
+                    response = self.llm.invoke(messages)
+                    summary_text = response.content if hasattr(response, 'content') else "Team summary generated"
+                except Exception as e:
+                    logger.warning(f"LLM summary generation failed: {str(e)}")
+                    summary_text = "Team summary generation failed"
             
             return {
                 "team_overview": {"team_size": team_size, "total_publications": total_publications, "total_domains": total_domains},
@@ -444,9 +455,13 @@ class TeamExpertiseAgent(PersistentAgent):
     def _create_knowledge_base(self):
         """Create knowledge base and vector store for future queries."""
         try:
+            # Check if embeddings are available
+            if not self.embeddings:
+                logger.warning("OpenAI embeddings not available. Skipping knowledge base creation.")
+                return
+                
             logger.info("Creating knowledge base...")
 
-            
             # Prepare documents for vector store
             documents = []
             for member_name, member_data in self.team_data.items():
