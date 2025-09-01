@@ -163,7 +163,6 @@ Cleans up resources and performs cleanup operations.
 
 - **Semantic Scholar**: Academic publications and citations
 - **arXiv**: Research papers and preprints
-- **Google Scholar**: Additional publication data
 - **Collaboration Networks**: Co-author relationships
 
 ## Output Examples

@@ -25,8 +25,6 @@ OPENAI_API_KEY=your_openai_api_key_here
 # LOG_LEVEL=INFO
 
 # Note: This extractor uses:
-# - Serper API to find Google Scholar profile URLs
-# - scholarly library to extract publication data from Google Scholar
-# - Semantic Scholar API for additional data
-# - arXiv API for additional publications
+# - Semantic Scholar API for academic publications and citations
+# - arXiv API for research papers and preprints
 # - LLM for domain extraction and summary generation

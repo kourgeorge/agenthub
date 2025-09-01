@@ -24,7 +24,6 @@ from langchain_community.vectorstores import FAISS
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.schema import Document
 from langchain.chains import RetrievalQA
-import scholarly
 import arxiv
 from lite_llm_handler import LiteLLMHandler
 
@@ -33,7 +32,7 @@ from lite_llm_handler import LiteLLMHandler
 from agenthub_sdk.agent import PersistentAgent
 
 # Import our modular team member extractor
-from team_member_extractor import TeamMemberExtractor
+from researcher_data_extractor import ResearcherDataExtractor
 
 # Import our new modular classes
 from publication_processor import PublicationProcessor
@@ -144,7 +143,7 @@ class TeamExpertiseAgent(PersistentAgent):
             
             # Initialize team member extractor with LLM handler
             enable_paper_enrichment = config.get("enable_paper_enrichment", True)
-            self.member_extractor = TeamMemberExtractor(
+            self.member_extractor = ResearcherDataExtractor(
                 llm_handler=self.llm,
                 enable_paper_enrichment=enable_paper_enrichment
             )
@@ -158,7 +157,7 @@ class TeamExpertiseAgent(PersistentAgent):
             
             # STEP 1: Data Collection
             logger.info("🔄 STEP 1: Data Collection")
-            team_members_data = {member_name: self.member_extractor.extract_member_info(member_name, max_pubs, False) for member_name in team_members}
+            team_members_data = {member_name: self.member_extractor.extract_researcher_info(member_name, max_pubs) for member_name in team_members}
 
             # STEP 2: Publication Collection and Deduplication
             logger.info("📚 STEP 2: Publication Collection and Deduplication")
@@ -293,6 +292,9 @@ class TeamExpertiseAgent(PersistentAgent):
             total_publications = len(team_publications)
             total_citations = sum(pub.get("citations", 0) for pub in team_publications)
             
+            # Get detailed citation analysis
+            citation_analysis = self.publication_processor.get_citation_analysis(team_publications)
+            
             # Build analysis
             team_analysis = {
                 "expertise_domains": team_expertise_domains,
@@ -305,7 +307,8 @@ class TeamExpertiseAgent(PersistentAgent):
                 "collaboration_insights": {
                     "multi_author_papers": len([p for p in team_publications if len(p.get("_member_contributors", [])) > 1]),
                     "single_author_papers": len([p for p in team_publications if len(p.get("_member_contributors", [])) == 1])
-                }
+                },
+                "citation_analysis": citation_analysis
             }
             
             logger.info(f"Team expertise map built: {total_domains} domains, {total_publications} publications")
@@ -919,26 +922,36 @@ The team shows {'strong' if collaboration_metrics.get('collaboration_density', 0
             return f"Error analyzing collaboration: {str(e)}"
 
     def _analyze_research_custom(self, query: str) -> str:
-        """Custom analysis of research."""
+        """Custom analysis of research directions."""
         try:
+            all_domains = []
+            for member_data in self.team_data.values():
+                all_domains.extend(member_data.get("expertise_domains", []))
+
+            domain_counts = {}
+            for domain in all_domains:
+                domain_counts[domain] = domain_counts.get(domain, 0) + 1
+
+            top_domains = sorted(domain_counts.items(), key=lambda x: x[1], reverse=True)[:5]
             total_pubs = sum(len(member.get("publications", [])) for member in self.team_data.values())
 
             return f"""
-## Research Analysis
+## Research Direction Analysis
 
 **Query:** {query}
 
 **Key Findings:**
 - Total Publications: {total_pubs}
-- Team Members: {len(self.team_data)}
-- Research Areas: {len(set(self.expertise_domains))}
+- Research Areas: {len(set(all_domains))}
+- Top Research Directions: {', '.join([f'{domain} ({count} members)' for domain, count in top_domains])}
 
 **Insights:**
-The team demonstrates strong research capabilities with {total_pubs} publications across {len(set(self.expertise_domains))} research areas, indicating diverse and active research programs.
+The team demonstrates strong research capabilities with {total_pubs} publications across {len(set(all_domains))} research areas, indicating diverse and active research programs.
             """.strip()
 
         except Exception as e:
-            return f"Error analyzing research: {str(e)}"
+            return f"Error analyzing research directions: {str(e)}"
+
 
     def _generate_data_sources_info(self) -> List[Dict[str, str]]:
         """Generate information about data sources used."""
@@ -948,7 +961,7 @@ The team demonstrates strong research capabilities with {total_pubs} publication
             # Add academic sources
             sources.extend([
                 {
-                    "source": "Google Scholar",
+                    "source": "Semantic Scholar",
                     "type": "Academic Profile",
                     "relevance": "High - Author profiles and publications"
                 },

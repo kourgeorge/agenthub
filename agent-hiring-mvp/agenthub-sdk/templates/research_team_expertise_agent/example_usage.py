@@ -49,12 +49,11 @@ EXAMPLE_TEAM_CONFIG = {
     "team_members": """George Kour
 Boaz Carmeli""",
     # expertise_domains is optional - agent will use arXiv taxonomy by default
-    "model_name": "gpt-4o-mini",
+    "model_name": "azure/gpt-4o-2024-08-06",
     "temperature": 0.1,
     "max_publications_per_member": 30,
     "include_citations": True,
     "include_collaboration_network": True,
-    "enable_paper_enrichment": False  # Set to False to disable paper enrichment
 }
 
 def test_team_members_parsing():

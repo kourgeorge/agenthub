@@ -1,6 +1,6 @@
 {
   "name": "Research Team Expertise Analysis Agent",
-  "description": "A comprehensive persistent agent that analyzes team expertise by collecting information from Google Scholar, arXiv, and other academic sources. Provides both team-level and individual-level insights about expertise domains, research directions, and collective capabilities.",
+  "description": "A comprehensive persistent agent that analyzes team expertise by collecting information from Semantic Scholar, arXiv, and other academic sources. Provides both team-level and individual-level insights about expertise domains, research directions, and collective capabilities.",
   "version": "1.0.0",
   "entry_point": "team_expertise_agent.py",
   "agent_type": "persistent",
@@ -10,24 +10,19 @@
   "email": "team@agenthub.com",
   "pricing_model": "per_use",
   "price_per_use": 0.8,
-  "requirements": [
-    "litellm",
-    "langchain",
-    "langchain-openai",
-    "langchain-community",
-    "faiss-cpu",
-    "requests",
-    "python-dotenv",
-    "beautifulsoup4",
-    "scholarly",
-    "arxiv",
-    "pandas",
-    "numpy",
-    "matplotlib",
-    "seaborn",
-    "plotly",
-    "networkx"
-  ],
+      "requirements": [
+      "litellm",
+      "langchain",
+      "langchain-openai",
+      "langchain-community",
+      "faiss-cpu",
+      "requests",
+      "python-dotenv",
+      "beautifulsoup4",
+      "arxiv",
+      "pandas",
+      "numpy"
+    ],
   "lifecycle": {
     "initialize": "initialize",
     "execute": "execute",
@@ -58,7 +53,7 @@
             "model_name": {
               "type": "string",
               "description": "LLM model to use for analysis. For Azure, use 'azure/gpt-4o-2024-08-06' or similar. For OpenAI, use 'gpt-4o' or 'gpt-3.5-turbo'",
-              "default": "gpt-4o"
+              "default": "azure/gpt-4o-2024-08-06"
             },
             "temperature": {
               "type": "number",
