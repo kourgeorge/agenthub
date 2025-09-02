@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 class ResearcherDataExtractor:
     """Extracts comprehensive information about individual team members from academic sources."""
 
-    def __init__(self, llm_handler=None, enable_paper_enrichment: bool = True):
+    def __init__(self, llm_handler=None):
         """Initialize the extractor with an optional LLM handler."""
         self.session = requests.Session()
         # Set a reasonable timeout and user agent

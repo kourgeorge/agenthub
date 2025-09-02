@@ -114,26 +114,14 @@ class TeamExpertiseAgent(PersistentAgent):
             temperature = config.get("temperature", 0.1)
             max_pubs = config.get("max_publications_per_member", 50)
 
-
             # LLM Configuration - use litellm directly from env
             self.llm_provider = config.get("llm_provider") or os.getenv("LLM_PROVIDER", "azure")
             self.llm_model = model_name
-            
-            # Initialize LLM - use litellm directly from env
-            if self.llm_provider == "azure":
-                # Simple litellm handler for Azure
-                self.llm = LiteLLMHandler(
-                    model=os.getenv("AZURE_MODEL", "azure/gpt-4o-2024-08-06"),
-                    temperature=temperature
-                )
-                logger.info(f"Initialized Azure LLM via LiteLLM: {os.getenv('AZURE_MODEL')}")
-            else:
-                # Use OpenAI via litellm
-                self.llm = LiteLLMHandler(
+            self.llm = LiteLLMHandler(
                     model=model_name,
                     temperature=temperature
                 )
-                logger.info(f"Initialized OpenAI LLM via LiteLLM: {model_name}")
+            logger.info(f"Initialized OpenAI LLM via LiteLLM: {model_name}")
             
             # Initialize embeddings - use OpenAI embeddings directly
             self.embeddings = OpenAIEmbeddings(
@@ -142,19 +130,17 @@ class TeamExpertiseAgent(PersistentAgent):
             logger.info(f"Initialized OpenAI embeddings")
             
             # Initialize team member extractor with LLM handler
-            enable_paper_enrichment = config.get("enable_paper_enrichment", True)
             self.member_extractor = ResearcherDataExtractor(
                 llm_handler=self.llm,
-                enable_paper_enrichment=enable_paper_enrichment
             )
-            logger.info(f"Initialized TeamMemberExtractor with LLM handler, paper enrichment: {'enabled' if enable_paper_enrichment else 'disabled'}")
+            logger.info(f"Initialized TeamMemberExtractor.")
             
             # Initialize analysis engine
             self.analysis_engine = AnalysisEngine(self.publication_processor, self.expertise_extractor)
             logger.info("Initialized AnalysisEngine with PublicationProcessor and ExpertiseExtractor")
             
-            logger.info(f"Starting structured workflow for {len(team_members)} team members")
-            
+
+
             # STEP 1: Data Collection
             logger.info("🔄 STEP 1: Data Collection")
             team_members_data = {member_name: self.member_extractor.extract_researcher_info(member_name, max_pubs) for member_name in team_members}

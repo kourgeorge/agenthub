@@ -12,14 +12,16 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
+
 class AnalysisEngine:
     """Unified engine for all analysis operations."""
-    
+
     def __init__(self, publication_processor, expertise_extractor):
         self.pub_processor = publication_processor
         self.expertise_extractor = expertise_extractor
 
-    def analyze_team_overview(self, team_data: Dict[str, Any], analysis_depth: str = "detailed") -> Tuple[str, Dict[str, Any]]:
+    def analyze_team_overview(self, team_data: Dict[str, Any], analysis_depth: str = "detailed") -> Tuple[
+        str, Dict[str, Any]]:
         """Analyze overall team composition and strengths."""
         try:
             if not team_data:
@@ -88,14 +90,14 @@ class AnalysisEngine:
                     f"Balanced role distribution"
                 ],
                 "individual_highlights": [
-                    {
-                        "name": member_name,
-                        "expertise": member_data.get("expertise_domains", [])[:3],
-                        "key_contributions": f"{len(member_data.get('publications', []))} publications"
-                    }
-                    for member_name, member_data in team_data.items()
-                    if len(member_data.get("publications", [])) > 0
-                ][:5],  # Top 5 members
+                                             {
+                                                 "name": member_name,
+                                                 "expertise": member_data.get("expertise_domains", [])[:3],
+                                                 "key_contributions": f"{len(member_data.get('publications', []))} publications"
+                                             }
+                                             for member_name, member_data in team_data.items()
+                                             if len(member_data.get("publications", [])) > 0
+                                         ][:5],  # Top 5 members
                 "research_directions": [
                     f"Focus on {top_domains[0][0]} research" if top_domains else "Diverse research interests",
                     "Potential for interdisciplinary collaboration",
@@ -114,7 +116,8 @@ class AnalysisEngine:
             logger.error(f"Error in team overview analysis: {str(e)}")
             return f"Error analyzing team overview: {str(e)}", {}
 
-    def analyze_individual_member(self, team_data: Dict[str, Any], member_name: str, analysis_depth: str = "detailed") -> Tuple[str, Dict[str, Any]]:
+    def analyze_individual_member(self, team_data: Dict[str, Any], member_name: str,
+                                  analysis_depth: str = "detailed") -> Tuple[str, Dict[str, Any]]:
         """Analyze a specific team member's expertise and contributions."""
         try:
             if not member_name or member_name not in team_data:
@@ -123,8 +126,6 @@ class AnalysisEngine:
             member_data = team_data[member_name]
             publications = member_data.get("publications", [])
             expertise_domains = member_data.get("expertise_domains", [])
-            role = member_data.get("role", "Unknown")
-            institution = member_data.get("institution", "")
 
             # Publication analysis (considering shared papers)
             pubs_count = len(publications)
@@ -134,12 +135,13 @@ class AnalysisEngine:
 
                 # Top publications by citations
                 top_pubs = sorted(publications, key=lambda x: x.get("citations", 0), reverse=True)[:5]
-                
+
                 # Note about shared papers
                 shared_papers_note = ""
                 if member_name in team_data:
                     team_pubs = self.pub_processor.get_team_publications(team_data)
-                    shared_count = sum(1 for pub in publications if any(self.pub_processor.publications_match(pub, team_pub) for team_pub in team_pubs))
+                    shared_count = sum(1 for pub in publications if any(
+                        self.pub_processor.publications_match(pub, team_pub) for team_pub in team_pubs))
                     if shared_count < pubs_count:
                         shared_papers_note = f" (includes {shared_count} shared papers with team)"
             else:
@@ -229,7 +231,8 @@ class AnalysisEngine:
             logger.error(f"Error in individual member analysis: {str(e)}")
             return f"Error analyzing individual member: {str(e)}", {}
 
-    def analyze_expertise_domain(self, team_data: Dict[str, Any], domain: str, analysis_depth: str = "detailed") -> Tuple[str, Dict[str, Any]]:
+    def analyze_expertise_domain(self, team_data: Dict[str, Any], domain: str, analysis_depth: str = "detailed") -> \
+    Tuple[str, Dict[str, Any]]:
         """Analyze expertise in a specific domain across the team."""
         try:
             if not domain:
@@ -272,15 +275,16 @@ class AnalysisEngine:
             # Domain-specific publications (deduplicated)
             domain_publications = []
             all_team_pubs = self.pub_processor.get_team_publications(team_data)
-            
+
             for pub in all_team_pubs:
                 if domain.lower() in pub.get("title", "").lower() or domain.lower() in pub.get("abstract", "").lower():
                     # Find which experts contributed to this paper
                     contributing_experts = []
                     for expert in domain_experts:
-                        if any(self.pub_processor.publications_match(pub, expert_pub) for expert_pub in expert["publications"]):
+                        if any(self.pub_processor.publications_match(pub, expert_pub) for expert_pub in
+                               expert["publications"]):
                             contributing_experts.append(expert["name"])
-                    
+
                     if contributing_experts:
                         domain_publications.append({
                             "title": pub.get("title", ""),
@@ -340,7 +344,8 @@ class AnalysisEngine:
             logger.error(f"Error in domain analysis: {str(e)}")
             return f"Error analyzing domain: {str(e)}", {}
 
-    def analyze_research_directions(self, team_data: Dict[str, Any], analysis_depth: str = "detailed") -> Tuple[str, Dict[str, Any]]:
+    def analyze_research_directions(self, team_data: Dict[str, Any], analysis_depth: str = "detailed") -> Tuple[
+        str, Dict[str, Any]]:
         """Analyze potential research directions and opportunities."""
         try:
             if not team_data:
@@ -361,7 +366,8 @@ class AnalysisEngine:
 
             for year, pubs in year_publications.items():
                 for pub in pubs:
-                    domains = self.expertise_extractor.extract_expertise_domains(f"{pub.get('title', '')} {pub.get('abstract', '')}")
+                    domains = self.expertise_extractor.extract_expertise_domains(
+                        f"{pub.get('title', '')} {pub.get('abstract', '')}")
                     if year in recent_years:
                         recent_domains.extend(domains)
                     else:
@@ -480,11 +486,11 @@ class AnalysisEngine:
         """
         try:
             logger.info("Analyzing team competency...")
-            
+
             if not team_data:
                 logger.warning("No team data available")
                 return {}
-            
+
             # Simple aggregation of member expertise
             team_expertise = {}
             total_papers = 0
@@ -492,22 +498,22 @@ class AnalysisEngine:
             for member_name, member_data in team_data.items():
                 expertise = member_data.get("expertise_characterization", {})
                 papers = member_data.get("publications", [])
-                
+
                 # Add to team totals
                 for domain, count in expertise.items():
                     team_expertise[domain] = team_expertise.get(domain, 0) + count
-                
+
                 total_papers += len(papers)
-            
+
             # Simple team analysis
             team_analysis = {
                 "team_expertise": team_expertise,  # domain -> total count
             }
-            
+
             logger.info(f"Team analysis complete: {len(team_expertise)} domains, {total_papers} papers")
-            
+
             return team_analysis
-            
+
         except Exception as e:
             logger.error(f"Error analyzing team competency: {str(e)}")
             return {}
@@ -553,4 +559,3 @@ class AnalysisEngine:
         except Exception as e:
             logger.error(f"Error calculating confidence score: {str(e)}")
             return 0.7
-    

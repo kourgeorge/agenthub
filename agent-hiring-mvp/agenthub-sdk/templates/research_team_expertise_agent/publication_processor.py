@@ -25,62 +25,6 @@ class PublicationProcessor:
         # Initialize OpenAlex client for citation enrichment
         self.openalex_client = OpenAlexClient()
 
-    def enrich_publication_data(self, pub: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Enrich publications with comprehensive information from multiple sources.
-        
-        This method collects information from OpenAlex, ArXiv, and Semantic Scholar APIs
-        and intelligently combines the data to provide the most complete publication information.
-        
-        Args:
-            publications: List of publication dictionaries
-            
-        Returns:
-            List of publications enriched with comprehensive data from multiple sources
-        """
-
-        title = pub.get("title", "").strip()
-
-        # Create enriched publication entry with existing data
-        enriched_pub = {
-            "title": title,
-            "authors": pub.get("authors", []),
-            "abstract": pub.get("abstract", ""),
-            "url": pub.get("url", ""),
-            "source": pub.get("source", "manual_extraction"),
-            "year": pub.get("year"),
-            "venue": pub.get("venue", ""),
-            "citations": pub.get("citations"),
-            "paper_id": pub.get("paper_id"),
-            "fields_of_study": pub.get("fields_of_study", []),
-            "doi": pub.get("doi"),
-            "arxiv_id": pub.get("arxiv_id")
-        }
-
-        # Check cache first for citation data
-        cache_key = title.lower().strip()
-        if cache_key in self.cache:
-            enriched_pub["citations"] = self.cache[cache_key]
-        else:
-            # Collect data from multiple sources and combine intelligently
-            combined_data = self._collect_publication_data_from_sources(title)
-
-            if combined_data:
-                # Intelligently merge data from multiple sources
-                enriched_pub = self._merge_publication_data(enriched_pub, combined_data)
-
-                # Cache the citation count
-                if enriched_pub["citations"] is not None:
-                    self.cache[cache_key] = enriched_pub["citations"]
-
-                logger.debug(f"Enriched publication '{title[:50]}...' with data from {enriched_pub['source']}")
-            else:
-                # No enrichment data found, set defaults
-                enriched_pub["citations"] = 0
-                logger.debug(f"No enrichment data found for '{title[:50]}...'")
-
-        return enriched_pub
-
     def _collect_publication_data_from_sources(self, title: str) -> Dict[str, Any]:
         """
         Collect publication data from multiple sources (OpenAlex, ArXiv, Semantic Scholar).
