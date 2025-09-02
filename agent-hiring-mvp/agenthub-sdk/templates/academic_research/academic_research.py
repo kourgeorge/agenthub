@@ -588,7 +588,7 @@ Use markdown format with proper academic structure."""
 dotenv.load_dotenv()
 
 
-def main(input_data: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+def execute(input_data: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
     """
     Main agent function.
     

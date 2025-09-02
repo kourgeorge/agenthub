@@ -22,31 +22,108 @@
   ],
   "requirements": ["openai", "requests", "python-dotenv", "PyPDF2"],
   "config_schema": {
-    "topic": {
-      "type": "string",
-      "description": "Academic research topic, paper title, or domain to investigate",
-      "required": true,
-      "default": "Machine Learning in Healthcare"
-    },
-    "max_papers_per_source": {
-      "type": "integer",
-      "description": "Maximum number of papers to retrieve per academic source (5-20)",
-      "default": 10,
-      "minimum": 5,
-      "maximum": 20
-    },
-    "search_depth": {
-      "type": "integer",
-      "description": "How deep to go in search queries and analysis (1-3)",
-      "default": 2,
-      "minimum": 1,
-      "maximum": 3
-    },
-    "model": {
-      "type": "string",
-      "description": "OpenAI model to use for analysis and summarization",
-      "default": "gpt-3.5-turbo",
-      "options": ["gpt-3.5-turbo", "gpt-4", "gpt-4-turbo", "gpt-4o", "gpt-4o-mini"]
-    }
+    "functions": [
+      {
+        "name": "execute",
+        "description": "Perform comprehensive academic research by searching across multiple academic sources with grounded analysis",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "topic": {
+              "type": "string",
+              "description": "Academic research topic, paper title, or domain to investigate"
+            },
+            "max_papers_per_source": {
+              "type": "integer",
+              "description": "Maximum number of papers to retrieve per academic source (5-20)",
+              "minimum": 5,
+              "maximum": 20
+            },
+            "search_depth": {
+              "type": "integer",
+              "description": "How deep to go in search queries and analysis (1-3)",
+              "minimum": 1,
+              "maximum": 3
+            },
+            "model": {
+              "type": "string",
+              "description": "OpenAI model to use for analysis and summarization",
+              "enum": ["gpt-3.5-turbo", "gpt-4", "gpt-4-turbo", "gpt-4o", "gpt-4o-mini"]
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "description": "Execution status",
+              "enum": ["success", "error"]
+            },
+            "topic": {
+              "type": "string",
+              "description": "The research topic that was investigated"
+            },
+            "summary": {
+              "type": "string",
+              "description": "Comprehensive academic research summary"
+            },
+            "papers": {
+              "type": "array",
+              "description": "List of academic papers found",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "title": {"type": "string"},
+                  "abstract": {"type": "string"},
+                  "authors": {"type": "array", "items": {"type": "string"}},
+                  "year": {"type": "integer"},
+                  "venue": {"type": "string"},
+                  "citation_count": {"type": "integer"},
+                  "url": {"type": "string"},
+                  "source": {"type": "string"},
+                  "paper_id": {"type": "string"}
+                }
+              }
+            },
+            "key_findings": {
+              "type": "array",
+              "description": "Key findings from the research",
+              "items": {"type": "string"}
+            },
+            "research_gaps": {
+              "type": "array",
+              "description": "Identified research gaps",
+              "items": {"type": "string"}
+            },
+            "emerging_trends": {
+              "type": "array",
+              "description": "Emerging trends in the research area",
+              "items": {"type": "string"}
+            },
+            "stats": {
+              "type": "object",
+              "description": "Research statistics",
+              "properties": {
+                "total_papers": {"type": "integer"},
+                "papers_by_source": {"type": "object"},
+                "total_findings": {"type": "integer"},
+                "total_gaps": {"type": "integer"},
+                "total_trends": {"type": "integer"},
+                "pdfs_analyzed": {"type": "integer"}
+              }
+            },
+            "error": {
+              "type": "string",
+              "description": "Error message when status is error"
+            }
+          },
+          "required": ["status"],
+          "additionalProperties": false
+        }
+      }
+    ]
   }
 } 

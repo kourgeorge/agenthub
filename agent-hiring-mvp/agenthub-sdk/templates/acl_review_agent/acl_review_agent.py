@@ -1502,7 +1502,7 @@ class ACLReviewAgent:
             return 0.0
 
 
-def main(input_data: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+def execute(input_data: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
     """Main entry point for the ACL review agent"""
     try:
         # Load environment variables
