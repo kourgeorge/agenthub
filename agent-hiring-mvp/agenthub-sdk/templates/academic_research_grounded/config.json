@@ -1,5 +1,5 @@
 {
-  "name": "Academic Research Agent [Grounded]",
+  "name": "Academic Research Agent Grounded",
   "description": "A functional agent that performs comprehensive academic research by searching across Semantic Scholar, arXiv, and Google Scholar to find papers, summarize research, and identify gaps",
   "version": "1.0.0",
   "entry_point": "academic_research.py",
