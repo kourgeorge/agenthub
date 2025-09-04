@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "entry_point": "persistent_rag_agent_file.py",
   "agent_type": "persistent",
-  "agent_class": "RAGAgent",
+  "agent_class": "FileRAGAgent",
   "requires_initialization": true,
   "author": "AgentHub Team",
   "email": "team@agenthub.com",
@@ -141,10 +141,6 @@
               "type": "string",
               "description": "Answer to the question based on indexed content"
             },
-            "question": {
-              "type": "string",
-              "description": "The original question that was asked"
-            },
             "confidence": {
               "type": "number",
               "description": "Confidence score of the answer (0-1)",
@@ -168,15 +164,10 @@
                   }
                 }
               }
-            },
-            "processing_time": {
-              "type": "number",
-              "description": "Time taken to process the query in seconds"
             }
           },
           "required": [
-            "answer",
-            "question"
+            "answer"
           ],
           "additionalProperties": false
         }

@@ -32,7 +32,7 @@ from langchain.schema import Document
 from agenthub_sdk.agent import PersistentAgent
 
 
-class RAGAgent(PersistentAgent):
+class FileRAGAgent(PersistentAgent):
     """Simplified File RAG Agent Implementation"""
 
     def __init__(self):
@@ -178,15 +178,13 @@ class RAGAgent(PersistentAgent):
             retriever=vectorstore.as_retriever()
         )
 
-        answer = qa_chain.invoke({"query": question})["result"]
+        answer = qa_chain.run(question)
 
         # Return output that matches the outputSchema exactly
         return {
             "answer": answer,  # Must match schema: answer field
-            "question": question,  # Must match schema: question field
             "confidence": 0.8,  # Must match schema: confidence score (0-1)
             "sources": self._get_source_info(),  # Must match schema: list of source documents
-            "processing_time": 1.5  # Must match schema: processing time in seconds
         }
 
     def cleanup(self) -> Dict[str, Any]:
@@ -373,13 +371,13 @@ class RAGAgent(PersistentAgent):
 
 
 if __name__ == "__main__":
-    agent = RAGAgent()
+    agent = FileRAGAgent()
 
     # Test initialization
     print("1. Testing initialization...")
     init_result = agent.initialize({
         "file_references": [
-            "https://sample-files.com/downloads/documents/txt/simple.txt"
+            "https://drive.google.com/uc?export=download&id=1z1jVSzUX6OE-6o4ZnPXImzq5GUdTbKn_"
         ],
         "model_name": "gpt-4o-mini",
         "temperature": 0,
@@ -390,7 +388,7 @@ if __name__ == "__main__":
     if init_result.get("status") == "success":
         # Test execution
         print("\n2. Testing execution...")
-        exec_result = agent.execute({"question": "What are the main topics in these documents?"})
+        exec_result = agent.execute({"question": "who were the supervisors of the master degree?"})
         print(json.dumps(exec_result, indent=2))
 
         # Test cleanup
