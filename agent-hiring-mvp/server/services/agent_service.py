@@ -270,9 +270,15 @@ class AgentService:
                 hiring.updated_at = datetime.utcnow()
                 active_hirings_count += 1
         
-        # Clean up ALL deployments for this agent (comprehensive approach)
-        # This is synchronous but provides detailed logging for progress tracking
-        cleanup_result = await self._cleanup_all_agent_deployments(agent_id)
+        # Clean up ALL deployments for this agent (non-blocking approach)
+        # Run the blocking cleanup operations in a thread pool to avoid blocking the event loop
+        import asyncio
+        loop = asyncio.get_event_loop()
+        cleanup_result = await loop.run_in_executor(
+            None,
+            self._cleanup_all_agent_deployments_sync,
+            agent_id
+        )
         
         # Block new executions for this agent
         # (This is handled by the hiring service which checks agent status)
@@ -340,8 +346,8 @@ class AgentService:
         except Exception as e:
             logger.error(f"Exception stopping function deployment: {e}")
     
-    async def _cleanup_all_agent_deployments(self, agent_id: str):
-        """Clean up all deployments for an agent (direct approach)."""
+    def _cleanup_all_agent_deployments_sync(self, agent_id: str):
+        """Clean up all deployments for an agent (synchronous version for thread pool execution)."""
         try:
             from ..models.deployment import AgentDeployment
             from .deployment_service import DeploymentService
@@ -428,8 +434,15 @@ class AgentService:
             }
             
         except Exception as e:
-            logger.error(f"Exception in _cleanup_all_agent_deployments: {e}")
+            logger.error(f"Exception in _cleanup_all_agent_deployments_sync: {e}")
             return {"total_deployments": 0, "cleaned_up": 0, "failed": 0, "details": [], "error": str(e)}
+    
+    async def _cleanup_all_agent_deployments(self, agent_id: str):
+        """Clean up all deployments for an agent (async wrapper - deprecated, use sync version in thread pool)."""
+        # This method is kept for backward compatibility but should not be used directly
+        # The sync version should be used with run_in_executor for non-blocking behavior
+        logger.warning("_cleanup_all_agent_deployments async method is deprecated. Use _cleanup_all_agent_deployments_sync with run_in_executor.")
+        return self._cleanup_all_agent_deployments_sync(agent_id)
     
     def update_agent_stats(self, agent_id: str, execution_count: int = 0, rating: Optional[float] = None) -> None:
         """Update agent statistics."""
