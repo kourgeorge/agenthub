@@ -38,9 +38,6 @@ class FileRAGAgent(PersistentAgent):
     def __init__(self):
         super().__init__()
         # Instance variables for LangChain components
-        self.vectorstore = None
-        self.llm = None
-        self.qa_chain = None
         self.base_storage_dir = Path("/tmp/agenthub_persistent_rag")
         self.base_storage_dir.mkdir(exist_ok=True)
 
@@ -137,9 +134,7 @@ class FileRAGAgent(PersistentAgent):
             content, files_metadata = self._load_documents_from_urls(file_references)
 
             vectorstore, index_size = self._create_vectorstore(content, config)
-            self.vectorstore = vectorstore
             self._save_vectorstore_to_disk(vectorstore, content, index_size)
-
 
             # Store configuration in state
             self._store_config_in_state(config, file_references, index_size, content)
@@ -166,6 +161,16 @@ class FileRAGAgent(PersistentAgent):
 
         vectorstore = self._load_vectorstore_from_disk()
 
+        retriever = vectorstore.as_retriever()
+            
+        # Retrieve most relevant documents for the question
+        relevant_docs = retriever.get_relevant_documents(question)
+        for i, doc in enumerate(relevant_docs[:3]):
+            logger.info(
+                f"--- Document {i + 1} (Relevance Score: {getattr(doc, 'metadata', {}).get('score', 'N/A')}) ---")
+            logger.info(f"Content preview: {doc.page_content}...")
+            logger.info(f"Metadata: {doc.metadata}")
+
         # Setup LLM and QA chain
         llm = ChatOpenAI(
             temperature=self._get_state("temperature", 0),
@@ -190,10 +195,6 @@ class FileRAGAgent(PersistentAgent):
     def cleanup(self) -> Dict[str, Any]:
         """Clean up agent resources."""
         self._state.clear()
-        self._initialized = False
-        self.vectorstore = None
-        self.llm = None
-        self.qa_chain = None
         return self._create_cleanup_response("success", "Agent resources cleaned up successfully")
 
     def _store_config_in_state(self, config: Dict[str, Any], file_references: list, index_size: int, content: str):
@@ -255,6 +256,7 @@ class FileRAGAgent(PersistentAgent):
 
         # Save FAISS index
         vectorstore.save_local(str(index_path))
+        logger.info(f"FAISS index saved into {index_path}. It contains: {vectorstore.index.ntotal} vectors.")
 
         # Save documents metadata
         documents_path = self._get_documents_path()
@@ -361,7 +363,7 @@ class FileRAGAgent(PersistentAgent):
             # Load FAISS index with security setting for trusted sources
             embeddings = OpenAIEmbeddings()
             vectorstore = FAISS.load_local(str(index_path), embeddings, allow_dangerous_deserialization=True)
-            logger.info(f"FAISS index loaded from {index_path}")
+            logger.info(f"FAISS index loaded from {index_path}. It contains: {vectorstore.index.ntotal} vectors.")
 
             return vectorstore
 

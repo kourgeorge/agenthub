@@ -33,9 +33,6 @@ class RAGAgent(PersistentAgent):
         """Initialize the RAG agent."""
         super().__init__()
         # Instance variables for LangChain components
-        self.vectorstore = None
-        self.llm = None
-        self.qa_chain = None
         # Base directory for persistent storage
         self.base_storage_dir = Path("/tmp/agenthub_persistent_rag")
         self.base_storage_dir.mkdir(exist_ok=True)
@@ -62,7 +59,6 @@ class RAGAgent(PersistentAgent):
         self._set_state("agent_id", config.get("agent_id", "default"))
 
         vectorstore, index_size = self._create_vectorstore(content, config)
-        self.vectorstore = vectorstore
         self._save_vectorstore_to_disk(vectorstore, content, index_size)
 
         logger.info(f"Successfully loaded existing index with {index_size} chunks")
@@ -125,7 +121,6 @@ class RAGAgent(PersistentAgent):
 
     def cleanup(self) -> Dict[str, Any]:
         self._state.clear()
-        self._initialized = False
 
         return {
             "status": "success",  # Must match schema enum: ["success", "error"]
