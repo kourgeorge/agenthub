@@ -57,35 +57,15 @@ class RAGAgent(PersistentAgent):
     def initialize(self, config: Dict[str, Any]) -> Dict[str, Any]:
 
         website_url = config.get("website_url")
-        self._load_document_from_url(website_url)
+        content = self._load_document_from_url(website_url)
 
-        # Check if we have a saved index to load
-        index_path = self._get_index_path()
-        documents_path = self._get_documents_path()
+        self._set_state("agent_id", config.get("agent_id", "default"))
 
-        # Load existing index
-        embeddings = OpenAIEmbeddings()
-        vectorstore = FAISS.load_local(str(index_path), embeddings)
-
-        # Load documents metadata
-        with open(documents_path, 'r') as f:
-            documents_data = json.load(f)
-
-        index_size = documents_data.get("total_chunks", 0)
-        content = documents_data.get("content", "")
+        vectorstore, index_size = self._create_vectorstore(content, config)
+        self.vectorstore = vectorstore
+        self._save_vectorstore_to_disk(vectorstore, content, index_size)
 
         logger.info(f"Successfully loaded existing index with {index_size} chunks")
-
-        llm = ChatOpenAI(
-            temperature=config.get("temperature", 0),
-            model_name=config.get("model_name", "gpt-4o-mini")
-        )
-
-        qa_chain = RetrievalQA.from_chain_type(
-            llm=llm,
-            chain_type="stuff",
-            retriever=vectorstore.as_retriever()
-        )
 
         # Store configuration and content in state (persisted by platform)
         self._set_state("website_url", website_url)
@@ -186,24 +166,19 @@ class RAGAgent(PersistentAgent):
 
     def _load_vectorstore_from_disk(self) -> Optional[FAISS]:
         """Load the FAISS vectorstore from disk."""
-        try:
-            index_path = self._get_index_path()
-            documents_path = self._get_documents_path()
+        index_path = self._get_index_path()
+        documents_path = self._get_documents_path()
 
-            if not index_path.exists() or not documents_path.exists():
-                logger.warning("No saved vector database found on disk")
-                return None
-
-            # Load FAISS index
-            embeddings = OpenAIEmbeddings()
-            vectorstore = FAISS.load_local(str(index_path), embeddings)
-            logger.info(f"FAISS index loaded from {index_path}")
-
-            return vectorstore
-
-        except Exception as e:
-            logger.error(f"Error loading vectorstore from disk: {e}")
+        if not index_path.exists() or not documents_path.exists():
+            logger.warning("No saved vector database found on disk")
             return None
+
+        # Load FAISS index
+        embeddings = OpenAIEmbeddings()
+        vectorstore = FAISS.load_local(str(index_path), embeddings, allow_dangerous_deserialization=True)
+        logger.info(f"FAISS index loaded from {index_path}")
+
+        return vectorstore
 
     def get_storage_status(self) -> Dict[str, Any]:
         """Get the current storage status of the vector database."""
@@ -274,13 +249,6 @@ class RAGAgent(PersistentAgent):
 # =============================================================================
 
 if __name__ == "__main__":
-    """
-    This section is only for local testing and development.
-    The platform will NOT use this - it will call the class methods directly.
-    
-    IMPORTANT: When deployed in Docker, the platform uses Docker exec to run
-    the agent class methods directly. This main block is only for local development testing.
-    """
 
     agent = RAGAgent()
 
@@ -313,9 +281,7 @@ if __name__ == "__main__":
         print("\n4. Testing cleanup...")
         cleanup_result = agent.cleanup()
         print(json.dumps(cleanup_result, indent=2))
+    else:
+        print("Initialization failed; skipping execution and cleanup tests.")
 
-    print("\n=== Local testing completed ===")
-    print("Note: The platform will call these methods directly and handle all platform concerns")
-else:
-    print("Persistent agent loaded. The platform will use Docker exec to run agent methods.")
-    print("Set RUN_LOCAL_TESTING=true to run local testing.")
+
