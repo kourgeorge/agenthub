@@ -811,16 +811,6 @@ class AgentHubClient:
     # AGENT EXECUTION
     # =============================================================================
     
-    async def execute_agent(
-        self,
-        agent_id: str,
-        input_data: Dict[str, Any],
-        hiring_id: Optional[int] = None,
-        user_id: Optional[int] = None,
-    ) -> Dict[str, Any]:
-        """Execute an agent directly (DEPRECATED - use hiring workflow instead)."""
-        raise ValueError("Direct agent execution is deprecated. Please use the hiring workflow: 1) hire_agent() 2) execute_hired_agent()")
-    
     async def get_execution_status(self, execution_id: str) -> Dict[str, Any]:
         """Get execution status."""
         if not self.session:
