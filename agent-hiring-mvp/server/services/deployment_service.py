@@ -684,7 +684,7 @@ class PersistentAgent(ABC):
                     build_thread.start()
                     
                     # Wait for build to complete or timeout
-                    timeout_seconds = 300  # 5 minutes
+                    timeout_seconds = 600  # 10 minutes
                     start_time = time.time()
                     
                     while not build_result["completed"] and build_result["error"] is None:
