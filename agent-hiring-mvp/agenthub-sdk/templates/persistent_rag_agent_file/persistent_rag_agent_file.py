@@ -177,10 +177,38 @@ class FileRAGAgent(PersistentAgent):
             model_name=self._get_state("model_name", "gpt-4o-mini")
         )
 
+        # Create a custom prompt template with system message
+        from langchain.prompts import PromptTemplate
+        
+        system_prompt = """You are a helpful AI assistant that analyzes documents and provides comprehensive answers. 
+        
+        IMPORTANT INSTRUCTIONS:
+        - Always try to provide a helpful answer based on the available information in the documents
+        - Avoid saying "I don't know" or "I cannot find information" - instead, provide the best answer you can based on the context
+        - If the documents don't contain direct information about the question, use your general knowledge to provide a relevant and helpful response
+        - Be specific and detailed in your answers when possible
+        - If you need to make assumptions, clearly state them
+        - Always cite or reference the document content when available
+
+        Use the following pieces of context to answer the question at the end. If you don't know the answer based on the context, still try to provide a helpful response using your knowledge.
+
+        Context:
+        {context}
+
+        Question: {question}
+        
+        Answer:"""
+
+        prompt_template = PromptTemplate(
+            template=system_prompt,
+            input_variables=["context", "question"]
+        )
+
         qa_chain = RetrievalQA.from_chain_type(
             llm=llm,
             chain_type="stuff",
-            retriever=vectorstore.as_retriever()
+            retriever=vectorstore.as_retriever(),
+            chain_type_kwargs={"prompt": prompt_template}
         )
 
         answer = qa_chain.run(question)
@@ -379,7 +407,8 @@ if __name__ == "__main__":
     print("1. Testing initialization...")
     init_result = agent.initialize({
         "file_references": [
-            "https://drive.google.com/uc?export=download&id=1z1jVSzUX6OE-6o4ZnPXImzq5GUdTbKn_"
+            "https://drive.google.com/uc?export=download&id=1z1jVSzUX6OE-6o4ZnPXImzq5GUdTbKn_",
+            "https://drive.google.com/uc?export=download&id=1kHPc2f7AXp1Tx6uU1ym6AmW7NBsEXPLe"
         ],
         "model_name": "gpt-4o-mini",
         "temperature": 0,
