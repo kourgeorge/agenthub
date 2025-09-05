@@ -23,6 +23,13 @@ from ..models.hiring import Hiring
 from ..models.deployment import AgentDeployment, DeploymentStatus
 from .env_service import EnvironmentService
 from .container_utils import generate_container_name, generate_docker_image_name
+from ...config import (
+    DOCKER_BUILD_TIMEOUT_SECONDS,
+    DOCKER_PREBUILD_TIMEOUT_SECONDS,
+    CONTAINER_CREATION_TIMEOUT_SECONDS,
+    CONTAINER_STOP_TIMEOUT_SECONDS,
+    CONTAINER_REMOVAL_POLL_INTERVAL_SECONDS
+)
 from .resource_limits import get_agent_resource_limits, to_docker_config
 
 logger = logging.getLogger(__name__)
@@ -583,7 +590,7 @@ class PersistentAgent(ABC):
                         forcerm=True
                     )
                 ),
-                timeout=300  # 5 minutes timeout
+                timeout=DOCKER_BUILD_TIMEOUT_SECONDS
             )
             
             # Log build output
@@ -596,7 +603,7 @@ class PersistentAgent(ABC):
             return image
             
         except asyncio.TimeoutError:
-            logger.error(f"Docker build timed out for {image_name} after 5 minutes")
+            logger.error(f"Docker build timed out for {image_name} after {DOCKER_BUILD_TIMEOUT_SECONDS} seconds")
             raise Exception(f"Docker build timed out for {image_name}")
         except Exception as e:
             logger.error(f"Docker build failed for {image_name}: {e}")
@@ -669,7 +676,7 @@ class PersistentAgent(ABC):
                         )
                     
                     # Run Docker build in thread pool with timeout
-                    timeout_seconds = 600  # 10 minutes
+                    timeout_seconds = DOCKER_PREBUILD_TIMEOUT_SECONDS
                     loop = asyncio.get_event_loop()
                     
                     try:
@@ -724,7 +731,6 @@ class PersistentAgent(ABC):
             logger.error(f"Failed to remove pre-built image {image_name}: {e}")
             return False
 
-
     async def _deploy_container(self, deployment: AgentDeployment, image_name: str):
         """Deploy Docker container for the agent asynchronously."""
         user_id = deployment.hiring.user_id or "anon"
@@ -769,10 +775,10 @@ class PersistentAgent(ABC):
                         None,
                         lambda: self.docker_client.containers.run(**container_config)
                     ),
-                    timeout=600  # 10 minutes timeout for long-running agent deployments
+                    timeout=CONTAINER_CREATION_TIMEOUT_SECONDS
                 )
             except asyncio.TimeoutError:
-                logger.error(f"Container creation timed out for {container_name} after 10 minutes")
+                logger.error(f"Container creation timed out for {container_name} after {CONTAINER_CREATION_TIMEOUT_SECONDS} seconds")
                 raise Exception(f"Container creation timed out for {container_name}")
             except Exception as e:
                 logger.error(f"Container creation failed for {container_name}: {e}")
@@ -825,7 +831,7 @@ class PersistentAgent(ABC):
                     logger.info(f"Suspending container {deployment.container_id}...")
                     
                     # Stop the container but don't remove it
-                    container.stop(timeout=30)
+                    container.stop(timeout=CONTAINER_STOP_TIMEOUT_SECONDS)
                     logger.info(f"Container {deployment.container_id} suspended (stopped but not removed)")
                         
                 except docker_errors.NotFound:
@@ -885,7 +891,7 @@ class PersistentAgent(ABC):
             logger.error(f"Failed to resume deployment {deployment_id}: {e}")
             return {"error": str(e)}
 
-    def stop_deployment(self, deployment_id: str, timeout: int = 30) -> Dict[str, Any]:
+    def stop_deployment(self, deployment_id: str, timeout: int = CONTAINER_STOP_TIMEOUT_SECONDS) -> Dict[str, Any]:
         """Stop a deployment and wait for resources to be terminated."""
         try:
             deployment = self.db.query(AgentDeployment).filter(
@@ -916,7 +922,7 @@ class PersistentAgent(ABC):
                         try:
                             # Try to get the container - if it doesn't exist, it's been removed
                             self.docker_client.containers.get(deployment.container_id)
-                            time.sleep(0.5)  # Wait 500ms before checking again
+                            time.sleep(CONTAINER_REMOVAL_POLL_INTERVAL_SECONDS)
                         except docker_errors.NotFound:
                             logger.info(f"Container {deployment.container_id} fully terminated")
                             break

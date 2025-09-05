@@ -43,6 +43,19 @@ MAX_OUTPUT_SIZE = int(os.getenv("MAX_OUTPUT_SIZE", 1024 * 1024))  # 1MB
 MAX_CODE_SIZE = int(os.getenv("MAX_CODE_SIZE", 10 * 1024 * 1024))  # 10MB
 
 # =============================================================================
+# DEPLOYMENT SERVICE CONFIGURATION
+# =============================================================================
+
+# Docker Build Timeouts
+DOCKER_BUILD_TIMEOUT_SECONDS = int(os.getenv("DOCKER_BUILD_TIMEOUT_SECONDS", "300"))  # 5 minutes - Timeout for building Docker images during active deployments
+DOCKER_PREBUILD_TIMEOUT_SECONDS = int(os.getenv("DOCKER_PREBUILD_TIMEOUT_SECONDS", "600"))  # 10 minutes - Timeout for pre-building Docker images when publishing with --build flag
+
+# Container Management Timeouts
+CONTAINER_CREATION_TIMEOUT_SECONDS = int(os.getenv("CONTAINER_CREATION_TIMEOUT_SECONDS", "600"))  # 10 minutes - Timeout for creating and starting Docker containers
+CONTAINER_STOP_TIMEOUT_SECONDS = int(os.getenv("CONTAINER_STOP_TIMEOUT_SECONDS", "30"))  # 30 seconds - Timeout for gracefully stopping Docker containers
+CONTAINER_REMOVAL_POLL_INTERVAL_SECONDS = float(os.getenv("CONTAINER_REMOVAL_POLL_INTERVAL_SECONDS", "0.5"))  # 500ms - Polling interval when waiting for container removal to complete
+
+# =============================================================================
 # SECURITY SETTINGS
 # =============================================================================
 
