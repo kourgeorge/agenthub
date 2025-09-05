@@ -642,13 +642,27 @@ async def get_agent_build_status(
             now = datetime.now(timezone.utc)
             ten_minutes_ago = now - timedelta(minutes=10)
             
-            if agent.created_at and agent.created_at > ten_minutes_ago:
-                return {
-                    "agent_id": agent_id,
-                    "status": "building",
-                    "message": "Docker build in progress",
-                    "started_at": agent.created_at.isoformat()
-                }
+            # Ensure agent.created_at is timezone-aware for comparison
+            if agent.created_at:
+                # If created_at is timezone-naive, assume it's UTC
+                if agent.created_at.tzinfo is None:
+                    agent_created_at = agent.created_at.replace(tzinfo=timezone.utc)
+                else:
+                    agent_created_at = agent.created_at
+                
+                if agent_created_at > ten_minutes_ago:
+                    return {
+                        "agent_id": agent_id,
+                        "status": "building",
+                        "message": "Docker build in progress",
+                        "started_at": agent.created_at.isoformat()
+                    }
+                else:
+                    return {
+                        "agent_id": agent_id,
+                        "status": "not_started",
+                        "message": "Docker build has not been started"
+                    }
             else:
                 return {
                     "agent_id": agent_id,
@@ -782,7 +796,7 @@ async def build_docker_image_background(agent_id: str, user_id: int, db: Session
             # Pre-build Docker image
             logger.info(f"Starting Docker build for agent {agent_id}")
             deployment_service = DeploymentService(background_db)
-            image_name = deployment_service.pre_build_agent_image(agent)
+            image_name = await deployment_service.pre_build_agent_image(agent)
             
             if image_name:
                 # Update agent with built image
