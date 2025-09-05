@@ -585,7 +585,7 @@ with open('/tmp/agent_stderr.txt', 'w') as f:
             if deployment.container_id:
                 try:
                     container = self.docker_client.containers.get(deployment.container_id)
-                    container.stop(timeout=10)
+                    container.stop(timeout=CONTAINER_STOP_TIMEOUT_SECONDS)
                     logger.info(f"Suspended function container {deployment.container_id}")
                 except Exception as e:
                     if "not found" in str(e).lower():
@@ -655,7 +655,7 @@ with open('/tmp/agent_stderr.txt', 'w') as f:
             if deployment.container_id:
                 try:
                     container = self.docker_client.containers.get(deployment.container_id)
-                    container.stop(timeout=10)
+                    container.stop(timeout=CONTAINER_STOP_TIMEOUT_SECONDS)
                     container.remove()
                     logger.info(f"Stopped and removed container {deployment.container_id}")
                 except Exception as e:
@@ -744,16 +744,19 @@ with open('/tmp/agent_stderr.txt', 'w') as f:
         logger.info(f"Building function Docker image {image_name}")
         
         try:
-            # Run Docker build in a thread pool to avoid blocking
+            # Run Docker build in a thread pool with timeout
             loop = asyncio.get_event_loop()
-            image, logs = await loop.run_in_executor(
-                None,
-                lambda: self.docker_client.images.build(
-                    path=str(deploy_dir),
-                    tag=image_name,
-                    rm=True,
-                    forcerm=True
-                )
+            image, logs = await asyncio.wait_for(
+                loop.run_in_executor(
+                    None,
+                    lambda: self.docker_client.images.build(
+                        path=str(deploy_dir),
+                        tag=image_name,
+                        rm=True,
+                        forcerm=True
+                    )
+                ),
+                timeout=DOCKER_BUILD_TIMEOUT_SECONDS
             )
             
             # Log build output
@@ -766,6 +769,9 @@ with open('/tmp/agent_stderr.txt', 'w') as f:
             logger.info(f"Function Docker image {image_name} built successfully")
             return image
             
+        except asyncio.TimeoutError:
+            logger.error(f"Function Docker build timed out for {image_name} after {DOCKER_BUILD_TIMEOUT_SECONDS} seconds")
+            raise Exception(f"Function Docker build timed out for {image_name}")
         except Exception as e:
             logger.error(f"Failed to build function Docker image: {e}")
             raise
@@ -807,11 +813,14 @@ with open('/tmp/agent_stderr.txt', 'w') as f:
             docker_config = to_docker_config(resource_limits)
             container_config.update(docker_config)
             
-            # Run container creation in a thread pool to avoid blocking
+            # Run container creation in a thread pool with timeout
             loop = asyncio.get_event_loop()
-            container = await loop.run_in_executor(
-                None,
-                lambda: self.docker_client.containers.run(**container_config)
+            container = await asyncio.wait_for(
+                loop.run_in_executor(
+                    None,
+                    lambda: self.docker_client.containers.run(**container_config)
+                ),
+                timeout=CONTAINER_CREATION_TIMEOUT_SECONDS
             )
             
             # Update deployment with container info
@@ -828,6 +837,11 @@ with open('/tmp/agent_stderr.txt', 'w') as f:
             logger.info(f"Function container {container_name} deployed successfully with ID {container.id}")
             return container
             
+        except asyncio.TimeoutError:
+            logger.error(f"Function container creation timed out for {container_name} after {CONTAINER_CREATION_TIMEOUT_SECONDS} seconds")
+            deployment.status = DeploymentStatus.FAILED.value
+            self.db.commit()
+            raise Exception(f"Function container creation timed out for {container_name}")
         except Exception as e:
             logger.error(f"Failed to deploy function container {container_name}: {e}")
             deployment.status = DeploymentStatus.FAILED.value
