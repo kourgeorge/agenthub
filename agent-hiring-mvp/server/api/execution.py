@@ -597,4 +597,98 @@ def update_execution_status(
         "execution_id": updated_execution.execution_id,
         "status": updated_execution.status,
         "message": "Execution status updated successfully"
-    } 
+    }
+
+
+@router.post("/hiring/{hiring_id}/reset")
+async def reset_persistent_agent(
+    hiring_id: int,
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_session_dependency)
+):
+    """Reset a persistent agent (cleanup and reset state to allow re-initialization)."""
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    try:
+        # Get hiring to validate ownership
+        from ..models.hiring import Hiring
+        hiring = db.query(Hiring).filter(Hiring.id == hiring_id).first()
+        if not hiring:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Hiring not found"
+            )
+        
+        # Ensure the user can only reset their own hirings
+        if hiring.user_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: You can only reset your own hirings"
+            )
+        
+        # Get agent information
+        from ..models.agent import Agent
+        agent = db.query(Agent).filter(Agent.id == hiring.agent_id).first()
+        if not agent:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Agent not found"
+            )
+        
+        # Only allow reset for persistent agents
+        if agent.agent_type != "persistent":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Reset is only available for persistent agents"
+            )
+        
+        # Get deployment information
+        from ..models.deployment import AgentDeployment
+        deployment = db.query(AgentDeployment).filter(
+            AgentDeployment.hiring_id == hiring_id
+        ).first()
+        
+        if not deployment:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No deployment found for this hiring"
+            )
+        
+        # Clean up the persistent agent in the container
+        from ..services.deployment_service import DeploymentService
+        deployment_service = DeploymentService(db)
+        cleanup_result = deployment_service.cleanup_persistent_agent(deployment.deployment_id)
+        
+        if cleanup_result.get("status") != "success":
+            logger.warning(f"Cleanup failed but proceeding with state reset: {cleanup_result}")
+        
+        # Reset the hiring state to uninitialized
+        hiring.state = {
+            'status': 'uninitialized',
+            'config': None,
+            'state_data': None,
+            'created_at': None,
+            'last_accessed': None,
+            'execution_count': 0
+        }
+        
+        db.commit()
+        logger.info(f"Reset persistent agent for hiring {hiring_id}")
+        
+        return {
+            "status": "success",
+            "message": "Agent reset successfully. You can now re-initialize the agent.",
+            "hiring_id": hiring_id,
+            "agent_id": agent.id,
+            "cleanup_result": cleanup_result
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Reset failed for hiring {hiring_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Internal server error: {str(e)}"
+        ) 
