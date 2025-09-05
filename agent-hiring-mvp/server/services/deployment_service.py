@@ -602,7 +602,7 @@ class PersistentAgent(ABC):
             logger.error(f"Docker build failed for {image_name}: {e}")
             raise
 
-    def pre_build_agent_image(self, agent: Agent) -> Optional[str]:
+    async def pre_build_agent_image(self, agent: Agent) -> Optional[str]:
         """Pre-build Docker image for an agent without creating a deployment."""
         try:
             logger.info(f"Pre-building Docker image for agent {agent.id}")
@@ -653,54 +653,38 @@ class PersistentAgent(ABC):
                 safe_agent_id = agent.id.lower().replace('-', '_')
                 image_name = f"agenthub_{safe_agent_type}_prebuild_{safe_agent_id}_{prebuild_uuid}"
                 
-                # Build Docker image with timeout
+                # Build Docker image asynchronously with timeout
                 try:
                     logger.info(f"Building Docker image {image_name}")
                     
-                    # Use a cross-platform timeout approach
-                    import threading
-                    import time
-                    
-                    build_result = {"image": None, "logs": None, "error": None, "completed": False}
+                    # Use asyncio to run Docker build in a thread pool with timeout
+                    import asyncio
                     
                     def docker_build():
-                        try:
-                            image, logs = self.docker_client.images.build(
-                                path=str(temp_deploy_dir),
-                                tag=image_name,
-                                rm=True,
-                                forcerm=True
-                            )
-                            build_result["image"] = image
-                            build_result["logs"] = logs
-                            build_result["completed"] = True
-                        except Exception as e:
-                            build_result["error"] = e
-                            logger.error(f"Docker build failed in thread: {e}")
+                        return self.docker_client.images.build(
+                            path=str(temp_deploy_dir),
+                            tag=image_name,
+                            rm=True,
+                            forcerm=True
+                        )
                     
-                    # Start build in a separate thread
-                    build_thread = threading.Thread(target=docker_build)
-                    build_thread.daemon = True
-                    build_thread.start()
-                    
-                    # Wait for build to complete or timeout
+                    # Run Docker build in thread pool with timeout
                     timeout_seconds = 600  # 10 minutes
-                    start_time = time.time()
+                    loop = asyncio.get_event_loop()
                     
-                    while not build_result["completed"] and build_result["error"] is None:
-                        if time.time() - start_time > timeout_seconds:
-                            logger.error(f"Docker build timed out for {image_name} after {timeout_seconds} seconds")
-                            return None
-                        time.sleep(1)  # Check every second
-                    
-                    # Check for errors
-                    if build_result["error"]:
-                        logger.error(f"Docker build failed for {image_name}: {build_result['error']}")
+                    try:
+                        image, logs = await asyncio.wait_for(
+                            loop.run_in_executor(None, docker_build),
+                            timeout=timeout_seconds
+                        )
+                        
+                        logger.info(f"Successfully pre-built Docker image {image_name} for agent {agent.id}")
+                        logger.info(f"📦 Image will be stored in agent.docker_image field for future use")
+                        return image_name
+                        
+                    except asyncio.TimeoutError:
+                        logger.error(f"Docker build timed out for {image_name} after {timeout_seconds} seconds")
                         return None
-                    
-                    logger.info(f"Successfully pre-built Docker image {image_name} for agent {agent.id}")
-                    logger.info(f"📦 Image will be stored in agent.docker_image field for future use")
-                    return image_name
                     
                 except Exception as e:
                     logger.error(f"Docker build failed for {image_name}: {e}")
