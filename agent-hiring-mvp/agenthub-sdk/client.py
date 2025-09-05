@@ -104,7 +104,7 @@ class AgentHubClient:
         timeout = aiohttp.ClientTimeout(
             total=600,  # 10 minutes total timeout for agent operations
             connect=30,  # 30 seconds to establish connection
-            sock_read=300,  # 5 minutes to read from socket (for long operations like agent rejection)
+            sock_read=600,  # 10 minutes to read from socket (for long operations like Docker builds)
             sock_connect=30,  # 30 seconds to connect socket
         )
         
@@ -466,7 +466,7 @@ class AgentHubClient:
         extended_timeout = aiohttp.ClientTimeout(
             total=600,  # 10 minutes total
             connect=30,  # 30 seconds to establish connection
-            sock_read=300,  # 5 minutes to read from socket
+            sock_read=600,  # 10 minutes to read from socket
             sock_connect=30,  # 30 seconds to connect socket
         )
         
