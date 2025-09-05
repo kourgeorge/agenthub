@@ -693,7 +693,31 @@ def publish(ctx, directory, base_url, dry_run, build):
                     echo(f"  Agent ID: {result.get('agent_id', 'Unknown')}")
                     echo(f"  Status: {result.get('status', 'Unknown')}")
                     echo(style("  🐳 Docker build started in background", fg='cyan'))
-                    echo(style("⏳ Waiting for Docker build to complete...", fg='yellow'))
+                    echo(style("  🔨 Building Docker image...", fg='yellow'))
+                    echo(style("  ⏱️  This may take several minutes for first-time builds", fg='blue'))
+                    echo(style("  🔄 Please wait while Docker build completes...", fg='blue'))
+                    
+                    # Show a simple progress indicator
+                    import time
+                    import threading
+                    import sys
+                    
+                    # Simple spinner animation with progress message
+                    def show_docker_spinner():
+                        spinner_chars = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+                        i = 0
+                        while not hasattr(show_docker_spinner, 'stop'):
+                            sys.stdout.write(f'\r  {spinner_chars[i]} Building Docker image (this may take several minutes)... ')
+                            sys.stdout.flush()
+                            time.sleep(0.1)
+                            i = (i + 1) % len(spinner_chars)
+                    
+                    # Start spinner in background
+                    spinner_thread = threading.Thread(target=show_docker_spinner, daemon=True)
+                    spinner_thread.start()
+                    
+                    build_start_time = time.time()
+                    last_status = None
                     
                     while True:
                         await asyncio.sleep(5)  # Check every 5 seconds
@@ -701,24 +725,50 @@ def publish(ctx, directory, base_url, dry_run, build):
                             status = await client.get_build_status(result['agent_id'])
                             
                             if status['status'] == 'completed':
-                                echo(style("✓ Docker build completed!", fg='green'))
+                                # Stop spinner
+                                show_docker_spinner.stop = True
+                                spinner_thread.join(timeout=1)
+                                sys.stdout.write('\r' + ' ' * 60 + '\r')  # Clear spinner line
+                                
+                                echo(style("✅ Docker build completed!", fg='green'))
                                 echo(f"  Image: {status.get('image_name', 'Unknown')}")
                                 if status.get('completed_at'):
                                     echo(f"  Completed at: {status['completed_at']}")
+                                
+                                # Show build timing
+                                build_duration = time.time() - build_start_time
+                                minutes = int(build_duration // 60)
+                                seconds = int(build_duration % 60)
+                                if minutes > 0:
+                                    echo(f"  Build time: {minutes}m {seconds}s")
+                                else:
+                                    echo(f"  Build time: {seconds}s")
                                 break
                             elif status['status'] == 'building':
-                                echo(style("⏳ Still building...", fg='yellow'))
-                                if status.get('started_at'):
-                                    echo(f"  Started at: {status['started_at']}")
+                                # Only update display if status changed
+                                if last_status != 'building':
+                                    last_status = 'building'
+                                    if status.get('started_at'):
+                                        echo(f"\n  Started at: {status['started_at']}")
                             elif status['status'] == 'failed':
-                                echo(style("✗ Docker build failed!", fg='red'))
+                                # Stop spinner
+                                show_docker_spinner.stop = True
+                                spinner_thread.join(timeout=1)
+                                sys.stdout.write('\r' + ' ' * 60 + '\r')  # Clear spinner line
+                                
+                                echo(style("❌ Docker build failed!", fg='red'))
+                                if status.get('error'):
+                                    echo(f"  Error: {status['error']}")
                                 break
                             elif status['status'] == 'not_started':
-                                echo(style("⚠ Build not started yet, waiting...", fg='yellow'))
+                                # Only update display if status changed
+                                if last_status != 'not_started':
+                                    last_status = 'not_started'
+                                    echo(style("  ⚠️ Build not started yet, waiting...", fg='yellow'))
                             
                         except Exception as e:
-                            echo(style(f"⚠ Warning: Could not check build status: {e}", fg='yellow'))
                             # Continue waiting even if status check fails
+                            pass
                     
                     return result
                 else:
@@ -1288,13 +1338,51 @@ def hire_agent_cmd(ctx, agent_id, config, billing_cycle, user_id, wait, timeout,
                             echo(style("  🔄 Persistent Agent - Waiting for deployment completion...", fg='cyan'))
                         elif agent_type == 'function':
                             echo(style("  ⚡ Function Agent - Waiting for deployment completion...", fg='cyan'))
-                        echo(style("  ⏳ Container deployment is in progress...", fg='yellow'))
+                        echo(style("  🚀 Container deployment is in progress...", fg='yellow'))
+                        echo(style("  ⏱️  This may take several minutes for first-time deployments", fg='blue'))
+                        echo(style("  🔄 Please wait while deployment completes...", fg='blue'))
+                        
+                        # Show a simple progress indicator
+                        import time
+                        import threading
+                        import sys
+                        
+                        # Simple spinner animation with progress message
+                        def show_deployment_spinner():
+                            spinner_chars = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+                            i = 0
+                            while not hasattr(show_deployment_spinner, 'stop'):
+                                sys.stdout.write(f'\r  {spinner_chars[i]} Deploying container (this may take several minutes)... ')
+                                sys.stdout.flush()
+                                time.sleep(0.1)
+                                i = (i + 1) % len(spinner_chars)
+                        
+                        # Start spinner in background
+                        spinner_thread = threading.Thread(target=show_deployment_spinner, daemon=True)
+                        spinner_thread.start()
+                        
+                        deployment_start_time = time.time()
                         
                         # Poll deployment status until ready
                         deployment_ready = await _wait_for_deployment_ready(client, hiring_id, timeout)
                         
+                        # Stop spinner
+                        show_deployment_spinner.stop = True
+                        spinner_thread.join(timeout=1)
+                        sys.stdout.write('\r' + ' ' * 60 + '\r')  # Clear spinner line
+                        
                         if deployment_ready:
                             echo(style("  ✅ Deployment completed successfully!", fg='green'))
+                            
+                            # Show deployment timing
+                            deployment_duration = time.time() - deployment_start_time
+                            minutes = int(deployment_duration // 60)
+                            seconds = int(deployment_duration % 60)
+                            if minutes > 0:
+                                echo(f"  Deployment time: {minutes}m {seconds}s")
+                            else:
+                                echo(f"  Deployment time: {seconds}s")
+                            
                             # Get updated deployment info
                             deployment_info = await _get_deployment_info(client, hiring_id)
                             if deployment_info:
