@@ -143,12 +143,12 @@ class AgentHubClient:
             raise ValueError(f"Agent validation failed: {errors}")
         
         # Validate main function in the code directory
-        main_errors = await self._validate_main_function(code_directory, config)
+        main_errors = self._validate_main_function(code_directory, config)
         if main_errors:
             raise ValueError(f"Main function validation failed: {main_errors}")
         
         # Create code ZIP file
-        zip_path = await self._create_code_zip(code_directory)
+        zip_path = self._create_code_zip(code_directory)
         
         try:
             # Prepare form data
@@ -249,7 +249,7 @@ class AgentHubClient:
                 logger.error(f"Failed to get build status: {error_text}")
                 raise Exception(f"Failed to get build status: {error_text}")
     
-    async def _validate_main_function(self, code_directory: str, config) -> List[str]:
+    def _validate_main_function(self, code_directory: str, config) -> List[str]:
         """Validate that the agent has the correct structure for its type."""
         errors = []
         
@@ -1145,7 +1145,7 @@ class AgentHubClient:
     # UTILITY METHODS
     # =============================================================================
     
-    async def _create_code_zip(self, code_directory: str) -> str:
+    def _create_code_zip(self, code_directory: str) -> str:
         """Create a ZIP file from the code directory."""
         code_path = Path(code_directory)
         if not code_path.exists():
