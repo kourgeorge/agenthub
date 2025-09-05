@@ -21,6 +21,14 @@ from ..models.hiring import Hiring
 from ..models.deployment import AgentDeployment, DeploymentStatus
 from .container_utils import generate_container_name, generate_docker_image_name
 from .resource_limits import get_agent_resource_limits, to_docker_config
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+from config import (
+    DOCKER_BUILD_TIMEOUT_SECONDS,
+    CONTAINER_CREATION_TIMEOUT_SECONDS,
+    CONTAINER_STOP_TIMEOUT_SECONDS
+)
 
 logger = logging.getLogger(__name__)
 
