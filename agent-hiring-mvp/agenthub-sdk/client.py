@@ -845,24 +845,20 @@ class AgentHubClient:
                         response_body=error_text,
                         operation="get_execution_status"
                     )
-    
 
-    
     async def run_agent(
         self,
-        agent_id: str,
-        input_data: Dict[str, Any],
-        hiring_id: Optional[int] = None,
-        user_id: Optional[int] = None,
-        wait_for_completion: bool = True,
-        timeout: int = 60,
+            input_data: Dict[str, Any],
+            hiring_id: int = None,
+            user_id: int = None,
+            wait_for_completion: bool = True,
+            timeout: int = 60,
     ) -> Dict[str, Any]:
         """Run an agent and optionally wait for completion."""
         # Create and trigger execution
-        execution_result = await self.execute_agent(
-            agent_id=agent_id,
-            input_data=input_data,
+        execution_result = await self.execute_hired_agent(
             hiring_id=hiring_id,
+            input_data=input_data,
             user_id=user_id,
         )
         
@@ -1305,7 +1301,6 @@ def hire_agent_sync(
 
 
 def run_agent_sync(
-    agent_id: str,
     input_data: Dict[str, Any],
     base_url: str = "http://localhost:8002",
     api_key: Optional[str] = None,
@@ -1318,7 +1313,7 @@ def run_agent_sync(
     async def _run():
         async with AgentHubClient(base_url, api_key=api_key) as client:
             return await client.run_agent(
-                agent_id, input_data, hiring_id, user_id, wait_for_completion, timeout
+                input_data, hiring_id, user_id, wait_for_completion, timeout
             )
     
     return asyncio.run(_run())
