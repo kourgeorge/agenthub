@@ -1,7 +1,41 @@
+# LiteLLM Configuration
+general_settings:
+  # Authentication - users need this key to access the proxy
+  master_key: os.environ/LITELLM_MASTER_KEY
+  
+  # Optional: Set a default model if none specified
+  default_model: gpt-4o-mini
+  
+  # Optional: Enable UI for model management
+  ui_access: true
+
 model_list:
   - model_name: azure-gpt-4o-mini
     litellm_params:
       model: azure/gpt-4o-mini-2024-07-18
-      api_base: os.environ/AZURE_API_BASE # runs os.getenv("AZURE_API_BASE")
-      api_key: os.environ/AZURE_API_KEY # runs os.getenv("AZURE_API_KEY")
+      api_base: os.environ/AZURE_API_BASE
+      api_key: os.environ/AZURE_API_KEY
       api_version: "2024-08-01-preview"
+  
+  # OpenAI Models
+  - model_name: gpt-4o
+    litellm_params:
+      model: gpt-4o
+      api_key: os.environ/OPENAI_API_KEY
+  
+  - model_name: gpt-4o-mini
+    litellm_params:
+      model: gpt-4o-mini
+      api_key: os.environ/OPENAI_API_KEY
+  
+  # Anthropic Models
+  - model_name: claude-3-5-sonnet
+    litellm_params:
+      model: claude-3-5-sonnet-20241022
+      api_key: os.environ/ANTHROPIC_API_KEY
+  
+  # Google Models
+  - model_name: gemini-pro
+    litellm_params:
+      model: gemini/gemini-pro
+      api_key: os.environ/GOOGLE_API_KEY

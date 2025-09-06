@@ -1,0 +1,32 @@
+services:
+  litellm:
+    build:
+      context: .
+      args:
+        target: runtime
+    image: ghcr.io/berriai/litellm:main-stable
+    #########################################
+    ## Configuration file for model settings ##
+    volumes:
+      - ../configs/litellm/litellm_config.yaml:/app/config.yaml
+    command:
+      - "--config=/app/config.yaml"
+      - "--host=0.0.0.0"
+      - "--port=4000"
+    ##############################################
+    ports:
+      - "4000:4000" # Map the container port to the host - accessible externally
+    environment:
+      # Removed DATABASE_URL and STORE_MODEL_IN_DB - using file-based config instead
+      LITELLM_HOST: "0.0.0.0"
+      LITELLM_PORT: "4000"
+    env_file:
+      - .env # Load local .env file
+    # Removed depends_on: db - no longer depends on database
+    healthcheck:  # Defines the health check configuration for the container
+      test: [ "CMD-SHELL", "wget --no-verbose --tries=1 http://localhost:4000/health/liveliness || exit 1" ]  # Command to execute for health check
+      interval: 30s  # Perform health check every 30 seconds
+      timeout: 10s   # Health check command times out after 10 seconds
+      retries: 3     # Retry up to 3 times if health check fails
+      start_period: 40s  # Wait 40 seconds after container start before beginning health checks
+
