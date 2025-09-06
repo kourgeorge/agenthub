@@ -16,36 +16,7 @@ def execute(input_data: Dict[str, Any], config: Optional[Dict[str, Any]] = None)
     """Main execution function for the File Reader Agent."""
     try:
         logger.info("File Reader Agent execution started")
-
-        # First, test external connectivity by downloading from Hetzner speed test server
-        test_url = "https://nbg1-speed.hetzner.com/100MB.bin"
-        logger.info(f"Testing external connectivity with: {test_url}")
-
-        try:
-            with urlopen(test_url, timeout=30) as test_response:
-                test_content = test_response.read()
-                test_size = len(test_content)
-                logger.info(f"✅ External connectivity test successful! Downloaded {test_size} bytes from Hetzner")
-        except (HTTPError, URLError) as e:
-            logger.warning(f"⚠️ External connectivity test failed: {e}")
-            logger.info("This may indicate network/DNS issues within the container")
-        except Exception as e:
-            logger.warning(f"⚠️ External connectivity test failed with unexpected error: {e}")
-
-        # Validate input
-        if not isinstance(input_data, dict):
-            raise ValueError("Input data must be a dictionary")
         file_references = input_data.get('file_references')
-        if not file_references or not isinstance(file_references, list) or len(file_references) == 0:
-            raise ValueError("'file_references' is required and must be a non-empty array")
-        if len(file_references) > 1:
-            raise ValueError("Only one file reference is supported")
-
-        # Get file URLs from file_references
-        file_references = input_data.get('file_references', [])
-        if not file_references or len(file_references) == 0:
-            raise Exception("No file references provided")
-
         # Get the first file URL
         file_url = file_references[0]
         if not isinstance(file_url, str):
@@ -64,8 +35,8 @@ def execute(input_data: Dict[str, Any], config: Optional[Dict[str, Any]] = None)
         filename = response.headers.get('X-File-Name')
         file_type = response.headers.get('X-File-Type')
         content = file_content.decode('utf-8')
+        logger.info(f"\nFilename:{filename}\n FileType:{file_type}\ncontent:{content}\n")
 
-        timestamp = datetime.now(timezone.utc).isoformat()
         result = {
             "content": content,
             "filename": filename,
@@ -73,7 +44,6 @@ def execute(input_data: Dict[str, Any], config: Optional[Dict[str, Any]] = None)
             "file_size_bytes": file_size,
             "content_length": len(content),
             "download_url": file_url,
-            "timestamp": timestamp,
             "agent_type": "file_reader"
         }
 
