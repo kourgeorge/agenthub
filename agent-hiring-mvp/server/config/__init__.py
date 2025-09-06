@@ -168,7 +168,8 @@ LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 # =============================================================================
 
 # Directory paths
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# Go up 2 levels from server/config/__init__.py to reach project root
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SERVER_DIR = os.path.join(BASE_DIR, "server")
 TESTS_DIR = os.path.join(BASE_DIR, "tests")
 UPLOADS_DIR = os.path.join(BASE_DIR, "uploads")

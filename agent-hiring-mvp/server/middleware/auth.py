@@ -5,16 +5,9 @@ from fastapi import Depends, HTTPException, status, Header, Request
 from sqlalchemy.orm import Session
 import jwt
 from datetime import datetime, timedelta, timezone
-import sys
-import os
 import logging
 
-# Add the project root to Python path for absolute imports
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
-
-from config import (
+from ..config import (
     JWT_SECRET_KEY,
     JWT_REFRESH_SECRET_KEY,
     JWT_ALGORITHM,

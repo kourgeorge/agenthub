@@ -6,15 +6,8 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr
 from typing import Optional
 from datetime import datetime, timezone
-import sys
-import os
 
-# Add the project root to Python path for absolute imports
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
-
-from config import (
+from ..config import (
     JWT_TOKEN_TYPE,
     ALLOWED_PROFILE_FIELDS,
     AUTH_VERIFY_EMAIL_PATH,

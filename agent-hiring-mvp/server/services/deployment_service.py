@@ -24,9 +24,7 @@ from ..models.deployment import AgentDeployment, DeploymentStatus
 from .env_service import EnvironmentService
 from .container_utils import generate_container_name, generate_docker_image_name
 import sys
-import os
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
-from config import (
+from ..config import (
     DOCKER_BUILD_TIMEOUT_SECONDS,
     DOCKER_PREBUILD_TIMEOUT_SECONDS,
     CONTAINER_CREATION_TIMEOUT_SECONDS,
