@@ -35,7 +35,7 @@ model_list:
       api_key: os.environ/ANTHROPIC_API_KEY
   
   # Google Models
-  - model_name: gemini-pro
+  - model_name: gemini-2.5-flash
     litellm_params:
-      model: gemini/gemini-pro
+      model: gemini/gemini-2.5-flash
       api_key: os.environ/GOOGLE_API_KEY

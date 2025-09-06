@@ -21,7 +21,7 @@ services:
       LITELLM_HOST: "0.0.0.0"
       LITELLM_PORT: "4000"
     env_file:
-      - .env # Load local .env file
+      - ../configs/litellm/.env # Load local .env file
     # Removed depends_on: db - no longer depends on database
     healthcheck:  # Defines the health check configuration for the container
       test: [ "CMD-SHELL", "wget --no-verbose --tries=1 http://localhost:4000/health/liveliness || exit 1" ]  # Command to execute for health check
