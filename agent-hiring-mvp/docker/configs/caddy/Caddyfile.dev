@@ -1,0 +1,27 @@
+# Development Caddyfile for AgentHub (Self-signed certificates)
+# Your FastAPI server runs on port 8002, web UI on port 8080
+# External access: HTTPS on standard port 443
+# Cross-platform compatible (macOS, Windows, Linux)
+
+# Web UI - accessible at https://localhost
+localhost {
+    reverse_proxy host.docker.internal:8080
+    log {
+        output stdout
+        format console
+    }
+}
+
+# API Server - accessible at https://localhost/api
+localhost/api/* {
+    reverse_proxy host.docker.internal:8002
+    log {
+        output stdout
+        format console
+    }
+}
+
+# HTTP to HTTPS redirect (port 80)
+:80 {
+    redir https://{host}{uri} permanent
+}

@@ -1,0 +1,100 @@
+#!/usr/bin/env python3
+"""
+Universal Docker management launcher for AgentHub
+Automatically detects platform and uses the appropriate script
+
+Usage: ./docker/scripts/docker [command] [options]
+"""
+
+import os
+import sys
+import platform
+import subprocess
+from pathlib import Path
+
+def get_script_dir():
+    """Get the directory containing this script"""
+    return Path(__file__).parent
+
+def get_platform():
+    """Get the current platform"""
+    system = platform.system().lower()
+    if system == "windows":
+        return "windows"
+    elif system in ["linux", "darwin"]:
+        return "unix"
+    else:
+        return "unknown"
+
+def find_python():
+    """Find the best Python executable"""
+    for cmd in ["python3", "python"]:
+        try:
+            result = subprocess.run([cmd, "--version"], capture_output=True, text=True)
+            if result.returncode == 0:
+                return cmd
+        except FileNotFoundError:
+            continue
+    return None
+
+def main():
+    """Main launcher function"""
+    script_dir = get_script_dir()
+    platform_type = get_platform()
+    
+    # Get command line arguments
+    args = sys.argv[1:]
+    
+    if platform_type == "windows":
+        # Try PowerShell first, then batch file
+        ps_script = script_dir / "docker.ps1"
+        bat_script = script_dir / "docker.bat"
+        
+        if ps_script.exists():
+            try:
+                cmd = ["powershell", "-File", str(ps_script)] + args
+                subprocess.run(cmd, check=True)
+                return
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                pass
+        
+        if bat_script.exists():
+            try:
+                cmd = [str(bat_script)] + args
+                subprocess.run(cmd, check=True)
+                return
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                pass
+    else:
+        # Try Python script first, then shell script
+        py_script = script_dir / "docker.py"
+        sh_script = script_dir / "docker.sh"
+        
+        if py_script.exists():
+            python_cmd = find_python()
+            if python_cmd:
+                try:
+                    cmd = [python_cmd, str(py_script)] + args
+                    subprocess.run(cmd, check=True)
+                    return
+                except (subprocess.CalledProcessError, FileNotFoundError):
+                    pass
+        
+        if sh_script.exists():
+            try:
+                cmd = [str(sh_script)] + args
+                subprocess.run(cmd, check=True)
+                return
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                pass
+    
+    # If we get here, no suitable script was found
+    print("Error: No suitable Docker management script found for this platform")
+    print(f"Platform: {platform_type}")
+    print(f"Available scripts in {script_dir}:")
+    for script in script_dir.glob("docker.*"):
+        print(f"  - {script.name}")
+    sys.exit(1)
+
+if __name__ == "__main__":
+    main()

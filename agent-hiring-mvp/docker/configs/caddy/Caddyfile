@@ -1,0 +1,77 @@
+# Production Caddyfile for AgentHub with domain tehagenthub.cloud
+# Web UI runs on port 8080, FastAPI server on port 8002
+# External access: HTTPS on standard port 443
+
+# API Server - accessible at https://tehagenthub.cloud/api
+# This must come BEFORE the main domain rule to avoid conflicts
+tehagenthub.cloud/api/* {
+    # Reverse proxy to the FastAPI server running on host
+    reverse_proxy host.docker.internal:8002 {
+        # Health checks
+        health_uri /health
+        health_interval 30s
+        health_timeout 10s
+        health_status 200
+    }
+    
+    # Security headers for API
+    header {
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy strict-origin-when-cross-origin
+        
+        # Remove server header
+        -Server
+    }
+    
+    # Logging
+    log {
+        output stdout
+        format json
+        level INFO
+    }
+}
+
+# Web UI - accessible at https://tehagenthub.cloud
+# This must come AFTER the API rule to avoid conflicts
+tehagenthub.cloud {
+    # Reverse proxy to the web UI running on host
+    reverse_proxy host.docker.internal:8080 {
+        # Health checks
+        health_uri /health
+        health_interval 30s
+        health_timeout 10s
+        health_status 200
+    }
+    
+    # Security headers
+    header {
+        # Security headers
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy strict-origin-when-cross-origin
+        
+        # Updated CSP to allow API connections
+        Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://tehagenthub.cloud; img-src 'self' data:; font-src 'self';"
+        
+        # Remove server header
+        -Server
+    }
+    
+    # Compression
+    encode gzip zstd
+    
+    # Logging
+    log {
+        output stdout
+        format json
+        level INFO
+    }
+}
+
+# HTTP to HTTPS redirect (port 80)
+:80 {
+    redir https://{host}{uri} permanent
+}
