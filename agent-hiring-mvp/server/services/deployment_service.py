@@ -1473,8 +1473,14 @@ class PersistentAgent(ABC):
             # Get agent configuration from config.json file
             try:
                 agent_config = self._get_agent_config_from_files(deployment.agent_id)
-                entry_point = agent_config.get('entry_point', 'persistent_rag_agent.py')
-                agent_class = agent_config.get('agent_class', 'RAGAgent')
+                entry_point = agent_config.get('entry_point')
+                agent_class = agent_config.get('agent_class')
+                
+                if not entry_point:
+                    return {"error": "Agent configuration missing 'entry_point' in config.json"}
+                if not agent_class:
+                    return {"error": "Agent configuration missing 'agent_class' in config.json"}
+                    
             except Exception as e:
                 return {"error": f"Failed to get agent configuration: {str(e)}"}
             
