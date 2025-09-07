@@ -228,14 +228,14 @@ class PublicationProcessor:
 
     def deduplicate_publications(self, publications: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
-        Remove duplicate publications based on title only.
+        Remove duplicate publications based on title only and sort by citation count.
         Enhanced to handle shared papers between team members.
         
         Args:
             publications: List of publication dictionaries
             
         Returns:
-            List of unique publications
+            List of unique publications sorted by citation count (descending)
         """
         if not publications:
             return []
@@ -257,6 +257,10 @@ class PublicationProcessor:
             if normalized_title not in seen_titles:
                 unique_pubs.append(pub)
                 seen_titles.add(normalized_title)
+
+        # Sort by citation count in descending order (highest citations first)
+        # Treat papers without citation data as having 0 citations
+        unique_pubs.sort(key=lambda x: x.get("citations", 0), reverse=True)
 
         return unique_pubs
 
@@ -457,4 +461,108 @@ class PublicationProcessor:
             "citation_trends": citation_trends,
             "median_citations": sorted_by_citations[len(sorted_by_citations) // 2].get("citations",
                                                                                        0) if sorted_by_citations else 0
+        }
+
+    def get_team_collaboration_network(self, publications: List[Dict[str, Any]], team_members: List[str]) -> Dict[str, Any]:
+        """
+        Analyze the collaboration network within the team and with external collaborators.
+        
+        Args:
+            publications: List of publications with author information
+            team_members: List of team member names
+            
+        Returns:
+            Dictionary containing collaboration network analysis
+        """
+        if not publications or not team_members:
+            return {
+                "internal_collaborations": {},
+                "external_collaborations": {},
+                "collaboration_metrics": {}
+            }
+        
+        # Normalize team member names
+        normalized_team_members = {name.lower().strip(): name for name in team_members}
+        
+        # Track internal and external collaborations
+        internal_collaborations = {name: {} for name in team_members}
+        external_collaborations = {name: {} for name in team_members}
+        
+        for pub in publications:
+            authors = pub.get("authors", [])
+            if not authors:
+                continue
+                
+            # Find team members in this paper
+            paper_team_members = []
+            for author in authors:
+                author_normalized = author.lower().strip()
+                for normalized_name, original_name in normalized_team_members.items():
+                    if normalized_name in author_normalized or author_normalized in normalized_name:
+                        paper_team_members.append(original_name)
+                        break
+            
+            # Analyze collaborations for each team member in this paper
+            for team_member in paper_team_members:
+                for author in authors:
+                    author_normalized = author.lower().strip()
+                    
+                    # Skip self
+                    if normalized_team_members.get(author_normalized) == team_member:
+                        continue
+                    
+                    # Check if this is another team member (internal collaboration)
+                    is_team_member = False
+                    for normalized_name, original_name in normalized_team_members.items():
+                        if normalized_name in author_normalized or author_normalized in normalized_name:
+                            if original_name != team_member:
+                                if original_name not in internal_collaborations[team_member]:
+                                    internal_collaborations[team_member][original_name] = 0
+                                internal_collaborations[team_member][original_name] += 1
+                                is_team_member = True
+                            break
+                    
+                    # If not a team member, it's an external collaboration
+                    if not is_team_member:
+                        if author not in external_collaborations[team_member]:
+                            external_collaborations[team_member][author] = 0
+                        external_collaborations[team_member][author] += 1
+        
+        # Sort collaborations by count
+        def sort_collaborations(collabs):
+            return sorted(
+                collabs.items(),
+                key=lambda x: (-x[1], x[0])
+            )
+        
+        sorted_internal = {
+            member: [{"name": name, "collaboration_count": count} 
+                    for name, count in sort_collaborations(collabs)]
+            for member, collabs in internal_collaborations.items()
+        }
+        
+        sorted_external = {
+            member: [{"name": name, "collaboration_count": count} 
+                    for name, count in sort_collaborations(collabs)]
+            for member, collabs in external_collaborations.items()
+        }
+        
+        # Calculate collaboration metrics
+        total_internal_collabs = sum(len(collabs) for collabs in internal_collaborations.values())
+        total_external_collabs = sum(len(collabs) for collabs in external_collaborations.values())
+        
+        collaboration_metrics = {
+            "total_internal_collaborations": total_internal_collabs,
+            "total_external_collaborations": total_external_collabs,
+            "average_internal_per_member": total_internal_collabs / len(team_members) if team_members else 0,
+            "average_external_per_member": total_external_collabs / len(team_members) if team_members else 0,
+            "most_collaborative_member": max(team_members, 
+                                           key=lambda m: len(internal_collaborations[m]) + len(external_collaborations[m])) 
+                                           if team_members else None
+        }
+        
+        return {
+            "internal_collaborations": sorted_internal,
+            "external_collaborations": sorted_external,
+            "collaboration_metrics": collaboration_metrics
         }

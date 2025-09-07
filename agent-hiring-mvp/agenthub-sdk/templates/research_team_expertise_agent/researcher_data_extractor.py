@@ -8,7 +8,7 @@ from academic sources like Semantic Scholar and arXiv.
 import logging
 import requests
 import arxiv
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Union
 from datetime import datetime
 import json
 import re
@@ -37,7 +37,6 @@ class ResearcherDataExtractor:
         })
         # Use the provided LLM handler directly
         self.llm = llm_handler
-        # Paper enrichment configuration
         self.semantic_scholar = SemanticScholar()
         self.publication_processor = PublicationProcessor()
         self.openalex_client = OpenAlexClient()
@@ -55,7 +54,6 @@ class ResearcherDataExtractor:
             Dictionary with member information or None if extraction fails
         """
         try:
-            logger.info(f"Starting extraction for team member: {name}")
 
             # Initialize member data structure
             member_data = {
@@ -120,9 +118,12 @@ class ResearcherDataExtractor:
             if member_data["publications"]:
                 member_data["publications"] = self.publication_processor.deduplicate_publications(
                     member_data["publications"])
-                member_data["expertise_characterization"] = self._analyze_and_characterize_expertise(name, member_data[
-                    "publications"])
-                member_data["collaborators"] = list(member_data["collaborators"])
+
+                member_data["domain_expertise"] = (
+                    self._analyze_domain_expertise(name, member_data["publications"]))
+
+                # Sort collaborators by collaboration count
+                member_data["collaborators"] = self._sort_collaborators_by_count(member_data["publications"], name)
 
                 # Update citation metrics with final calculated values
                 if not member_data.get("citation_metrics"):
@@ -149,6 +150,46 @@ class ResearcherDataExtractor:
         except Exception as e:
             logger.error(f"Error extracting member info for {name}: {str(e)}")
             return None
+
+    def _sort_collaborators_by_count(self, publications: List[Dict[str, Any]], researcher_name: str) -> List[
+        Dict[str, Any]]:
+
+        if not publications:
+            return []
+
+        # Count collaborations for each collaborator
+        collaboration_counts = {}
+
+        for pub in publications:
+            authors = pub.get("authors", [])
+            if not authors:
+                continue
+
+            # Count collaborations with other authors
+            for author in authors:
+                author_normalized = author.lower().strip()
+                researcher_normalized = researcher_name.lower().strip()
+
+                # Skip the researcher themselves
+                if author_normalized == researcher_normalized:
+                    continue
+
+                # Count collaboration with this author
+                if author not in collaboration_counts:
+                    collaboration_counts[author] = 0
+                collaboration_counts[author] += 1
+
+        # Sort collaborators by collaboration count (descending) and then by name (ascending)
+        sorted_collaborators = sorted(
+            collaboration_counts.items(),
+            key=lambda x: (-x[1], x[0])  # Negative count for descending order
+        )
+
+        # Return as list of dictionaries with name and collaboration count
+        return [
+            {"name": name, "collaboration_count": count}
+            for name, count in sorted_collaborators
+        ]
 
     def _extract_publications_from_semantic_scholar(self, name: str, max_pubs: int) -> Dict[str, Any]:
         """Extract data from Semantic Scholar using the official client library."""
@@ -372,62 +413,80 @@ class ResearcherDataExtractor:
         domains = self._extract_domains_with_llm(text, self.arxiv_taxonomy)
 
         if domains:
-            logger.info(f"LLM extracted {len(domains)} domains: {domains}")
             return domains
         else:
             logger.warning("LLM extraction failed - no fallback available")
             return []
 
-    def _extract_domains_with_llm(self, text: str, taxonomy: Dict[str, Any]) -> List[str]:
+    def _extract_domains_with_llm(self, text: str, taxonomy: Dict[str, Any]) -> Union[Dict[str, Any], List[Any]]:
         """Extract domains using LLM with structured output."""
         try:
-
             # Create system and user messages
-            system_prompt = """You are an expert in academic and technical domain classification. 
+            system_prompt = """
+            You are an expert in academic and technical domain classification. 
             Your task is to analyze text content and identify the most relevant expertise domains from a provided taxonomy.
+            You are provided with a list of paper titles and abstracts authored by the researcher, optionally including the year of publication and the number of citations.
+            Use the provided taxonomy to identify relevant domains and rank them from 1 to 5 based on relevance to the researcher's work.
+
+            A rank of 5 means the researcher has a deep background in the domain, and it is their primary area of expertise based on their publications.  
+            A rank of 1 means the domain is only tangentially related to their work, and the researcher has only limited experience in it.
             
-            IMPORTANT: You must respond with ONLY a JSON array of domain names, nothing else.
-            Example: ["Machine Learning", "Computer Vision"]
+            In your ranking and justification you should also consider the number of citations to assess the impact of the work as well as the recenecy of the publication.
+             
+            Only include domains that are clearly relevant to the researcher's publications.
+            Use the following guidelines:
+            IMPORTANT: You must respond with ONLY a valid JSON array. 
             
-            If no domains are relevant, respond with: []
-            
-            Do not include any explanations, just the JSON array."""
+            Each element must contain:
+            - "domain": the domain name,  
+            - "rank": an integer from 1 to 5,  
+            - "justification": a brief explanation for the ranking.  
+
+            Do not include any text outside of the JSON array. order the output by rank descending.
+
+            Format example:
+            [
+                {
+                    "domain": "Machine Learning",
+                    "rank": 5,
+                    "justification": "The researcher has published extensively in machine learning, including foundational papers on deep learning and reinforcement learning."
+                },
+                {
+                    "domain": "Computer Vision",
+                    "rank": 1,
+                    "justification": "The researcher has only a few papers that touch on computer vision topics, and it is not a primary focus of their work."
+                }
+            ]
+            """
 
             # Simplify taxonomy to just domain names
             domain_names = self._flatten_taxonomy(taxonomy)
 
             user_prompt = f"""Available domains: {', '.join(domain_names[:50])}
 
-Text to analyze: {text[:2000]}
+The works by the author to analyze: {text[:9000]}
 
-Return ONLY a JSON array of relevant domain names:"""
+Include only the relevant domains in the JSON array."""
 
             # Use unified LLM calling method
             content = self._call_llm(system_prompt, user_prompt, max_tokens=500, temperature=0.1)
 
             if content:
                 # Try to extract JSON from the response
-                json_match = re.search(r'\[.*?\]', content)
+                json_match = re.search(r'\[[\s\S]*?\]', content)
                 if json_match:
                     try:
-                        domains = json.loads(json_match.group())
-                        if isinstance(domains, list):
-                            # Validate that all domains exist in the taxonomy
-                            validated_domains = [d for d in domains if d in domain_names]
-                            if validated_domains:
-                                logger.info(f"LLM successfully extracted {len(validated_domains)} domains")
-                                return validated_domains
-                            else:
-                                logger.warning("No valid domains found in LLM response")
+                       return json.loads(json_match.group())
                     except json.JSONDecodeError:
                         logger.error("Failed to parse LLM response as JSON")
+                        return {}
 
                 # No fallback available
                 logger.warning("Could not extract structured output from LLM response")
-                return []
+                return {}
             else:
                 logger.warning("No LLM available for domain extraction")
-                return []
+                return {}
 
         except Exception as e:
             logger.error(f"Error in LLM domain extraction: {str(e)}")
@@ -447,20 +506,6 @@ Return ONLY a JSON array of relevant domain names:"""
             # No fallback domains - return empty list
             domains = []
         return domains
-
-    def _domain_matches_text(self, domain_name: str, text_lower: str) -> bool:
-        """Check if a domain name matches the text content."""
-        # Direct match
-        if domain_name.lower() in text_lower:
-            return True
-
-        # Check for common abbreviations and variations
-        domain_variations = self._get_domain_variations(domain_name)
-        for variation in domain_variations:
-            if variation.lower() in text_lower:
-                return True
-
-        return False
 
     def _get_domain_variations(self, domain_name: str) -> List[str]:
         """Get common variations and abbreviations for a domain name."""
@@ -513,7 +558,7 @@ Return ONLY a JSON array of relevant domain names:"""
             return {}
 
     def _merge_citation_metrics(self, current_metrics: Dict[str, Any], new_metrics: Dict[str, Any], source_name: str) -> \
-    Dict[str, Any]:
+            Dict[str, Any]:
         """Merge citation metrics from different sources, preferring higher values and tracking sources."""
         if not current_metrics:
             current_metrics = {}
@@ -630,18 +675,8 @@ Based on these publications, please provide a 1-4 paragraph summary of {name}'s 
             logger.error(f"Error generating LLM summary for {name}: {str(e)}")
             return f"{name} is a researcher whose publications have been analyzed."
 
-    def _analyze_and_characterize_expertise(self, member_name: str, publications: List[Dict[str, Any]]) -> Dict[
+    def _analyze_domain_expertise(self, member_name: str, publications: List[Dict[str, Any]]) -> Dict[
         str, int]:
-        """
-        Analyze publications and characterize expertise domains with paper counts using LLM.
-        
-        Args:
-            member_name: Name of the team member
-            publications: List of publications for this member
-            
-        Returns:
-            Dictionary mapping expertise domains to number of papers in that domain
-        """
         try:
             logger.info(
                 f"Analyzing and characterizing expertise for {member_name} with {len(publications)} publications")
@@ -655,38 +690,22 @@ Based on these publications, please provide a 1-4 paragraph summary of {name}'s 
             for pub in publications:
                 title = pub.get('title', '')
                 abstract = pub.get('abstract', '')
+                year = pub.get('year', 'N/A')
+                citations = pub.get('citations', 'N/A')
                 if title or abstract:
-                    all_text_content += f"{title} {abstract} "
+                    all_text_content += f"Title: {title}; Abstract: {abstract}. Year: {year}. Citations: {citations}\n\n"
 
             # Extract domains using LLM only - no fallback
             domains = self._extract_domains_from_text(all_text_content)
 
-            if not domains:
-                logger.warning(f"No domains identified by LLM for {member_name}")
-                return {}
-
-            # Count publications per domain
-            domain_counts = {}
-
-            for paper in publications:
-                title = paper.get("title", "")
-                abstract = paper.get("abstract", "")
-                text_content = f"{title} {abstract}".lower()
-
-                # Find which domains this paper belongs to
-                for domain in domains:
-                    if self._domain_matches_text(domain, text_content):
-                        domain_counts[domain] = domain_counts.get(domain, 0) + 1
-
-            logger.info(f"Successfully characterized expertise for {member_name}: {len(domain_counts)} domains")
-            return domain_counts
+            return domains
 
         except Exception as e:
             logger.error(f"Error analyzing and characterizing expertise for {member_name}: {str(e)}")
             return {}
 
     def _call_llm(self, system_prompt: str, user_prompt: str, max_tokens: int = 1000, temperature: float = None) -> \
-    Optional[str]:
+            Optional[str]:
         """
         Call the LLM with the given prompts using the provided LLM handler.
         

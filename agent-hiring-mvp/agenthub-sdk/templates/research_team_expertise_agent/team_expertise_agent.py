@@ -33,17 +33,12 @@ from researcher_data_extractor import ResearcherDataExtractor
 # Import our new modular classes
 from publication_processor import PublicationProcessor
 from expertise_extractor import ExpertiseExtractor
-from analysis_engine import AnalysisEngine
 
 class TeamExpertiseAgent:
 
     def __init__(self):
-        """Initialize the team expertise agent."""
-        super().__init__()
-        # Instance variables for components
-        self.vectorstore = None
+        self.max_pubs = 50
         self.llm = None
-        self.qa_chain = None
         self.team_data = {}
         self.publications_data = {}
         self.collaboration_network = None
@@ -54,68 +49,44 @@ class TeamExpertiseAgent:
         # Initialize our new modular classes
         self.publication_processor = PublicationProcessor()
         self.expertise_extractor = ExpertiseExtractor()
-        self.analysis_engine = None  # Will be initialized after LLM setup
 
-    def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
+    def execute(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
 
         try:
             # Validate configuration
-            team_members_input = config.get("team_members")
+            team_members_input = input_data.get("team_members")
             if not team_members_input:
                 raise ValueError("team_members is required for initialization")
             
             # Parse team members input string into list
             team_members = self._parse_team_members(team_members_input)
             
-            # Store configuration in state
-            self._set_state("config", config)
-            
-            # Extract configuration parameters
             # Use config expertise_domains if provided, otherwise use taxonomy domains
-            config_expertise_domains = config.get("expertise_domains")
-            if config_expertise_domains:
-                self.expertise_extractor.expertise_domains = config_expertise_domains
-                logger.info(f"Using {len(self.expertise_extractor.expertise_domains)} expertise domains from config")
-            else:
-                # Use taxonomy domains by default
-                logger.info(f"Using {len(self.expertise_extractor.expertise_domains)} expertise domains from arXiv taxonomy")
-            model_name = config.get("model_name", "gpt-4o-mini")
-            temperature = config.get("temperature", 0.1)
-            max_pubs = config.get("max_publications_per_member", 50)
+            config_expertise_domains = input_data.get("expertise_domains")
 
-            # LLM Configuration - use litellm directly from env
-            self.llm_provider = config.get("llm_provider") or os.getenv("LLM_PROVIDER", "azure")
-            self.llm_model = model_name
+            self.expertise_extractor.expertise_domains = config_expertise_domains
+
+            self.max_pubs = input_data.get("max_publications_per_member", 50)
+
             self.llm = LiteLLMHandler(
-                    model=model_name,
-                    temperature=temperature
+                    model=input_data.get("model_name", "gpt-4o-mini"),
+                    temperature=input_data.get("temperature", 0.1)
                 )
-            logger.info(f"Initialized OpenAI LLM via LiteLLM: {model_name}")
-            
-            # Initialize embeddings - use OpenAI embeddings directly
-            self.embeddings = OpenAIEmbeddings(
-                openai_api_key=os.getenv("OPENAI_API_KEY")
-            )
-            logger.info(f"Initialized OpenAI embeddings")
-            
+
             # Initialize team member extractor with LLM handler
             self.member_extractor = ResearcherDataExtractor(
                 llm_handler=self.llm,
             )
-            logger.info(f"Initialized TeamMemberExtractor.")
-            
-            # Initialize analysis engine
-            self.analysis_engine = AnalysisEngine(self.publication_processor, self.expertise_extractor)
-            logger.info("Initialized AnalysisEngine with PublicationProcessor and ExpertiseExtractor")
 
             # STEP 1: Data Collection
-            logger.info("🔄 STEP 1: Data Collection")
-            team_members_data = {member_name: self.member_extractor.extract_researcher_info(member_name, max_pubs) for member_name in team_members}
+            team_members_data = {member_name: self.member_extractor.extract_researcher_info(member_name, self.max_pubs) for member_name in team_members}
+
+            team_members_data = self.sort_members_by_rank(team_members_data)
+            self.team_data = team_members_data  # Store for later use
+            logger.info(f"Collected data for {len(team_members_data)} team members.\nHighly ranked: {list(team_members_data.keys())[:5]}")
 
             # STEP 2: Publication Collection and Deduplication
-            logger.info("📚 STEP 2: Publication Collection and Deduplication")
             team_publications = self.publication_processor.get_team_publications(team_members_data)
-            logger.info(f"Collected {len(team_publications)} unique publications across team")
 
             # STEP 3: Team-level Analysis (based on deduplicated publications)
             logger.info("👥 STEP 3: Team-level Analysis")
@@ -124,24 +95,15 @@ class TeamExpertiseAgent:
             # STEP 4: Generate Comprehensive Team Summary
             logger.info("📝 STEP 4: Generating Comprehensive Team Summary")
             team_summary = self._generate_comprehensive_team_summary(team_members_data, team_analysis)
-            
 
-            # Create knowledge base for future queries
-            if len(team_members_data) > 0:
-                self._create_knowledge_base()
-            
             # Calculate total publications
-            total_publications = sum(len(member.get("publications", [])) for member in team_members_data.values())
 
             return {
                 "status": "success",
                 "team_members_analyzed": len(team_members_data),
-                "total_publications": total_publications,
                 "individual_profiles": team_members_data,
                 "team_analysis": team_analysis,
                 "team_summary": team_summary,
-                "llm_configuration": self._get_llm_config_info(),
-                "taxonomy_info": self.expertise_extractor.get_taxonomy_info()
             }
             
         except Exception as e:
@@ -153,6 +115,17 @@ class TeamExpertiseAgent:
                 "total_publications": 0,
                 "workflow_summary": "Workflow failed"
             }
+
+    def sort_members_by_rank(self, team_members_data):
+        sorted_members = sorted(team_members_data.items(),
+                                key=lambda x: x[1].get("citation_metrics", {}).get("h_index", 0), reverse=True)
+        if not sorted_members or all(v.get("citation_metrics", {}).get("h_index", 0) == 0 for k, v in sorted_members):
+            sorted_members = sorted(team_members_data.items(),
+                                    key=lambda x: x[1].get("citation_metrics", {}).get("total_citations", 0),
+                                    reverse=True)
+
+        return dict(sorted_members)
+
 
     def _parse_team_members(self, team_members_input: str) -> List[str]:
         """
@@ -199,38 +172,26 @@ class TeamExpertiseAgent:
         """Build team expertise map from deduplicated publications."""
         try:
             if not team_data or not team_publications: return {}
-            
+
             team_expertise_domains = {}
             
             # Process each publication to build expertise map
-            for pub in team_publications:
-                title = pub.get("title", "")
-                abstract = pub.get("abstract", "")
-                year = pub.get("year")
-                citations = pub.get("citations", 0)
-                contributors = pub.get("_member_contributors", [])
-                
-                # Extract expertise domains from existing categories
-                publication_domains = pub.get("categories", [])
-                if not publication_domains:
-                    # Fallback to general research if no categories
-                    publication_domains = ["general research"]
-                
+            for member in team_data.values():
+                member_expertise_data = member.get("domain_expertise", [])
+                domains = [d["domain"] for d in member_expertise_data]
+
                 # Update team expertise counts
-                for domain in publication_domains:
+                for domain in domains:
+                    member_rank = member_expertise_data[next(i for i, d in enumerate(member_expertise_data) if d["domain"] == domain)]["rank"]
                     if domain not in team_expertise_domains:
-                        team_expertise_domains[domain] = {"count": 0, "total_citations": 0, "contributing_members": set()}
-                    
-                    team_expertise_domains[domain]["count"] += 1
-                    team_expertise_domains[domain]["total_citations"] += citations
-                    team_expertise_domains[domain]["contributing_members"].update(contributors)
+                        team_expertise_domains[domain] = {"count": 0, "contributing_members": set()}
+
+                    team_expertise_domains[domain]["count"] += member_rank
+                    team_expertise_domains[domain]["contributing_members"].update([member.get("name", "Unknown")])
                 
                 # Track member contributions
                       
-            # Convert sets to lists for JSON serialization
-            for domain_data in team_expertise_domains.values():
-                domain_data["contributing_members"] = list(domain_data["contributing_members"])
-            
+
             # Calculate key metrics
             total_domains = len(team_expertise_domains)
             total_publications = len(team_publications)
@@ -238,6 +199,10 @@ class TeamExpertiseAgent:
             
             # Get detailed citation analysis
             citation_analysis = self.publication_processor.get_citation_analysis(team_publications)
+            
+            # Get collaboration network analysis
+            team_members = list(team_data.keys())
+            collaboration_network = self.publication_processor.get_team_collaboration_network(team_publications, team_members)
             
             # Build analysis
             team_analysis = {
@@ -252,6 +217,7 @@ class TeamExpertiseAgent:
                     "multi_author_papers": len([p for p in team_publications if len(p.get("_member_contributors", [])) > 1]),
                     "single_author_papers": len([p for p in team_publications if len(p.get("_member_contributors", [])) == 1])
                 },
+                "collaboration_network": collaboration_network,
                 "citation_analysis": citation_analysis
             }
             
@@ -349,11 +315,14 @@ class TeamExpertiseAgent:
                 h_index = profile.get("citation_metrics", {}).get("h_index", 0)
                 total_citations = profile.get("citation_metrics", {}).get("total_citations", 0)
                 influence_score = (h_index * 0.6) + (total_citations * 0.4)
-                
+                textual_summary = profile.get("textual_summary", "No summary available")
+                domains = profile.get("domain_expertise", []),
                 influential_members.append({
                     "member_name": name,
                     "h_index": h_index,
                     "total_citations": total_citations,
+                    "domain_expertise": ";".join([(f"Domain: {d['domain']}. Rank:{d['rank']}") for d in domains[0]]),
+                    "summary": textual_summary,
                     "influence_score": influence_score
                 })
             
@@ -374,21 +343,23 @@ class TeamExpertiseAgent:
                     except (KeyError, TypeError):
                         domain_summary = "Multiple domains identified"
                 
-                prompt = f"""Summarize this research team in 2-3 paragraphs:
+                prompt = f"""Summarize this research team in few paragraphs by characterizing their expertise, publication impact, and collaboration dynamics.:
+                You should mention the top expertise domains, the most influential members, and any notable collaboration patterns.
+                
                 Team: {team_size} members, {total_publications} publications, {total_domains} expertise domains
                 Top domains: {domain_summary}
-                Top members: {', '.join([f'{m["member_name"]} (H-index: {m["h_index"]}, {m["total_citations"]} citations)' for m in top_influential])}"""
+                Top members: {'\n'.join([f'{m["member_name"]} (H-index: {m["h_index"]}, {m["total_citations"]} citations), summary: {m["summary"]}. domains info: {m['domain_expertise']}' for m in top_influential])}"""
                 
-                messages = [SystemMessage(content="You are a research analyst."), HumanMessage(content=prompt)]
+                messages = [SystemMessage(content="You are a research analyst. Your goal is to give a high level overview of the team expertise levels and domains."), HumanMessage(content=prompt)]
                 try:
                     response = self.llm.invoke(messages)
                     summary_text = response.content if hasattr(response, 'content') else "Team summary generated"
                 except Exception as e:
                     logger.warning(f"LLM summary generation failed: {str(e)}")
                     summary_text = "Team summary generation failed"
-            
+
             return {
-                "team_overview": {"team_size": team_size, "total_publications": total_publications, "total_domains": total_domains},
+                "total_domains": total_domains,
                 "top_expertise_domains": top_domains,
                 "most_influential_members": top_influential,
                 "summary_text": summary_text
@@ -397,76 +368,6 @@ class TeamExpertiseAgent:
         except Exception as e:
             logger.error(f"Error generating team summary: {str(e)}")
             return {"error": str(e), "summary_text": "Error generating summary"}
-    
-    def _create_knowledge_base(self):
-        """Create knowledge base and vector store for future queries."""
-        try:
-            # Check if embeddings are available
-            if not self.embeddings:
-                logger.warning("OpenAI embeddings not available. Skipping knowledge base creation.")
-                return
-                
-            logger.info("Creating knowledge base...")
-
-            # Prepare documents for vector store
-            documents = []
-            for member_name, member_data in self.team_data.items():
-                if member_data and "publications" in member_data:
-                    # Create document from member profile
-                    profile_text = f"""
-                    Team Member: {member_name}
-                    Expertise: {', '.join(member_data.get('expertise_domains', []))}
-                    Publications: {len(member_data.get('publications', []))}
-                    Citations: {member_data.get('citation_metrics', {}).get('total_citations', 0)}
-                    """
-                    
-                    documents.append(Document(
-                        page_content=profile_text,
-                        metadata={"member_name": member_name, "type": "profile"}
-                    ))
-                    
-                    # Add publication documents
-                    for pub in member_data.get("publications", [])[:10]:  # Limit to first 10
-                        pub_text = f"""
-                        Title: {pub.get('title', '')}
-                        Authors: {', '.join(pub.get('authors', []))}
-                        Abstract: {pub.get('abstract', '')}
-                        Year: {pub.get('year', '')}
-                        Venue: {pub.get('venue', '')}
-                        """
-                        
-                        documents.append(Document(
-                            page_content=pub_text,
-                            metadata={"member_name": member_name, "type": "publication", "title": pub.get('title', '')}
-                        ))
-            
-            if documents:
-                # Create vector store
-                text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-                texts = text_splitter.split_documents(documents)
-                
-                self.vectorstore = FAISS.from_documents(texts, self.embeddings)
-                logger.info(f"Created knowledge base with {len(texts)} text chunks")
-            else:
-                logger.warning("No documents available for knowledge base creation")
-                
-        except Exception as e:
-            logger.error(f"Error creating knowledge base: {str(e)}")
-
-    def _set_state(self, key: str, value: Any) -> None:
-        """Set state for the agent (placeholder for function agents)."""
-        # Function agents don't maintain persistent state, but we can store in instance
-        if not hasattr(self, '_state'):
-            self._state = {}
-        self._state[key] = value
-
-    def _get_llm_config_info(self) -> Dict[str, Any]:
-        """Get LLM configuration information."""
-        return {
-            "model": self.llm_model,
-            "provider": self.llm_provider,
-            "temperature": getattr(self.llm, 'temperature', 0.1)
-        }
 
 
 def main(config):
@@ -476,7 +377,7 @@ def main(config):
     try:
         # Create agent and execute
         agent = TeamExpertiseAgent()
-        result = agent.execute(config=config)
+        result = agent.execute(input_data=config)
 
         # Display results
         if result.get("status") == "success":
@@ -494,11 +395,11 @@ if __name__ == '__main__':
     load_dotenv()
 
     # Example configuration
-    config = {
+    input_data = {
         "team_members": "George Kour, Boaz Carmeli",
         "model_name": "azure/gpt-4o-2024-08-06",
         "temperature": 0.1,
         "max_publications_per_member": 30
     }
 
-    main(config)
+    main(input_data)
