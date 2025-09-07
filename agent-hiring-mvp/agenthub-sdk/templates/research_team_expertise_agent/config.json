@@ -1,16 +1,15 @@
 {
   "name": "Research Team Expertise Analysis Agent",
-  "description": "A comprehensive persistent agent that analyzes team expertise by collecting information from Semantic Scholar, arXiv, and other academic sources. Provides both team-level and individual-level insights about expertise domains, research directions, and collective capabilities.",
+  "description": "A comprehensive function agent that analyzes team expertise by collecting information from Semantic Scholar, arXiv, and other academic sources. Provides both team-level and individual-level insights about expertise domains, research directions, and collective capabilities.",
   "version": "1.0.0",
   "entry_point": "team_expertise_agent.py",
-  "agent_type": "persistent",
+  "agent_type": "function",
   "agent_class": "TeamExpertiseAgent",
-  "requires_initialization": true,
   "author": "AgentHub Team",
   "email": "team@agenthub.com",
   "pricing_model": "per_use",
   "price_per_use": 0.8,
-      "requirements": [
+  "requirements": [
       "litellm",
       "langchain",
       "langchain-openai",
@@ -22,16 +21,11 @@
       "arxiv",
       "pandas",
       "numpy"
-    ],
-  "lifecycle": {
-    "initialize": "initialize",
-    "execute": "execute",
-    "cleanup": "cleanup"
-  },
+  ],
   "config_schema": {
     "functions": [
       {
-        "name": "initialize",
+        "name": "execute",
         "description": "Initialize the team expertise agent by collecting information about team members from academic sources",
         "inputSchema": {
           "type": "object",
@@ -122,189 +116,6 @@
           ],
           "additionalProperties": false
         }
-      },
-      {
-        "name": "execute",
-        "description": "Execute queries about team expertise, individual analysis, or research insights",
-        "inputSchema": {
-          "type": "object",
-          "properties": {
-            "query_type": {
-              "type": "string",
-              "description": "Type of analysis or query to perform",
-              "enum": [
-                "team_overview",
-                "individual_analysis",
-                "expertise_domain_analysis",
-                "research_directions",
-                "collaboration_insights",
-                "future_recommendations",
-                "custom_question"
-              ],
-              "default": "team_overview"
-            },
-            "query": {
-              "type": "string",
-              "description": "Specific question or analysis request",
-              "minLength": 1
-            },
-            "focus_member": {
-              "type": "string",
-              "description": "Specific team member to focus on (for individual analysis)",
-              "minLength": 1
-            },
-            "focus_domain": {
-              "type": "string",
-              "description": "Specific expertise domain to focus on",
-              "minLength": 1
-            },
-            "analysis_depth": {
-              "type": "string",
-              "description": "Depth of analysis to perform",
-              "enum": ["summary", "detailed", "comprehensive"],
-              "default": "detailed"
-            },
-            "include_visualizations": {
-              "type": "boolean",
-              "description": "Whether to include data visualizations in the response",
-              "default": true
-            }
-          },
-          "required": [
-            "query"
-          ],
-          "additionalProperties": false
-        },
-        "outputSchema": {
-          "type": "object",
-          "properties": {
-            "answer": {
-              "type": "string",
-              "description": "Comprehensive answer to the query based on collected data"
-            },
-            "query": {
-              "type": "string",
-              "description": "The original query that was asked"
-            },
-            "query_type": {
-              "type": "string",
-              "description": "Type of analysis performed"
-            },
-            "insights": {
-              "type": "object",
-              "description": "Structured insights and analysis results",
-              "properties": {
-                "team_strengths": {
-                  "type": "array",
-                  "description": "Key strengths of the team",
-                  "items": {
-                    "type": "string"
-                  }
-                },
-                "individual_highlights": {
-                  "type": "array",
-                  "description": "Notable individual contributions",
-                  "items": {
-                    "type": "object",
-                    "properties": {
-                      "name": {
-                        "type": "string"
-                      },
-                      "expertise": {
-                        "type": "string"
-                      },
-                      "key_contributions": {
-                        "type": "string"
-                      }
-                    }
-                  }
-                },
-                "research_directions": {
-                  "type": "array",
-                  "description": "Identified research directions and opportunities",
-                  "items": {
-                    "type": "string"
-                  }
-                },
-                "collaboration_patterns": {
-                  "type": "object",
-                  "description": "Analysis of collaboration patterns within the team"
-                }
-              }
-            },
-            "data_sources": {
-              "type": "array",
-              "description": "List of data sources used for the analysis",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "source": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "type": "string"
-                  },
-                  "relevance": {
-                    "type": "string"
-                  }
-                }
-              }
-            },
-            "confidence_score": {
-              "type": "number",
-              "description": "Confidence score of the analysis (0-1)",
-              "minimum": 0,
-              "maximum": 1
-            },
-            "processing_time": {
-              "type": "number",
-              "description": "Time taken to process the query in seconds"
-            }
-          },
-          "required": [
-            "answer",
-            "query"
-          ],
-          "additionalProperties": false
-        }
-      },
-      {
-        "name": "cleanup",
-        "description": "Clean up resources and perform cleanup operations",
-        "inputSchema": {
-          "type": "object",
-          "properties": {},
-          "additionalProperties": false
-        },
-        "outputSchema": {
-          "type": "object",
-          "properties": {
-            "status": {
-              "type": "string",
-              "description": "Cleanup status",
-              "enum": [
-                "success",
-                "error"
-              ]
-            },
-            "message": {
-              "type": "string",
-              "description": "Cleanup result message"
-            },
-            "resources_freed": {
-              "type": "array",
-              "description": "List of resources that were freed",
-              "items": {
-                "type": "string"
-              }
-            }
-          },
-          "required": [
-            "status",
-            "message"
-          ],
-          "additionalProperties": false
-        }
       }
     ]
   },
@@ -314,7 +125,7 @@
     "publication_analysis",
     "collaboration_network_analysis",
     "expertise_domain_categorization",
-    "persistent_knowledge_base",
+    "knowledge_base_creation",
     "rag_queries",
     "data_visualization",
     "research_direction_insights"
@@ -323,7 +134,7 @@
     "team_analysis",
     "expertise_mapping",
     "academic_research",
-    "persistent",
+    "function",
     "rag",
     "collaboration_analysis",
     "research_insights",

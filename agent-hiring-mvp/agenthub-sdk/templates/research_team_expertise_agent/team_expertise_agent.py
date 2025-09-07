@@ -27,10 +27,6 @@ from langchain.chains import RetrievalQA
 import arxiv
 from lite_llm_handler import LiteLLMHandler
 
-
-# Import the base PersistentAgent class from the SDK
-from agenthub_sdk.agent import PersistentAgent
-
 # Import our modular team member extractor
 from researcher_data_extractor import ResearcherDataExtractor
 
@@ -39,22 +35,7 @@ from publication_processor import PublicationProcessor
 from expertise_extractor import ExpertiseExtractor
 from analysis_engine import AnalysisEngine
 
-class TeamExpertiseAgent(PersistentAgent):
-    """
-    Team Expertise Analysis Agent
-    
-    This agent demonstrates the proper way to implement a persistent agent:
-    1. Inherit from PersistentAgent
-    2. Implement initialize(), execute(), cleanup()
-    3. Use _get_state()/_set_state() for state management
-    4. Use _is_initialized()/_mark_initialized() for lifecycle management
-    5. Focus on business logic only - no platform concerns
-    
-    The platform will call these methods directly:
-    - initialize(config) -> called once to set up the agent
-    - execute(input_data) -> called for each query
-    - cleanup() -> called when agent is no longer needed
-    """
+class TeamExpertiseAgent:
 
     def __init__(self):
         """Initialize the team expertise agent."""
@@ -75,20 +56,8 @@ class TeamExpertiseAgent(PersistentAgent):
         self.expertise_extractor = ExpertiseExtractor()
         self.analysis_engine = None  # Will be initialized after LLM setup
 
+    def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
 
-
-    def initialize(self, config: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Initialize the agent with team configuration following a structured workflow:
-        
-        1. Data Collection: Collect accessible information for each team member
-        1.5. Resource Enrichment: Enrich papers and extract domain keywords
-        2. Analysis: Extract textual profile summaries and objective metrics
-        2.5. Expertise Characterization: Map expertise domains with publication counts
-        3. Team Analysis: Analyze team competency and interests
-        """
-        start_time = time.time()
-        
         try:
             # Validate configuration
             team_members_input = config.get("team_members")
@@ -138,8 +107,6 @@ class TeamExpertiseAgent(PersistentAgent):
             # Initialize analysis engine
             self.analysis_engine = AnalysisEngine(self.publication_processor, self.expertise_extractor)
             logger.info("Initialized AnalysisEngine with PublicationProcessor and ExpertiseExtractor")
-            
-
 
             # STEP 1: Data Collection
             logger.info("🔄 STEP 1: Data Collection")
@@ -158,20 +125,11 @@ class TeamExpertiseAgent(PersistentAgent):
             logger.info("📝 STEP 4: Generating Comprehensive Team Summary")
             team_summary = self._generate_comprehensive_team_summary(team_members_data, team_analysis)
             
-            # Store all results in state
-            self.team_data = team_members_data
-            self._set_state("team_members_data", team_members_data)
-            self._set_state("individual_profiles", team_members_data)
-            self._set_state("team_analysis", team_analysis)
-            self._set_state("team_summary", team_summary)
-            
+
             # Create knowledge base for future queries
             if len(team_members_data) > 0:
                 self._create_knowledge_base()
             
-            # Mark as initialized
-            self._mark_initialized()
-
             # Calculate total publications
             total_publications = sum(len(member.get("publications", [])) for member in team_members_data.values())
 
@@ -440,7 +398,6 @@ class TeamExpertiseAgent(PersistentAgent):
             logger.error(f"Error generating team summary: {str(e)}")
             return {"error": str(e), "summary_text": "Error generating summary"}
     
-
     def _create_knowledge_base(self):
         """Create knowledge base and vector store for future queries."""
         try:
@@ -496,559 +453,52 @@ class TeamExpertiseAgent(PersistentAgent):
         except Exception as e:
             logger.error(f"Error creating knowledge base: {str(e)}")
 
-
-    def execute(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Execute queries about team expertise, individual analysis, or research insights.
-        
-        Args:
-            input_data: Input data containing query and analysis parameters
-            
-        Returns:
-            Dict with comprehensive analysis results
-        """
-        start_time = time.time()
-
-        try:
-            # Check if agent is initialized
-            if not self._is_initialized():
-                return {
-                    "status": "error",
-                    "message": "Agent not initialized. Please call initialize() first.",
-                    "query": input_data.get("query", ""),
-                    "query_type": input_data.get("query_type", "unknown")
-                }
-
-            # Extract query parameters
-            query = input_data.get("query", "")
-            query_type = input_data.get("query_type", "team_overview")
-            focus_member = input_data.get("focus_member", "")
-            focus_domain = input_data.get("focus_domain", "")
-            analysis_depth = input_data.get("analysis_depth", "detailed")
-            include_visualizations = input_data.get("include_visualizations", True)
-
-            # Load state data
-            self.team_data = self._get_state("team_data", {})
-            self.publications_data = self._get_state("publications_data", {})
-            self.team_expertise_report = self._get_state("team_expertise_report", {})
-            self.individual_research_reports = self._get_state("individual_research_reports", [])
-
-            # Process query based on type using our analysis engine
-            if query_type == "team_overview":
-                answer, insights = self.analysis_engine.analyze_team_overview(self.team_data, analysis_depth)
-            elif query_type == "individual_analysis":
-                answer, insights = self.analysis_engine.analyze_individual_member(self.team_data, focus_member, analysis_depth)
-            elif query_type == "expertise_domain_analysis":
-                answer, insights = self.analysis_engine.analyze_expertise_domain(self.team_data, focus_domain, analysis_depth)
-            elif query_type == "research_directions":
-                answer, insights = self.analysis_engine.analyze_research_directions(self.team_data, analysis_depth)
-            elif query_type == "collaboration_insights":
-                answer, insights = self._analyze_collaboration_insights(analysis_depth)
-            elif query_type == "future_recommendations":
-                answer, insights = self._generate_future_recommendations(analysis_depth)
-            elif query_type == "custom_question":
-                answer, insights = self._process_custom_question(query, analysis_depth)
-            else:
-                answer, insights = self._process_custom_question(query, analysis_depth)
-
-            # Generate data sources information
-            data_sources = self._generate_data_sources_info()
-
-            # Calculate confidence score using our analysis engine
-            confidence_score = self.analysis_engine.calculate_confidence_score(query_type, analysis_depth, self.team_data)
-
-            return {
-                "answer": answer,
-                "query": query,
-                "query_type": query_type,
-                "insights": insights,
-                "data_sources": data_sources,
-                "confidence_score": confidence_score
-            }
-
-        except Exception as e:
-            logger.error(f"Execution failed: {str(e)}")
-            return {
-                "status": "error",
-                "message": f"Execution failed: {str(e)}",
-                "query": input_data.get("query", ""),
-                "query_type": input_data.get("query_type", "unknown")
-            }
-
-    def _analyze_collaboration_insights(self, analysis_depth: str) -> Tuple[str, Dict[str, Any]]:
-        """Analyze collaboration patterns and insights."""
-        try:
-            collaboration_metrics = self._get_state("collaboration_metrics", {})
-
-            if not collaboration_metrics:
-                return "No collaboration data available for analysis.", {}
-
-            # Generate analysis
-            analysis_parts = [
-                f"## Collaboration Insights Analysis",
-                f"",
-                f"**Collaboration Metrics:**",
-                f"- Total Collaborations: {collaboration_metrics.get('total_collaborations', 0)}",
-                f"- Collaboration Density: {collaboration_metrics.get('collaboration_density', 0):.3f}",
-                f"- Clustering Coefficient: {collaboration_metrics.get('clustering_coefficient', 0):.3f}",
-                f""
-            ]
-
-            # Centrality analysis
-            centrality_measures = collaboration_metrics.get("centrality_measures", {})
-            if centrality_measures:
-                analysis_parts.append("**Team Member Centrality:**")
-
-                # Sort by degree centrality
-                sorted_members = sorted(
-                    centrality_measures.items(),
-                    key=lambda x: x[1].get("degree", 0),
-                    reverse=True
-                )
-
-                for member_name, measures in sorted_members[:5]:
-                    degree = measures.get("degree", 0)
-                    betweenness = measures.get("betweenness", 0)
-                    closeness = measures.get("closeness", 0)
-
-                    analysis_parts.append(f"- **{member_name}**:")
-                    analysis_parts.append(f"  - Degree Centrality: {degree:.3f}")
-                    analysis_parts.append(f"  - Betweenness Centrality: {betweenness:.3f}")
-                    analysis_parts.append(f"  - Closeness Centrality: {closeness:.3f}")
-
-                analysis_parts.append("")
-
-            # Collaboration recommendations
-            analysis_parts.extend([
-                f"**Collaboration Insights:**",
-                f"1. **Central Members**: {sorted_members[0][0] if sorted_members else 'N/A'} shows highest collaboration activity",
-                f"2. **Bridge Builders**: Members with high betweenness centrality facilitate team communication",
-                f"3. **Collaboration Density**: {'High' if collaboration_metrics.get('collaboration_density', 0) > 0.5 else 'Moderate'} team collaboration",
-                f"4. **Network Structure**: {'Clustered' if collaboration_metrics.get('clustering_coefficient', 0) > 0.3 else 'Distributed'} collaboration patterns"
-            ])
-
-            answer = "\n".join(analysis_parts)
-
-            insights = {
-                "team_strengths": [
-                    f"Strong collaboration network with {collaboration_metrics.get('total_collaborations', 0)} connections",
-                    f"Balanced collaboration distribution",
-                    f"Effective team communication patterns"
-                ],
-                "individual_highlights": [
-                    {
-                        "name": member_name,
-                        "expertise": ["Collaboration Leadership"],
-                        "key_contributions": f"Centrality score: {measures.get('degree', 0):.3f}"
-                    }
-                    for member_name, measures in sorted_members[:3]
-                ] if sorted_members else [],
-                "research_directions": [
-                    "Leverage central members for project coordination",
-                    "Develop collaboration opportunities for peripheral members",
-                    "Build on existing collaboration strengths"
-                ],
-                "collaboration_patterns": {
-                    "network_density": collaboration_metrics.get("collaboration_density", 0),
-                    "clustering": collaboration_metrics.get("clustering_coefficient", 0),
-                    "centrality_distribution": "Balanced" if len(sorted_members) > 2 else "Concentrated"
-                }
-            }
-
-            return answer, insights
-
-        except Exception as e:
-            logger.error(f"Error in collaboration insights analysis: {str(e)}")
-            return f"Error analyzing collaboration insights: {str(e)}", {}
-
-    def _generate_future_recommendations(self, analysis_depth: str) -> Tuple[str, Dict[str, Any]]:
-        """Generate future recommendations for the team."""
-        try:
-            if not self.team_data:
-                return "No team data available for future recommendations.", {}
-
-            # Analyze current state
-            team_size = len(self.team_data)
-            total_publications = sum(len(member.get("publications", [])) for member in self.team_data.values())
-
-            # Identify strengths and opportunities
-            all_domains = []
-            for member_data in self.team_data.values():
-                all_domains.extend(member_data.get("expertise_domains", []))
-
-            domain_counts = {}
-            for domain in all_domains:
-                domain_counts[domain] = domain_counts.get(domain, 0) + 1
-
-            top_domains = sorted(domain_counts.items(), key=lambda x: x[1], reverse=True)[:5]
-
-            # Generate recommendations
-            analysis_parts = [
-                f"## Future Recommendations",
-                f"",
-                f"**Current Team Assessment:**",
-                f"- Team Size: {team_size} members",
-                f"- Total Publications: {total_publications}",
-                f"- Top Expertise Areas: {', '.join([domain for domain, count in top_domains[:3]])}",
-                f""
-            ]
-
-            # Strategic recommendations
-            analysis_parts.extend([
-                f"**Strategic Recommendations:**",
-                f"",
-                f"1. **Research Leadership**",
-                f"   - Establish {top_domains[0][0] if top_domains else 'key areas'} as team signature research",
-                f"   - Pursue high-impact publications in core expertise areas",
-                f"   - Develop research roadmap for next 3-5 years",
-                f"",
-                f"2. **Team Growth**",
-                f"   - Consider expanding team size to {min(team_size + 2, 15)} members",
-                f"   - Focus hiring on complementary expertise areas",
-                f"   - Develop junior team members through mentorship programs",
-                f"",
-                f"3. **Collaboration Expansion**",
-                f"   - Build partnerships with industry leaders in {top_domains[0][0] if top_domains else 'core areas'}",
-                f"   - Establish academic collaborations with top institutions",
-                f"   - Participate in international research consortia",
-                f"",
-                f"4. **Innovation Focus**",
-                f"   - Invest in emerging technologies related to team expertise",
-                f"   - Develop interdisciplinary research initiatives",
-                f"   - Create innovation labs or research centers",
-                f"",
-                f"5. **Knowledge Management**",
-                f"   - Implement systematic knowledge sharing processes",
-                f"   - Develop team knowledge base and best practices",
-                f"   - Regular team research presentations and discussions"
-            ])
-
-            # Implementation timeline
-            analysis_parts.extend([
-                f"",
-                f"**Implementation Timeline:**",
-                f"",
-                f"**Short-term (3-6 months):**",
-                f"- Define research priorities and roadmap",
-                f"- Initiate collaboration discussions",
-                f"- Develop knowledge sharing processes",
-                f"",
-                f"**Medium-term (6-18 months):**",
-                f"- Execute research roadmap",
-                f"- Establish key partnerships",
-                f"- Implement team growth initiatives",
-                f"",
-                f"**Long-term (18+ months):**",
-                f"- Achieve research leadership position",
-                f"- Expand team to target size",
-                f"- Establish innovation centers"
-            ])
-
-            answer = "\n".join(analysis_parts)
-
-            insights = {
-                "team_strengths": [
-                    f"Strong foundation with {total_publications} publications",
-                    f"Expertise in {len(top_domains)} key domains",
-                    f"Potential for research leadership"
-                ],
-                "individual_highlights": [
-                    {
-                        "name": "Team Collective",
-                        "expertise": [domain for domain, count in top_domains[:3]],
-                        "key_contributions": f"Combined expertise across {len(top_domains)} domains"
-                    }
-                ],
-                "research_directions": [
-                    f"Establish {top_domains[0][0] if top_domains else 'core areas'} as signature research",
-                    "Develop interdisciplinary research initiatives",
-                    "Build industry and academic partnerships",
-                    "Expand team size and expertise coverage"
-                ],
-                "collaboration_patterns": {
-                    "current_capacity": team_size,
-                    "growth_potential": "High" if team_size < 15 else "Moderate",
-                    "collaboration_opportunities": "Extensive"
-                }
-            }
-
-            return answer, insights
-
-        except Exception as e:
-            logger.error(f"Error generating future recommendations: {str(e)}")
-            return f"Error generating recommendations: {str(e)}", {}
-
-    def _process_custom_question(self, query: str, analysis_depth: str) -> Tuple[str, Dict[str, Any]]:
-        """Process custom questions using the knowledge base."""
-        try:
-            if not query:
-                return "No query provided.", {}
-
-            # Try to use RAG if available
-            if self.qa_chain:
-                try:
-                    rag_answer = self.qa_chain.run(query)
-                    answer = f"## Custom Query Analysis\n\n**Query:** {query}\n\n**Answer:** {rag_answer}"
-                except Exception as e:
-                    logger.warning(f"RAG query failed: {str(e)}")
-                    answer = self._generate_custom_answer(query, analysis_depth)
-            else:
-                answer = self._generate_custom_answer(query, analysis_depth)
-
-            insights = {
-                "team_strengths": ["Custom analysis capability", "Comprehensive team knowledge base"],
-                "individual_highlights": [],
-                "research_directions": ["Custom research inquiries", "Specialized analysis requests"],
-                "collaboration_patterns": {"analysis_type": "custom", "depth": analysis_depth}
-            }
-
-            return answer, insights
-
-        except Exception as e:
-            logger.error(f"Error processing custom question: {str(e)}")
-            return f"Error processing custom question: {str(e)}", {}
-
-    def _generate_custom_answer(self, query: str, analysis_depth: str) -> str:
-        """Generate custom answer when RAG is not available."""
-        try:
-            # Simple keyword-based analysis
-            query_lower = query.lower()
-
-            if "publication" in query_lower or "paper" in query_lower:
-                return self._analyze_publications_custom(query)
-            elif "expertise" in query_lower or "skill" in query_lower:
-                return self._analyze_expertise_custom(query)
-            elif "collaboration" in query_lower or "team" in query_lower:
-                return self._analyze_collaboration_custom(query)
-            elif "research" in query_lower or "direction" in query_lower:
-                return self._analyze_research_custom(query)
-            else:
-                return f"## Custom Analysis\n\n**Query:** {query}\n\n**Answer:** This is a general query about the team. Based on the available data, I can provide insights about team composition, expertise areas, and research activities. Please specify if you'd like more detailed information about publications, expertise, collaboration, or research directions."
-
-        except Exception as e:
-            logger.error(f"Error generating custom answer: {str(e)}")
-            return f"Error generating custom answer: {str(e)}"
-
-    def _analyze_publications_custom(self, query: str) -> str:
-        """Custom analysis of publications."""
-        try:
-            total_pubs = sum(len(member.get("publications", [])) for member in self.team_data.values())
-            recent_pubs = sum(
-                len([p for p in member.get("publications", []) if
-                     p.get("year") and p.get("year") >= datetime.now().year - 3])
-                for member in self.team_data.values()
-            )
-
-            return f"""
-## Publication Analysis
-
-**Query:** {query}
-
-**Key Findings:**
-- Total Publications: {total_pubs}
-- Recent Publications (last 3 years): {recent_pubs}
-- Publication Distribution: {', '.join([f'{member}: {len(member_data.get("publications", []))}' for member, member_data in list(self.team_data.items())[:5]])}
-
-**Insights:**
-The team has a strong publication record with {total_pubs} total publications. {recent_pubs} publications were published in the last 3 years, indicating ongoing research activity.
-            """.strip()
-
-        except Exception as e:
-            return f"Error analyzing publications: {str(e)}"
-
-    def _analyze_expertise_custom(self, query: str) -> str:
-        """Custom analysis of expertise."""
-        try:
-            all_domains = []
-            for member_data in self.team_data.values():
-                all_domains.extend(member_data.get("expertise_domains", []))
-
-            domain_counts = {}
-            for domain in all_domains:
-                domain_counts[domain] = domain_counts.get(domain, 0) + 1
-
-            top_domains = sorted(domain_counts.items(), key=lambda x: x[1], reverse=True)[:5]
-
-            return f"""
-## Expertise Analysis
-
-**Query:** {query}
-
-**Key Findings:**
-- Total Expertise Domains: {len(set(all_domains))}
-- Top Expertise Areas: {', '.join([f'{domain} ({count} members)' for domain, count in top_domains])}
-
-**Insights:**
-The team covers {len(set(all_domains))} expertise domains with strong representation in {top_domains[0][0] if top_domains else 'key areas'}.
-            """.strip()
-
-        except Exception as e:
-            return f"Error analyzing expertise: {str(e)}"
-
-    def _analyze_collaboration_custom(self, query: str) -> str:
-        """Custom analysis of collaboration."""
-        try:
-            collaboration_metrics = self._get_state("collaboration_metrics", {})
-
-            return f"""
-## Collaboration Analysis
-
-**Query:** {query}
-
-**Key Findings:**
-- Total Collaborations: {collaboration_metrics.get('total_collaborations', 0)}
-- Collaboration Density: {collaboration_metrics.get('collaboration_density', 0):.3f}
-- Team Size: {len(self.team_data)}
-
-**Insights:**
-The team shows {'strong' if collaboration_metrics.get('collaboration_density', 0) > 0.5 else 'moderate'} collaboration patterns with {collaboration_metrics.get('total_collaborations', 0)} total collaborations.
-            """.strip()
-
-        except Exception as e:
-            return f"Error analyzing collaboration: {str(e)}"
-
-    def _analyze_research_custom(self, query: str) -> str:
-        """Custom analysis of research directions."""
-        try:
-            all_domains = []
-            for member_data in self.team_data.values():
-                all_domains.extend(member_data.get("expertise_domains", []))
-
-            domain_counts = {}
-            for domain in all_domains:
-                domain_counts[domain] = domain_counts.get(domain, 0) + 1
-
-            top_domains = sorted(domain_counts.items(), key=lambda x: x[1], reverse=True)[:5]
-            total_pubs = sum(len(member.get("publications", [])) for member in self.team_data.values())
-
-            return f"""
-## Research Direction Analysis
-
-**Query:** {query}
-
-**Key Findings:**
-- Total Publications: {total_pubs}
-- Research Areas: {len(set(all_domains))}
-- Top Research Directions: {', '.join([f'{domain} ({count} members)' for domain, count in top_domains])}
-
-**Insights:**
-The team demonstrates strong research capabilities with {total_pubs} publications across {len(set(all_domains))} research areas, indicating diverse and active research programs.
-            """.strip()
-
-        except Exception as e:
-            return f"Error analyzing research directions: {str(e)}"
-
-
-    def _generate_data_sources_info(self) -> List[Dict[str, str]]:
-        """Generate information about data sources used."""
-        try:
-            sources = []
-
-            # Add academic sources
-            sources.extend([
-                {
-                    "source": "Semantic Scholar",
-                    "type": "Academic Profile",
-                    "relevance": "High - Author profiles and publications"
-                },
-                {
-                    "source": "arXiv",
-                    "type": "Preprint Repository",
-                    "relevance": "High - Research papers and abstracts"
-                }
-            ])
-
-            # Add team data
-            sources.append({
-                "source": "Team Member Profiles",
-                "type": "Structured Data",
-                "relevance": "High - Role, institution, research interests"
-            })
-
-            # Add publications
-            total_pubs = sum(len(member.get("publications", [])) for member in self.team_data.values())
-            if total_pubs > 0:
-                sources.append({
-                    "source": f"{total_pubs} Publications",
-                    "type": "Research Output",
-                    "relevance": "High - Titles, abstracts, citations, venues"
-                })
-
-            return sources
-
-        except Exception as e:
-            logger.error(f"Error generating data sources info: {str(e)}")
-            return []
-
-    def cleanup(self) -> Dict[str, Any]:
-        """
-        Clean up resources and perform cleanup operations.
-        
-        Returns:
-            Dict with cleanup result
-        """
-        try:
-            # Clear instance variables
-            self.vectorstore = None
-            self.llm = None
-            self.qa_chain = None
-            self.team_data = {}
-            self.expertise_domains = []
-            self.publications_data = {}
-            self.collaboration_network = None
-
-            # Clear state
-            self._set_state("team_data", {})
-            self._set_state("expertise_domains", [])
-            self._set_state("publications_data", {})
-            self._set_state("collaboration_metrics", {})
-            self._set_state("team_expertise_report", {})
-            self._set_state("individual_research_reports", [])
-
-            logger.info("Team expertise agent cleanup completed successfully")
-
-            return {
-                "status": "success",
-                "message": "Cleanup completed successfully",
-                "resources_freed": [
-                    "vectorstore",
-                    "llm_instances",
-                    "team_data",
-                    "publications_data",
-                    "collaboration_network"
-                ]
-            }
-
-        except Exception as e:
-            logger.error(f"Cleanup failed: {str(e)}")
-            return {
-                "status": "error",
-                "message": f"Cleanup failed: {str(e)}",
-                "resources_freed": []
-            }
+    def _set_state(self, key: str, value: Any) -> None:
+        """Set state for the agent (placeholder for function agents)."""
+        # Function agents don't maintain persistent state, but we can store in instance
+        if not hasattr(self, '_state'):
+            self._state = {}
+        self._state[key] = value
 
     def _get_llm_config_info(self) -> Dict[str, Any]:
-        """
-        Get LLM configuration information for logging and debugging.
-        
-        Returns:
-            Dictionary containing LLM configuration details
-        """
-        config_info = {
-            "provider": self.llm_provider,
+        """Get LLM configuration information."""
+        return {
             "model": self.llm_model,
-            "temperature": getattr(self, 'llm', None) and getattr(self.llm, 'temperature', None)
+            "provider": self.llm_provider,
+            "temperature": getattr(self.llm, 'temperature', 0.1)
         }
-        
-        if self.llm_provider == "azure":
-            config_info.update({
-                "azure_model": os.getenv("AZURE_MODEL"),
-                "azure_configured": bool(os.getenv("AZURE_API_BASE") and os.getenv("AZURE_API_KEY"))
-            })
-        else:
-            config_info.update({
-                "openai_configured": bool(os.getenv("OPENAI_API_KEY"))
-            })
-        
-        return config_info
 
+
+def main(config):
+    """
+    Simple example of using the Team Expertise Analysis Agent.
+    """
+    try:
+        # Create agent and execute
+        agent = TeamExpertiseAgent()
+        result = agent.execute(config=config)
+
+        # Display results
+        if result.get("status") == "success":
+            print(
+                f"✅ Analysis completed: {result.get('team_members_analyzed', 0)} members, {result.get('total_publications', 0)} publications")
+        else:
+            print(f"❌ Analysis failed: {result.get('message', 'Unknown error')}")
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+
+
+if __name__ == '__main__':
+    # Load environment variables
+    load_dotenv()
+
+    # Example configuration
+    config = {
+        "team_members": "George Kour, Boaz Carmeli",
+        "model_name": "azure/gpt-4o-2024-08-06",
+        "temperature": 0.1,
+        "max_publications_per_member": 30
+    }
+
+    main(config)
