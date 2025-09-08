@@ -63,6 +63,15 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Reduce noise from third-party libraries
+logging.getLogger("urllib3.connectionpool").setLevel(logging.WARNING)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
+logging.getLogger("docker").setLevel(logging.WARNING)
+logging.getLogger("docker.api.client").setLevel(logging.WARNING)
+logging.getLogger("docker.utils.config").setLevel(logging.WARNING)
+logging.getLogger("docker.auth").setLevel(logging.WARNING)
+logging.getLogger("server.services.resource_usage_tracker").setLevel(logging.WARNING)
+
 # Global task references for monitoring
 cleanup_task = None
 metrics_task = None
