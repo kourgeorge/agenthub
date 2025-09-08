@@ -686,16 +686,32 @@ class PersistentAgent(ABC):
                             timeout=timeout_seconds
                         )
                         
+                        # Store build logs
+                        if logs:
+                            log_lines = []
+                            for log in logs:
+                                if isinstance(log, dict) and 'stream' in log:
+                                    stream_content = log['stream']
+                                    if isinstance(stream_content, str) and stream_content.strip():
+                                        log_lines.append(stream_content.strip())
+                            agent.build_logs = "\n".join(log_lines)
+                        
                         logger.info(f"Successfully pre-built Docker image {image_name} for agent {agent.id}")
                         logger.info(f"📦 Image will be stored in agent.docker_image field for future use")
                         return image_name
                         
                     except asyncio.TimeoutError:
-                        logger.error(f"Docker build timed out for {image_name} after {timeout_seconds} seconds")
+                        error_msg = f"Docker build timed out for {image_name} after {timeout_seconds} seconds"
+                        logger.error(error_msg)
+                        agent.build_error = error_msg
+                        self.db.commit()  # Commit the error to database
                         return None
                     
                 except Exception as e:
-                    logger.error(f"Docker build failed for {image_name}: {e}")
+                    error_msg = f"Docker build failed for {image_name}: {e}"
+                    logger.error(error_msg)
+                    agent.build_error = error_msg
+                    self.db.commit()  # Commit the error to database
                     return None
                         
             finally:
@@ -706,7 +722,10 @@ class PersistentAgent(ABC):
                     logger.warning(f"Failed to clean up temporary directory {temp_deploy_dir}: {e}")
                     
         except Exception as e:
-            logger.error(f"Error pre-building Docker image for agent {agent.id}: {e}")
+            error_msg = f"Error pre-building Docker image for agent {agent.id}: {e}"
+            logger.error(error_msg)
+            agent.build_error = error_msg
+            self.db.commit()  # Commit the error to database
             return None
 
     def remove_prebuilt_image(self, image_name: str) -> bool:

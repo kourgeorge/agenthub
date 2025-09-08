@@ -800,6 +800,14 @@ def publish(ctx, directory, base_url, dry_run, build, build_timeout):
                                 echo(style("❌ Docker build failed!", fg='red'))
                                 if status.get('error'):
                                     echo(f"  Error: {status['error']}")
+                                if status.get('logs'):
+                                    echo(style("  Build logs:", fg='yellow'))
+                                    # Show last few lines of logs
+                                    log_lines = status['logs'].split('\n')[-10:]
+                                    for line in log_lines:
+                                        if line.strip():
+                                            echo(f"    {line.strip()}")
+                                echo(style("  💡 Tip: Fix the error and try 'agenthub agent publish --build' again", fg='cyan'))
                                 break
                             elif build_status == 'not_started':
                                 # Only update display if status changed

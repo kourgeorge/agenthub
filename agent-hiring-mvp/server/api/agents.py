@@ -6,7 +6,7 @@ import tempfile
 import os
 from typing import List, Optional, Dict, Any
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status, BackgroundTasks
 from sqlalchemy.orm import Session
@@ -626,7 +626,34 @@ async def get_agent_build_status(
         if not agent.is_public and agent.owner_id != current_user.id:
             raise HTTPException(status_code=403, detail="Access denied")
         
-        # Determine build status based on docker_image field
+        # Check build_status field first (NEW - proper error handling)
+        if agent.build_status:
+            if agent.build_status == "completed":
+                return {
+                    "agent_id": agent_id,
+                    "status": "completed",
+                    "image_name": agent.docker_image,
+                    "message": "Docker image built successfully",
+                    "completed_at": agent.build_completed_at.isoformat() if agent.build_completed_at else None
+                }
+            elif agent.build_status == "failed":
+                return {
+                    "agent_id": agent_id,
+                    "status": "failed",
+                    "message": "Docker build failed",
+                    "error": agent.build_error,
+                    "failed_at": agent.build_completed_at.isoformat() if agent.build_completed_at else None,
+                    "logs": agent.build_logs
+                }
+            elif agent.build_status == "building":
+                return {
+                    "agent_id": agent_id,
+                    "status": "building",
+                    "message": "Docker build in progress",
+                    "started_at": agent.build_started_at.isoformat() if agent.build_started_at else None
+                }
+        
+        # Fallback to legacy logic for backward compatibility
         if agent.docker_image:
             return {
                 "agent_id": agent_id,
@@ -638,7 +665,7 @@ async def get_agent_build_status(
         else:
             # Check if this agent was recently submitted (within last 10 minutes)
             # to determine if build is in progress
-            from datetime import datetime, timezone, timedelta
+            from datetime import timedelta
             now = datetime.now(timezone.utc)
             ten_minutes_ago = now - timedelta(minutes=10)
             
@@ -793,17 +820,33 @@ async def build_docker_image_background(agent_id: str, user_id: int, db: Session
                 except Exception as e:
                     logger.warning(f"Failed to remove old pre-built image {agent.docker_image}: {e}")
             
+            # Set build status to "building"
+            agent.build_status = "building"
+            agent.build_started_at = datetime.now(timezone.utc)
+            agent.build_error = None
+            background_db.commit()
+            
             # Pre-build Docker image
             logger.info(f"Starting Docker build for agent {agent_id}")
             deployment_service = DeploymentService(background_db)
             image_name = await deployment_service.pre_build_agent_image(agent)
             
             if image_name:
-                # Update agent with built image
+                # Success - update agent with built image
                 agent.docker_image = image_name
+                agent.build_status = "completed"
+                agent.build_completed_at = datetime.now(timezone.utc)
+                agent.build_error = None
                 background_db.commit()
                 logger.info(f"Background Docker build completed successfully for agent {agent_id}: {image_name}")
             else:
+                # Failure - set build status to failed
+                agent.build_status = "failed"
+                agent.build_completed_at = datetime.now(timezone.utc)
+                # Use the error message already set by pre_build_agent_image, or fallback
+                if not agent.build_error:
+                    agent.build_error = "Docker build failed - check server logs for details"
+                background_db.commit()
                 logger.error(f"Background Docker build failed for agent {agent_id}")
                 
         finally:
@@ -811,5 +854,22 @@ async def build_docker_image_background(agent_id: str, user_id: int, db: Session
             
     except Exception as e:
         logger.error(f"Error in background Docker build for agent {agent_id}: {e}")
+        
+        # Set build status to failed on exception
+        try:
+            from ..database.config import get_session_dependency
+            error_db = next(get_session_dependency())
+            try:
+                agent = error_db.query(Agent).filter(Agent.id == agent_id).first()
+                if agent:
+                    agent.build_status = "failed"
+                    agent.build_completed_at = datetime.now(timezone.utc)
+                    agent.build_error = f"Build process failed: {str(e)}"
+                    error_db.commit()
+            finally:
+                error_db.close()
+        except Exception as db_error:
+            logger.error(f"Failed to update build status after error: {db_error}")
+        
         # Don't raise - background tasks should not fail the main request
 

@@ -3,7 +3,7 @@
 from enum import Enum
 from typing import Optional, Dict, List, Any
 
-from sqlalchemy import Column, String, Text, Boolean, JSON, Float, Integer, ForeignKey
+from sqlalchemy import Column, String, Text, Boolean, JSON, Float, Integer, ForeignKey, DateTime
 from sqlalchemy.orm import relationship
 
 from .base import Base
@@ -54,6 +54,14 @@ class Agent(Base):
     code_zip_url = Column(String(500), nullable=True)  # URL to agent code ZIP
     code_hash = Column(String(64), nullable=True)  # SHA256 hash of code
     docker_image = Column(String(255), nullable=True)  # Docker image name
+    
+    # Build Status Fields (for pre-built images)
+    build_status = Column(String(20), nullable=True)  # "building", "completed", "failed", "not_started"
+    build_error = Column(Text, nullable=True)  # Error message if build failed
+    build_logs = Column(Text, nullable=True)  # Build logs for debugging
+    build_started_at = Column(DateTime, nullable=True)  # When build actually started
+    build_completed_at = Column(DateTime, nullable=True)  # When build finished
+    
     code = Column(Text, nullable=True)  # Direct code storage (legacy - main file only)
     file_path = Column(String(500), nullable=True)  # Path to agent file
     
