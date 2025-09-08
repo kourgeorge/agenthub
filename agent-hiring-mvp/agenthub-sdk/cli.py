@@ -56,6 +56,7 @@ def show_next_steps(command: str, **kwargs):
             echo("  (use 'agenthub agent approve <agent_id>' to approve your agent)")
             echo("  (use 'agenthub agent list' to see all your agents)")
         echo("  💡 Tip: Use 'agenthub agent publish --build' to pre-build Docker image for faster first deployment")
+        echo("  💡 Tip: Use 'agenthub agent publish --build --build-timeout 60' to set custom build timeout")
             
     elif command == "agent approve":
         agent_id = kwargs.get('agent_id')
@@ -592,8 +593,9 @@ def test(ctx, directory, input, config):
 @click.option('--base-url', help='Base URL of the AgentHub server')
 @click.option('--dry-run', is_flag=True, help='Validate without publishing')
 @click.option('--build', is_flag=True, help='Pre-build Docker image on server side for faster first deployment (takes several minutes)')
+@click.option('--build-timeout', type=int, default=10, help='Timeout for Docker build in minutes (default: 10)')
 @click.pass_context
-def publish(ctx, directory, base_url, dry_run, build):
+def publish(ctx, directory, base_url, dry_run, build, build_timeout):
     """Publish agent to the AgentHub platform."""
     verbose = ctx.obj.get('verbose', False)
     
@@ -696,18 +698,27 @@ def publish(ctx, directory, base_url, dry_run, build):
                     echo(style("  🔨 Building Docker image...", fg='yellow'))
                     echo(style("  ⏱️  This may take several minutes for first-time builds", fg='blue'))
                     echo(style("  🔄 Please wait while Docker build completes...", fg='blue'))
+                    echo(style(f"  ⏱️  Build timeout: {build_timeout} minutes", fg='blue'))
+                    echo(style("  💡 Tip: You can check build status later with 'agenthub agent info <agent_id>'", fg='blue'))
                     
                     # Show a simple progress indicator
                     import time
                     import threading
                     import sys
                     
-                    # Simple spinner animation with progress message
+                    build_start_time = time.time()
+                    
+                    # Enhanced spinner animation with progress message and elapsed time
                     def show_docker_spinner():
                         spinner_chars = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
                         i = 0
                         while not hasattr(show_docker_spinner, 'stop'):
-                            sys.stdout.write(f'\r  {spinner_chars[i]} Building Docker image (this may take several minutes)... ')
+                            elapsed = int(time.time() - build_start_time)
+                            minutes = elapsed // 60
+                            seconds = elapsed % 60
+                            time_str = f"{minutes}m {seconds}s" if minutes > 0 else f"{seconds}s"
+                            
+                            sys.stdout.write(f'\r  {spinner_chars[i]} Building Docker image... {time_str} elapsed ')
                             sys.stdout.flush()
                             time.sleep(0.1)
                             i = (i + 1) % len(spinner_chars)
@@ -716,15 +727,41 @@ def publish(ctx, directory, base_url, dry_run, build):
                     spinner_thread = threading.Thread(target=show_docker_spinner, daemon=True)
                     spinner_thread.start()
                     
-                    build_start_time = time.time()
                     last_status = None
+                    max_build_time = build_timeout * 60  # Convert minutes to seconds
+                    consecutive_errors = 0
+                    max_consecutive_errors = 6  # 30 seconds of consecutive errors
                     
                     while True:
+                        current_time = time.time()
+                        elapsed_time = current_time - build_start_time
+                        
+                        # Check for timeout
+                        if elapsed_time > max_build_time:
+                            # Stop spinner
+                            show_docker_spinner.stop = True
+                            spinner_thread.join(timeout=1)
+                            sys.stdout.write('\r' + ' ' * 60 + '\r')  # Clear spinner line
+                            
+                            echo(style(f"⏰ Docker build timed out after {build_timeout} minutes!", fg='red'))
+                            echo(style("  The build may still be running on the server.", fg='yellow'))
+                            echo(style("  You can check the status later with:", fg='yellow'))
+                            echo(style(f"  agenthub agent info {result['agent_id']}", fg='cyan'))
+                            break
+                        
                         await asyncio.sleep(5)  # Check every 5 seconds
                         try:
                             status = await client.get_build_status(result['agent_id'])
+                            consecutive_errors = 0  # Reset error counter on successful status check
                             
-                            if status['status'] == 'completed':
+                            # Validate status response
+                            if not isinstance(status, dict) or 'status' not in status:
+                                echo(style("  ⚠️ Invalid build status response received", fg='yellow'))
+                                continue
+                            
+                            build_status = status['status']
+                            
+                            if build_status == 'completed':
                                 # Stop spinner
                                 show_docker_spinner.stop = True
                                 spinner_thread.join(timeout=1)
@@ -744,13 +781,17 @@ def publish(ctx, directory, base_url, dry_run, build):
                                 else:
                                     echo(f"  Build time: {seconds}s")
                                 break
-                            elif status['status'] == 'building':
+                            elif build_status == 'building':
                                 # Only update display if status changed
                                 if last_status != 'building':
                                     last_status = 'building'
-                                    if status.get('started_at'):
-                                        echo(f"\n  Started at: {status['started_at']}")
-                            elif status['status'] == 'failed':
+                                
+                                # Show elapsed time and server status every minute
+                                if int(elapsed_time) % 60 == 0 and int(elapsed_time) > 0:
+                                    minutes = int(elapsed_time // 60)
+                                    echo(f"\n  ⏱️  Build in progress... {minutes}m elapsed")
+                                    echo(f"  📡 Server status: {build_status} | Message: {status.get('message', 'N/A')}")
+                            elif build_status == 'failed':
                                 # Stop spinner
                                 show_docker_spinner.stop = True
                                 spinner_thread.join(timeout=1)
@@ -760,14 +801,32 @@ def publish(ctx, directory, base_url, dry_run, build):
                                 if status.get('error'):
                                     echo(f"  Error: {status['error']}")
                                 break
-                            elif status['status'] == 'not_started':
+                            elif build_status == 'not_started':
                                 # Only update display if status changed
                                 if last_status != 'not_started':
                                     last_status = 'not_started'
                                     echo(style("  ⚠️ Build not started yet, waiting...", fg='yellow'))
+                            else:
+                                # Handle unknown status
+                                if last_status != build_status:
+                                    last_status = build_status
+                                    echo(style(f"  ⚠️ Unknown build status: {build_status}", fg='yellow'))
                             
                         except Exception as e:
-                            # Continue waiting even if status check fails
+                            consecutive_errors += 1
+                            if consecutive_errors >= max_consecutive_errors:
+                                # Stop spinner
+                                show_docker_spinner.stop = True
+                                spinner_thread.join(timeout=1)
+                                sys.stdout.write('\r' + ' ' * 60 + '\r')  # Clear spinner line
+                                
+                                echo(style("❌ Unable to check build status after multiple attempts!", fg='red'))
+                                echo(style(f"  Last error: {e}", fg='red'))
+                                echo(style("  The build may still be running on the server.", fg='yellow'))
+                                echo(style("  You can check the status later with:", fg='yellow'))
+                                echo(style(f"  agenthub agent info {result['agent_id']}", fg='cyan'))
+                                break
+                            # Continue waiting for a few more attempts
                             pass
                     
                     return result
