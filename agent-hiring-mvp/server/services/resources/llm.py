@@ -157,4 +157,116 @@ class AnthropicResource(LLMResource):
             'input_tokens': usage.get('input_tokens', 0),
             'output_tokens': usage.get('output_tokens', 0),
             'total_tokens': usage.get('input_tokens', 0) + usage.get('output_tokens', 0)
+        }
+
+
+class LiteLLMResource(LLMResource):
+    """LiteLLM resource implementation for unified LLM access"""
+    
+    async def _create_client(self, api_key: str):
+        try:
+            import litellm
+            import os
+            
+            # Configure LiteLLM to use proxy
+            litellm.use_litellm_proxy = True
+            
+            # Get base URL from environment
+            base_url = os.getenv("LITELLM_BASE_URL", "http://theagenthub.cloud:4000")
+            
+            # Store configuration for later use
+            self.base_url = base_url
+            self.api_key = api_key
+            
+            return litellm
+        except ImportError:
+            raise Exception("LiteLLM library not installed. Install with: pip install litellm")
+    
+    async def _execute_operation(self, operation_type: str, **kwargs) -> Dict[str, Any]:
+        if operation_type == "completion":
+            try:
+                response = await self.client.acompletion(
+                    api_key=self.api_key,
+                    model=kwargs['model'],
+                    messages=kwargs['messages'],
+                    max_tokens=kwargs.get('max_tokens'),
+                    temperature=kwargs.get('temperature', 0),
+                    base_url=self.base_url
+                )
+                
+                # Extract cost information if available
+                cost = 0.0
+                if hasattr(response, '_hidden_params') and 'response_cost' in response._hidden_params:
+                    cost = response._hidden_params['response_cost']
+                
+                return {
+                    "content": response.choices[0].message.content,
+                    "usage": {
+                        "prompt_tokens": response.usage.prompt_tokens if response.usage else 0,
+                        "completion_tokens": response.usage.completion_tokens if response.usage else 0,
+                        "total_tokens": response.usage.total_tokens if response.usage else 0
+                    },
+                    "model": response.model,
+                    "cost": cost
+                }
+            except Exception as e:
+                raise Exception(f"LiteLLM completion failed: {str(e)}")
+                
+        elif operation_type == "embedding":
+            try:
+                response = await self.client.aembedding(
+                    api_key=self.api_key,
+                    model=kwargs['model'],
+                    input=kwargs['input'],
+                    base_url=self.base_url
+                )
+                
+                return {
+                    "embeddings": response.data[0].embedding,
+                    "usage": {
+                        "prompt_tokens": response.usage.prompt_tokens if response.usage else 0,
+                        "total_tokens": response.usage.total_tokens if response.usage else 0
+                    },
+                    "model": response.model
+                }
+            except Exception as e:
+                raise Exception(f"LiteLLM embedding failed: {str(e)}")
+        else:
+            raise ValueError(f"Unsupported operation type: {operation_type}")
+    
+    def calculate_cost(self, operation_type: str, **kwargs) -> float:
+        """Calculate LiteLLM API cost - use actual cost from response if available"""
+        response = kwargs.get('response', {})
+        
+        # If we have actual cost from LiteLLM response, use it
+        if 'cost' in response and response['cost'] > 0:
+            return response['cost']
+        
+        # Fallback to estimated cost based on usage
+        usage = response.get('usage', {})
+        
+        if operation_type == "completion":
+            input_tokens = usage.get('prompt_tokens', 0)
+            output_tokens = usage.get('completion_tokens', 0)
+            
+            # Use conservative estimates for unknown models
+            input_rate = 0.0015 / 1000  # $0.0015 per 1K tokens
+            output_rate = 0.002 / 1000  # $0.002 per 1K tokens
+            
+            return (input_tokens * input_rate) + (output_tokens * output_rate)
+            
+        elif operation_type == "embedding":
+            total_tokens = usage.get('total_tokens', 0)
+            rate = 0.0001 / 1000  # $0.0001 per 1K tokens
+            return total_tokens * rate
+        
+        return 0.0
+    
+    def extract_usage_metrics(self, response: Dict[str, Any], request_metadata: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract usage metrics from LiteLLM response"""
+        usage = response.get('usage', {})
+        return {
+            'input_tokens': usage.get('prompt_tokens', 0),
+            'output_tokens': usage.get('completion_tokens', 0),
+            'total_tokens': usage.get('total_tokens', 0)
         } 

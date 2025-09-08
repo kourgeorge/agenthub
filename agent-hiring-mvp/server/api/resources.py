@@ -214,6 +214,70 @@ async def vector_db_operation(
         }
 
 
+@router.get("/models")
+async def get_available_models(
+    provider: str = "litellm",
+    db: Session = Depends(get_db)
+):
+    """Get available models from a provider."""
+    try:
+        if provider == "litellm":
+            import requests
+            import os
+            
+            base_url = os.getenv("LITELLM_BASE_URL", "http://theagenthub.cloud:4000")
+            api_key = os.getenv("LITELLM_API_KEY", "litellm123")
+            
+            response = requests.get(
+                f"{base_url}/v1/models",
+                headers={"Authorization": f"Bearer {api_key}"},
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                models_data = response.json().get('data', [])
+                return {
+                    "success": True,
+                    "provider": provider,
+                    "models": models_data
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": f"Failed to fetch models: {response.status_code}",
+                    "provider": provider
+                }
+        else:
+            # For other providers, return a basic list
+            if provider == "openai":
+                models = [
+                    {"id": "gpt-3.5-turbo", "object": "model"},
+                    {"id": "gpt-4", "object": "model"},
+                    {"id": "text-embedding-ada-002", "object": "model"}
+                ]
+            elif provider == "anthropic":
+                models = [
+                    {"id": "claude-3-sonnet", "object": "model"},
+                    {"id": "claude-3-haiku", "object": "model"}
+                ]
+            else:
+                models = []
+            
+            return {
+                "success": True,
+                "provider": provider,
+                "models": models
+            }
+            
+    except Exception as e:
+        logger.error(f"Error fetching models for {provider}: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "provider": provider
+        }
+
+
 @router.get("/health")
 async def resources_health():
     """Health check for resources API."""
@@ -223,6 +287,7 @@ async def resources_health():
         "endpoints": {
             "llm": "/api/v1/resources/llm",
             "web_search": "/api/v1/resources/web_search",
-            "vector_db": "/api/v1/resources/vector_db"
+            "vector_db": "/api/v1/resources/vector_db",
+            "models": "/api/v1/resources/models"
         }
     } 

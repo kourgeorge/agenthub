@@ -7,7 +7,7 @@ from datetime import datetime
 import asyncio
 
 from .resources.base import BaseResource, KeyManager, UsageTracker
-from .resources.llm import OpenAIResource, AnthropicResource
+from .resources.llm import OpenAIResource, AnthropicResource, LiteLLMResource
 from .resources.vector_db import PineconeResource, ChromaResource
 from .resources.web_search import SerperResource, SerpapiResource, DuckDuckGoResource
 
@@ -39,6 +39,13 @@ class ResourceManager:
                     'claude-3-haiku': {'input': 0.00025, 'output': 0.00125}
                 },
                 'rate_limits': {'requests_per_minute': 50}
+            },
+            'litellm': {
+                'rates': {
+                    # Dynamic rates based on actual model costs from LiteLLM
+                    'default': {'input': 0.0015, 'output': 0.002}
+                },
+                'rate_limits': {'requests_per_minute': 100}
             },
             'pinecone': {
                 'rates': {'upsert': 0.0001, 'query': 0.0, 'delete': 0.0},
@@ -111,6 +118,8 @@ class ResourceManager:
                 resource = OpenAIResource(provider, config, self.key_manager, self.usage_tracker)
             elif provider == "anthropic":
                 resource = AnthropicResource(provider, config, self.key_manager, self.usage_tracker)
+            elif provider == "litellm":
+                resource = LiteLLMResource(provider, config, self.key_manager, self.usage_tracker)
             else:
                 raise ValueError(f"Unsupported LLM provider: {provider}")
             
