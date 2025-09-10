@@ -19,12 +19,6 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-from langchain_openai import OpenAIEmbeddings
-from langchain_community.vectorstores import FAISS
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.schema import Document
-from langchain.chains import RetrievalQA
-import arxiv
 from lite_llm_handler import LiteLLMHandler
 
 # Import our modular team member extractor
@@ -34,18 +28,13 @@ from researcher_data_extractor import ResearcherDataExtractor
 from publication_processor import PublicationProcessor
 from expertise_extractor import ExpertiseExtractor
 
+
 class TeamExpertiseAgent:
 
     def __init__(self):
         self.max_pubs = 50
         self.llm = None
-        self.team_data = {}
-        self.publications_data = {}
-        self.collaboration_network = None
-        
-        # Initialize the team member extractor (will be configured in initialize method)
-        self.member_extractor = None
-        
+
         # Initialize our new modular classes
         self.publication_processor = PublicationProcessor()
         self.expertise_extractor = ExpertiseExtractor()
@@ -74,15 +63,14 @@ class TeamExpertiseAgent:
                 )
 
             # Initialize team member extractor with LLM handler
-            self.member_extractor = ResearcherDataExtractor(
+            member_extractor = ResearcherDataExtractor(
                 llm_handler=self.llm,
             )
 
             # STEP 1: Data Collection
-            team_members_data = {member_name: self.member_extractor.extract_researcher_info(member_name, self.max_pubs) for member_name in team_members}
+            team_members_data = {member_name: member_extractor.extract_researcher_info(member_name, self.max_pubs) for member_name in team_members}
 
             team_members_data = self.sort_members_by_rank(team_members_data)
-            self.team_data = team_members_data  # Store for later use
             logger.info(f"Collected data for {len(team_members_data)} team members.\nHighly ranked: {list(team_members_data.keys())[:5]}")
 
             # STEP 2: Publication Collection and Deduplication
@@ -107,10 +95,10 @@ class TeamExpertiseAgent:
             }
             
         except Exception as e:
-            logger.error(f"Initialization failed: {str(e)}")
+            logger.error(f"Execution failed: {str(e)}")
             return {
                 "status": "error",
-                "message": f"Initialization failed: {str(e)}",
+                "message": f"Execution failed: {str(e)}",
                 "team_members_analyzed": 0,
                 "total_publications": 0,
                 "workflow_summary": "Workflow failed"
@@ -184,13 +172,19 @@ class TeamExpertiseAgent:
                 for domain in domains:
                     member_rank = member_expertise_data[next(i for i, d in enumerate(member_expertise_data) if d["domain"] == domain)]["rank"]
                     if domain not in team_expertise_domains:
-                        team_expertise_domains[domain] = {"count": 0, "contributing_members": set()}
+                        team_expertise_domains[domain] = {"total_rank": 0, "contributing_members": []}
 
-                    team_expertise_domains[domain]["count"] += member_rank
-                    team_expertise_domains[domain]["contributing_members"].update([member.get("name", "Unknown")])
-                
-                # Track member contributions
-                      
+                    team_expertise_domains[domain]["total_rank"] += member_rank
+                    member_name = member.get("name", "Unknown")
+                    if member_name not in team_expertise_domains[domain]["contributing_members"]:
+                        team_expertise_domains[domain]["contributing_members"].append(member_name)
+
+            # Sort team_expertise_domains by total_rank in descending order
+            team_expertise_domains = dict(sorted(
+                team_expertise_domains.items(), 
+                key=lambda x: x[1].get("total_rank", 0), 
+                reverse=True
+            ))
 
             # Calculate key metrics
             total_domains = len(team_expertise_domains)
@@ -305,7 +299,7 @@ class TeamExpertiseAgent:
             top_domains = []
             if expertise_domains:
                 try:
-                    top_domains = sorted(expertise_domains.items(), key=lambda x: x[1].get("count", 0) if isinstance(x[1], dict) else 0, reverse=True)[:3]
+                    top_domains = sorted(expertise_domains.items(), key=lambda x: x[1].get("total_rank", 0) if isinstance(x[1], dict) else 0, reverse=True)[:3]
                 except (KeyError, TypeError):
                     top_domains = []
             
@@ -342,13 +336,16 @@ class TeamExpertiseAgent:
                         domain_summary = ', '.join([f'{domain} ({data.get("count", 0) if isinstance(data, dict) else 0} pubs)' for domain, data in top_domains])
                     except (KeyError, TypeError):
                         domain_summary = "Multiple domains identified"
-                
-                prompt = f"""Summarize this research team in few paragraphs by characterizing their expertise, publication impact, and collaboration dynamics.:
+
+                # Create the top members summary outside the f-string to avoid backslash issue
+                top_members_summary = '\n'.join([f'{m["member_name"]} (H-index: {m["h_index"]}, {m["total_citations"]} citations), summary: {m["summary"]}. domains info: {m["domain_expertise"]}' for m in top_influential])
+
+                prompt = f"""Summarize this research team in few paragraphs by characterizing their expertise, publication impact, and collaboration dynamics:
                 You should mention the top expertise domains, the most influential members, and any notable collaboration patterns.
                 
                 Team: {team_size} members, {total_publications} publications, {total_domains} expertise domains
                 Top domains: {domain_summary}
-                Top members: {'\n'.join([f'{m["member_name"]} (H-index: {m["h_index"]}, {m["total_citations"]} citations), summary: {m["summary"]}. domains info: {m['domain_expertise']}' for m in top_influential])}"""
+                Top members: {top_members_summary}"""
                 
                 messages = [SystemMessage(content="You are a research analyst. Your goal is to give a high level overview of the team expertise levels and domains."), HumanMessage(content=prompt)]
                 try:
@@ -370,24 +367,14 @@ class TeamExpertiseAgent:
             return {"error": str(e), "summary_text": "Error generating summary"}
 
 
-def main(config):
+def execute(input_data):
     """
     Simple example of using the Team Expertise Analysis Agent.
     """
-    try:
-        # Create agent and execute
-        agent = TeamExpertiseAgent()
-        result = agent.execute(input_data=config)
-
-        # Display results
-        if result.get("status") == "success":
-            print(
-                f"✅ Analysis completed: {result.get('team_members_analyzed', 0)} members, {result.get('total_publications', 0)} publications")
-        else:
-            print(f"❌ Analysis failed: {result.get('message', 'Unknown error')}")
-
-    except Exception as e:
-        print(f"❌ Error: {e}")
+    # Create agent and execute
+    agent = TeamExpertiseAgent()
+    result = agent.execute(input_data=input_data)
+    return result
 
 
 if __name__ == '__main__':
@@ -396,10 +383,19 @@ if __name__ == '__main__':
 
     # Example configuration
     input_data = {
-        "team_members": "George Kour, Boaz Carmeli",
+        "team_members": """Jiyong Jang
+Kevin Eykholt
+Dhilung Kirat
+Youngja Park
+Doug Schales
+Xiaokui Shu
+Qiushi Wu
+""",
         "model_name": "azure/gpt-4o-2024-08-06",
         "temperature": 0.1,
         "max_publications_per_member": 30
     }
 
-    main(input_data)
+    result = execute(input_data)
+    with open("output.json", "w") as f:
+        json.dump(result, f, indent=4)  # indent=4 makes the file pretty-printed

@@ -18,7 +18,6 @@ from dataclasses import asdict
 
 from langchain.schema import HumanMessage, SystemMessage
 from open_alex import OpenAlexClient
-from ddgs import DDGS
 from semanticscholar import SemanticScholar
 
 load_dotenv()
@@ -145,11 +144,11 @@ class ResearcherDataExtractor:
                 return member_data
             else:
                 logger.warning(f"No publications found for {name}")
-                return None
+                return {}
 
         except Exception as e:
             logger.error(f"Error extracting member info for {name}: {str(e)}")
-            return None
+            return {}
 
     def _sort_collaborators_by_count(self, publications: List[Dict[str, Any]], researcher_name: str) -> List[
         Dict[str, Any]]:
