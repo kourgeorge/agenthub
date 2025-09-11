@@ -348,8 +348,12 @@ class DeploymentService:
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+# Install system dependencies including build tools for packages like fastuuid
+RUN apt-get update && apt-get install -y \\
+    curl \\
+    gcc \\
+    g++ \\
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install
 COPY requirements.txt .

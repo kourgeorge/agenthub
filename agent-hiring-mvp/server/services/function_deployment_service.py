@@ -852,9 +852,11 @@ with open('/tmp/agent_stderr.txt', 'w') as f:
 
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies including build tools for packages like fastuuid
 RUN apt-get update && apt-get install -y \\
+    curl \\
     gcc \\
+    g++ \\
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install Python dependencies
