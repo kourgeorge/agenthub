@@ -144,28 +144,95 @@ class OpenAlexClient:
                 
         except requests.RequestException as e:
             raise OpenAlexError(f"Request failed: {e}") from e
-    
-    def search_authors(self, name: str, per_page: int = 25) -> List[Author]:
-        """
-        Search for authors by name and optionally filter by institution.
-        
-        Args:
-            name: Author name to search for
-            per_page: Number of results per page
-            
-        Returns:
-            List of Author objects matching the search criteria
-        """
-        params = {
-            "search": name,
-            "per_page": per_page,
-        }
-        
-        data = self._make_request("/authors", params)
-        results = data.get("results", [])
 
-        
-        return [self._parse_author(author_data) for author_data in results]
+    def _lookup_institution_id(self, institution_name: str) -> Optional[str]:
+        """
+        Find an OpenAlex institution ID by display name.
+        Tries exact case-insensitive match first; else picks the most 'prominent' (by works_count).
+        Returns an OpenAlex institution ID like 'I71267560', or None if not found.
+        """
+        # Use display_name.search for broad matching
+        params = {
+            "search": institution_name,
+            "per_page": 25,  # search a reasonable set
+            "sort": "works_count:desc"
+        }
+        data = self._make_request("/institutions", params) or {}
+        results = data.get("results", [])
+        if not results:
+            return None
+
+        # Try exact (case-insensitive) match on display_name
+        lowered = institution_name.strip().lower()
+        exact = next((r for r in results if r.get("display_name", "").strip().lower() == lowered), None)
+        picked = exact or results[0]
+
+        # OpenAlex IDs look like "https://openalex.org/I71267560" and also appear as "id": "I71267560" in many libs.
+        # Handle both forms defensively.
+        raw_id = picked.get("id")
+        if isinstance(raw_id, str):
+            if raw_id.startswith("I"):
+                return raw_id
+            # extract terminal ID if URL form
+            if raw_id.rsplit("/", 1)[-1].startswith("I"):
+                return raw_id.rsplit("/", 1)[-1]
+
+        # Also check 'ids' map if present
+        ids_map = picked.get("ids") or {}
+        openalex_url = ids_map.get("openalex")
+        if isinstance(openalex_url, str) and openalex_url.rsplit("/", 1)[-1].startswith("I"):
+            return openalex_url.rsplit("/", 1)[-1]
+
+        return None
+
+    def _query_authors(self, filters: List[str], per_page: int) -> List[Dict[str, Any]]:
+        params = {"filter": ",".join(filters), "per_page": per_page}
+        try:
+            data = self._make_request("/authors", params) or {}
+            return data.get("results", []) or []
+        except OpenAlexError as e:
+            logger.error(f"Failed to query authors: {e}")
+            return []
+
+    def search_authors(self, name: str, institution: Optional[str] = None, per_page: int = 25) -> List["Author"]:
+        """
+        Search authors by name with cascading institution logic (non-deprecated fields):
+          1) last_known_institutions.id
+          2) affiliations.institution.id
+          3) name-only
+        """
+        per_page = max(1, min(per_page, 200))
+        name_filter = f"display_name.search:{name}"
+
+        # If no institution provided, go straight to name-only.
+        if not institution:
+            results = self._query_authors([name_filter], per_page)
+            return [self._parse_author(a) for a in results]
+
+        # Resolve institution to OpenAlex ID (e.g., "I71267560")
+        inst_id = self._lookup_institution_id(institution)
+
+        # 1) Try last_known_institutions.id (replacement for deprecated last_known_institution)
+        if inst_id:
+            results = self._query_authors(
+                [name_filter, f"last_known_institutions.id:{inst_id}"],
+                per_page,
+            )
+            if results:
+                return [self._parse_author(a) for a in results]
+
+            # 2) Fallback: any historical affiliation with the institution
+            results = self._query_authors(
+                [name_filter, f"affiliations.institution.id:{inst_id}"],
+                per_page,
+            )
+            if results:
+                return [self._parse_author(a) for a in results]
+
+        # 3) Final fallback: name-only
+        results = self._query_authors([name_filter], per_page)
+        return [self._parse_author(a) for a in results]
+
     
     def get_author_by_id(self, author_id: str) -> Optional[Author]:
         """
@@ -225,19 +292,81 @@ class OpenAlexClient:
                 break
             page += 1
     
-    def get_author_citations_summary(self, name: str) -> Optional[AuthorWorksSummary]:
+    def get_author_works_by_id(self, author_id: str, page_size: int = 20) -> Iterator[Publication]:
+        """
+        Get all works for an author by their OpenAlex ID with pagination support.
+        
+        Args:
+            author_id: OpenAlex author ID (can be full URL or just the ID part)
+            page_size: Number of works per page
+            
+        Yields:
+            Publication objects for each work
+            
+        Raises:
+            OpenAlexError: If the API request fails
+        """
+        try:
+            # Extract the ID part if a full URL is provided
+            author_key = author_id.split("/")[-1]
+            url = "/works"
+            params = {
+                "filter": f"author.id:{author_key}",
+                "per_page": page_size,
+                "select": "id,doi,title,publication_year,cited_by_count,authorships,type"
+            }
+            
+            page = 1
+            total = None
+            
+            while True:
+                response = self._make_request(url, {**params, "page": page})
+                
+                if total is None:
+                    total = response["meta"]["count"]
+                
+                works = response.get("results", [])
+                if not works:
+                    break
+                    
+                for work_data in works:
+                    yield self._parse_publication(work_data)
+                
+                if page * page_size >= total:
+                    break
+                page += 1
+                
+        except OpenAlexError as e:
+            logger.error(f"Failed to get works for author ID {author_id}: {e}")
+            raise
+    
+    def get_author_works_list_by_id(self, author_id: str, page_size: int = 20, max_works: Optional[int] = None) -> List[Publication]:
+        # Get all works for an author by their OpenAlex ID as a list.
+
+        works = []
+        count = 0
+        
+        for work in self.get_author_works_by_id(author_id, page_size):
+            works.append(work)
+            count += 1
+            if max_works and count >= max_works:
+                break
+                
+        return works
+    
+    def get_author_citations_summary(self, name: str, affiliation: Optional[str] = None) -> Optional[AuthorWorksSummary]:
         """
         Get a comprehensive summary of an author's works and citations.
         
         Args:
             name: Author name to search for
-            institution: Optional institution name to filter by
+            affiliation: Optional institution name to filter by
             
         Returns:
             AuthorWorksSummary object if author found, None otherwise
         """
         # First, find the author
-        authors = self.search_authors(name, per_page=1)
+        authors = self.search_authors(name, affiliation, per_page=1)
         if not authors:
             logger.warning(f"No author found for name '{name}'")
             return None
@@ -323,7 +452,7 @@ class OpenAlexClient:
             "venue": publication.venue.get("display_name") if publication.venue else None,
         }
     
-    def get_author_metrics(self, name: str) -> Optional[AuthorMetrics]:
+    def get_author_metrics(self, name: str, institution:Optional[str]) -> Optional[AuthorMetrics]:
         """
         Extract comprehensive author metrics including h-index, i10-index, and other academic metrics.
         
@@ -346,7 +475,7 @@ class OpenAlexClient:
             OpenAlexError: If the API request fails
         """
         # First, find the author
-        authors = self.search_authors(name, per_page=1)
+        authors = self.search_authors(name, institution, per_page=5)
         if not authors:
             logger.warning(f"No author found for name '{name}'")
             return None
@@ -460,70 +589,16 @@ class OpenAlexClient:
 
 
 # Convenience functions for backward compatibility
-def find_best_author_by_name(name: str, institution: Optional[str] = None, per_page: int = 25):
-    """Backward compatibility function."""
+def get_author_works_by_id(author_id: str, page_size: int = 20):
+    """Backward compatibility function to get author works by ID."""
     client = OpenAlexClient()
-    authors = client.search_authors(name, institution, per_page)
-    return authors[0] if authors else None
+    return client.get_author_works_by_id(author_id, page_size)
 
 
-def get_author_full(author_id_or_key: str):
-    """Backward compatibility function."""
+def get_author_works_list_by_id(author_id: str, page_size: int = 20, max_works: Optional[int] = None):
+    """Backward compatibility function to get author works by ID as a list."""
     client = OpenAlexClient()
-    return client.get_author_by_id(author_id_or_key)
-
-
-def iter_author_works(author: Dict[str, Any], page_size: int = 200):
-    """Backward compatibility function."""
-    client = OpenAlexClient()
-    author_obj = client._parse_author(author)
-    return client.get_author_works(author_obj, page_size)
-
-
-def author_citations_by_name(name: str, institution: Optional[str] = None):
-    """Backward compatibility function."""
-    client = OpenAlexClient()
-    summary = client.get_author_citations_summary(name, institution)
-    if not summary:
-        return {"error": f"No OpenAlex author found for name='{name}'"
-                         + (f" and institution='{institution}'" if institution else "")}
-    
-    return {
-        "author": {
-            "id": summary.author.id,
-            "display_name": summary.author.display_name,
-            "orcid": summary.author.orcid,
-            "works_count": summary.author.works_count,
-            "cited_by_count": summary.author.cited_by_count,
-        },
-        "total_citations": summary.total_citations,
-        "works": [
-            {
-                "id": w.id,
-                "doi": w.doi,
-                "title": w.title,
-                "year": w.year,
-                "cited_by_count": w.cited_by_count,
-                "venue": {
-                    "id": w.venue.get("id") if w.venue else None,
-                    "display_name": w.venue.get("display_name") if w.venue else None,
-                }
-            }
-            for w in summary.works
-        ]
-    }
-
-
-def get_citations_by_title(title: str):
-    """Backward compatibility function."""
-    client = OpenAlexClient()
-    return client.get_publication_citations(title)
-
-
-def get_author_metrics(name: str, include_works: bool = True, include_concepts: bool = True):
-    """Backward compatibility function for getting author metrics."""
-    client = OpenAlexClient()
-    return client.get_author_metrics(name, include_works, include_concepts)
+    return client.get_author_works_list_by_id(author_id, page_size, max_works)
 
 
 # Example usage and testing
@@ -575,3 +650,21 @@ if __name__ == "__main__":
     print("=== Author Metrics Example ===")
     metrics = client.get_author_metrics("George Kour")
     print(metrics)
+    
+    print("\n" + "="*50 + "\n")
+    
+    # Example 5: Get author works by ID
+    print("=== Author Works by ID Example ===")
+    # First get an author ID
+    authors = client.search_authors("George Kour", per_page=1)
+    if authors:
+        author_id = authors[0].id
+        print(f"Getting works for author ID: {author_id}")
+        
+        # Get first 5 works as a list
+        works = client.get_author_works_list_by_id(author_id, max_works=5)
+        print(f"Found {len(works)} works:")
+        for i, work in enumerate(works, 1):
+            print(f"{i}. ({work.year}) {work.title} — {work.cited_by_count} citations")
+    else:
+        print("No author found for testing")
