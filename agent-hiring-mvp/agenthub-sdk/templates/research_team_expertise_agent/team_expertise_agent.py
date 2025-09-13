@@ -1,32 +1,21 @@
 #!/usr/bin/env python3
 
-import os
 import json
 import logging
-import time
-import re
-from typing import Dict, Any, Optional, List, Tuple
-from pathlib import Path
-from urllib.parse import urlparse, quote
-import requests
+from typing import Dict, Any, List
 from dotenv import load_dotenv
-from datetime import datetime, timedelta
 
-# Load environment variables
-load_dotenv()
+from langchain_core.messages import SystemMessage, HumanMessage
+from lite_llm_handler import LiteLLMHandler
+from researcher_data_extractor import ResearcherDataExtractor
+from publication_processor import PublicationProcessor
+from expertise_extractor import ExpertiseExtractor
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-from lite_llm_handler import LiteLLMHandler
-
-# Import our modular team member extractor
-from researcher_data_extractor import ResearcherDataExtractor
-
-# Import our new modular classes
-from publication_processor import PublicationProcessor
-from expertise_extractor import ExpertiseExtractor
+load_dotenv()
 
 
 class TeamExpertiseAgent:
@@ -46,10 +35,10 @@ class TeamExpertiseAgent:
             team_members_input = input_data.get("team_members")
             if not team_members_input:
                 raise ValueError("team_members is required for initialization")
-            
+
             # Parse team members input string into list
             team_members = self._parse_team_members(team_members_input)
-            
+
             # Use config expertise_domains if provided, otherwise use taxonomy domains
             config_expertise_domains = input_data.get("expertise_domains")
 
@@ -58,46 +47,37 @@ class TeamExpertiseAgent:
             self.max_pubs = input_data.get("max_publications_per_member", 50)
 
             self.llm = LiteLLMHandler(
-                    model=input_data.get("model_name", "gpt-4o-mini"),
-                    temperature=input_data.get("temperature", 0.1)
-                )
+                model=input_data.get("model_name", "gpt-4o-mini"),
+                temperature=input_data.get("temperature", 0.1)
+            )
 
             # Initialize team member extractor with LLM handler
             member_extractor = ResearcherDataExtractor(
                 llm_handler=self.llm,
             )
 
-            # STEP 1: Data Collection
+            # Data Collection
             field_of_study = input_data.get("field_of_study", "Computer Science")
-            
+
             team_members_data = {}
             for member_name, institution, author_id in team_members:
                 team_members_data[member_name] = member_extractor.extract_researcher_info(
                     member_name, institution, self.max_pubs, field_of_study, author_id
                 )
 
-            team_members_data = self.sort_members_by_rank(team_members_data)
+            team_members_data = self._sort_members_by_rank(team_members_data)
 
-            # STEP 2: Publication Collection and Deduplication
-            team_publications = self.publication_processor.get_team_publications(team_members_data)
-
-            # STEP 3: Team-level Analysis (based on deduplicated publications)
-            logger.info("👥 STEP 3: Team-level Analysis")
-            team_analysis = self._build_team_expertise_map(team_members_data, team_publications)
-            
-            # STEP 4: Generate Comprehensive Team Summary
-            logger.info("📝 STEP 4: Generating Comprehensive Team Summary")
-            team_summary = self._generate_comprehensive_team_summary(team_members_data, team_analysis)
+            # Team-level Analysis and Summary Generation
+            logger.info("👥 STEP 3: Team-level Analysis and Summary Generation")
+            team_profile = self._build_team_profile(team_members_data)
 
             # Calculate total publications
             return {
                 "status": "success",
-                "team_members_analyzed": len(team_members_data),
                 "individual_profiles": team_members_data,
-                "team_analysis": team_analysis,
-                "team_summary": team_summary,
+                "team_profile": team_profile,
             }
-            
+
         except Exception as e:
             logger.error(f"Execution failed: {str(e)}")
             return {
@@ -108,7 +88,7 @@ class TeamExpertiseAgent:
                 "workflow_summary": "Workflow failed"
             }
 
-    def sort_members_by_rank(self, team_members_data):
+    def _sort_members_by_rank(self, team_members_data):
         sorted_members = sorted(team_members_data.items(),
                                 key=lambda x: x[1].get("citation_metrics", {}).get("h_index", 0), reverse=True)
         if not sorted_members or all(v.get("citation_metrics", {}).get("h_index", 0) == 0 for k, v in sorted_members):
@@ -117,7 +97,6 @@ class TeamExpertiseAgent:
                                     reverse=True)
 
         return dict(sorted_members)
-
 
     def _parse_team_members(self, team_members_input: str) -> List[tuple]:
         """
@@ -139,16 +118,16 @@ class TeamExpertiseAgent:
         """
         if not team_members_input or not isinstance(team_members_input, str):
             raise ValueError("team_members must be a non-empty string")
-        
+
         # Split by semicolons first, then by newlines
         entries = []
         if ';' in team_members_input:
             entries = team_members_input.strip().split(';')
         else:
             entries = team_members_input.strip().split('\n')
-        
+
         members = []
-        
+
         for entry in entries:
             entry = entry.strip()
             if entry:
@@ -162,7 +141,7 @@ class TeamExpertiseAgent:
                 else:
                     # No separator, treat as name only
                     parts = [entry]
-                
+
                 # Parse parts based on length
                 if len(parts) >= 2:
                     name = parts[0]
@@ -173,7 +152,7 @@ class TeamExpertiseAgent:
                 elif len(parts) == 1 and parts[0]:
                     # Single part, treat as name only
                     members.append((parts[0], None, None))
-        
+
         # Remove duplicates while preserving order
         seen = set()
         unique_members = []
@@ -181,222 +160,135 @@ class TeamExpertiseAgent:
             if member not in seen:
                 seen.add(member)
                 unique_members.append(member)
-        
+
         if not unique_members:
             raise ValueError("No valid team member names found in input")
-        
+
         logger.info(f"Parsed {len(unique_members)} team members from input")
         return unique_members
 
-    def _build_team_expertise_map(self, team_data: Dict[str, Any], team_publications: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Build team expertise map from deduplicated publications."""
+    def _build_team_profile(self, team_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Build comprehensive team analysis and generate summary insights.
+        Combines team expertise mapping and summary generation functionality.
+        """
         try:
-            if not team_data or not team_publications: return {}
+            if not team_data:
+                return {}
 
-            team_expertise_domains = {}
-            
-            # Process each publication to build expertise map
-            for member in team_data.values():
-                member_expertise_data = member.get("domain_expertise", [])
-                domains = [d["domain"] for d in member_expertise_data]
+            team_publications = self.publication_processor.get_team_publications(team_data)
 
-                # Update team expertise counts
-                for domain in domains:
-                    member_rank = member_expertise_data[next(i for i, d in enumerate(member_expertise_data) if d["domain"] == domain)]["rank"]
-                    if domain not in team_expertise_domains:
-                        team_expertise_domains[domain] = {"total_rank": 0, "contributing_members": []}
+            # Expertise mapping
+            team_expertise_domains = TeamExpertiseAgent.analyze_team_expertise(team_data)
 
-                    team_expertise_domains[domain]["total_rank"] += member_rank
-                    member_name = member.get("name", "Unknown")
-                    if member_name not in team_expertise_domains[domain]["contributing_members"]:
-                        team_expertise_domains[domain]["contributing_members"].append(member_name)
-
-            # Sort team_expertise_domains by total_rank in descending order
-            team_expertise_domains = dict(sorted(
-                team_expertise_domains.items(), 
-                key=lambda x: x[1].get("total_rank", 0), 
-                reverse=True
-            ))
-
-            # Calculate key metrics
-            total_domains = len(team_expertise_domains)
+            # Publications
             total_publications = len(team_publications)
             total_citations = sum(pub.get("citations", 0) for pub in team_publications)
-            
-            # Get detailed citation analysis
-            citation_analysis = self.publication_processor.get_citation_analysis(team_publications)
-            
-            # Get collaboration network analysis
-            team_members = list(team_data.keys())
-            # collaboration_network = self.publication_processor.get_team_collaboration_network(team_publications, team_members)
-            
-            # Build analysis
-            team_analysis = {
-                "expertise_domains": team_expertise_domains,
-                "team_metrics": {
-                    "total_domains": total_domains,
-                    "total_publications": total_publications,
-                    "total_citations": total_citations,
-                    "member_count": len(team_data)
-                },
-                "collaboration_insights": {
-                    "multi_author_papers": len([p for p in team_publications if len(p.get("_member_contributors", [])) > 1]),
-                    "single_author_papers": len([p for p in team_publications if len(p.get("_member_contributors", [])) == 1])
-                },
-                # "collaboration_network": collaboration_network,
-                "citation_analysis": citation_analysis
-            }
-            
-            logger.info(f"Team expertise map built: {total_domains} domains, {total_publications} publications")
-            return team_analysis
-            
-        except Exception as e:
-            logger.error(f"Error building team expertise map: {str(e)}")
-            return {}
 
-    def _aggregate_team_expertise(self, member_expertise: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Step 3: Aggregate expertise at the team level from all members.
-        
-        Args:
-            member_expertise: Member-level expertise from step 2
-            
-        Returns:
-            Dictionary containing team-level expertise aggregation
-        """
-        try:
-            logger.info("Aggregating expertise at team level...")
-            
-            # Aggregate all domains across team
-            team_domain_counts = {}
-            member_contributions = {}
-            
-            for member_name, member_data in member_expertise.items():
-                member_contributions[member_name] = {}
-                
-                for domain, count in member_data["domain_counts"].items():
-                    # Add to team total
-                    team_domain_counts[domain] = team_domain_counts.get(domain, 0) + count
-                    
-                    # Track member contribution to this domain
-                    member_contributions[member_name][domain] = count
-            
-            # Sort domains by total count
-            sorted_team_domains = sorted(team_domain_counts.items(), key=lambda x: x[1], reverse=True)
-            
-            # Calculate team-level metrics
-            total_domains = len(team_domain_counts)
-            total_publications = sum(team_domain_counts.values())
-            member_count = len(member_expertise)
-            
-            team_expertise = {
-                "expertise_domains": dict(sorted_team_domains),  # Single dict: domain -> count
-                "member_contributions": member_contributions,
-                "team_metrics": {
-                    "total_domains": total_domains,
-                    "total_publications": total_publications,
-                    "member_count": member_count,
-                    "average_domains_per_member": total_domains / member_count if member_count > 0 else 0,
-                    "average_publications_per_domain": total_publications / total_domains if total_domains > 0 else 0
-                },
-                "domain_strength_analysis": {
-                    "strong_domains": [domain for domain, count in sorted_team_domains if count >= 3],  # 3+ publications
-                    "moderate_domains": [domain for domain, count in sorted_team_domains if 1 <= count < 3],  # 1-2 publications
-                    "emerging_domains": [domain for domain, count in sorted_team_domains if count == 1]  # 1 publication
-                }
-            }
-            
-            logger.info(f"Team expertise aggregated: {total_domains} domains, {total_publications} total publications")
-            return team_expertise
-            
-        except Exception as e:
-            logger.error(f"Error aggregating team expertise: {str(e)}")
-            return {}
-
-    def _generate_comprehensive_team_summary(self, individual_profiles: Dict[str, Any], team_analysis: Dict[str, Any]) -> Dict[str, Any]:
-        """Generate team summary with key insights."""
-        try:
-            # Handle case where team_analysis might be None or empty
-            if not team_analysis:
-                team_analysis = {}
-            
-            # Extract key metrics with safe defaults
-            team_size = len(individual_profiles)
-            team_metrics = team_analysis.get("team_metrics", {})
-            total_publications = team_metrics.get("total_publications", 0) if team_metrics else 0
-            total_domains = team_metrics.get("total_domains", 0) if team_metrics else 0
-            
-            # Get top expertise domains with safe defaults
-            expertise_domains = team_analysis.get("expertise_domains", {})
-            top_domains = []
-            if expertise_domains:
-                try:
-                    top_domains = sorted(expertise_domains.items(), key=lambda x: x[1].get("total_rank", 0) if isinstance(x[1], dict) else 0, reverse=True)[:3]
-                except (KeyError, TypeError):
-                    top_domains = []
-            
             # Identify most influential members
             influential_members = []
-            for name, profile in individual_profiles.items():
+            for name, profile in team_data.items():
                 h_index = profile.get("citation_metrics", {}).get("h_index", 0)
-                total_citations = profile.get("citation_metrics", {}).get("total_citations", 0)
+                member_total_citations = profile.get("citation_metrics", {}).get("total_citations", 0)
                 influence_score = (h_index * 0.6) + (total_citations * 0.4)
                 textual_summary = profile.get("textual_summary", "No summary available")
-                domains = profile.get("domain_expertise", []),
+                domains = profile.get("domain_expertise", [])
                 influential_members.append({
                     "member_name": name,
                     "h_index": h_index,
-                    "total_citations": total_citations,
-                    "domain_expertise": ";".join([(f"Domain: {d['domain']}. Rank:{d['rank']}") for d in domains[0]]),
+                    "total_citations": member_total_citations,
+                    "domain_expertise": ";".join([(f"Domain: {d['domain']}. Rank:{d['rank']}") for d in domains]),
                     "summary": textual_summary,
                     "influence_score": influence_score
                 })
-            
+
             # Sort and get top 3
             influential_members.sort(key=lambda x: x["influence_score"], reverse=True)
-            top_influential = influential_members[:3]
-            
-            # Generate LLM summary if available
-            summary_text = "Team summary not available"
-            if hasattr(self, 'llm') and self.llm:
-                from langchain.schema import HumanMessage, SystemMessage
-                
-                # Build domain summary safely
-                domain_summary = "None identified"
-                if top_domains:
-                    try:
-                        domain_summary = ', '.join([f'{domain} ({data.get("count", 0) if isinstance(data, dict) else 0} pubs)' for domain, data in top_domains])
-                    except (KeyError, TypeError):
-                        domain_summary = "Multiple domains identified"
+            top_influential = influential_members[:5]
 
-                # Create the top members summary outside the f-string to avoid backslash issue
-                top_members_summary = '\n'.join([f'{m["member_name"]} (H-index: {m["h_index"]}, {m["total_citations"]} citations), summary: {m["summary"]}. domains info: {m["domain_expertise"]}' for m in top_influential])
+            # Build domain summary safely
+            domain_summary = ', '.join(
+                [f'{domain} ({data.get("total_rank", 0) if isinstance(data, dict) else 0} rank)' for
+                 domain, data in team_expertise_domains.items()])
 
-                prompt = f"""Summarize this research team in few paragraphs by characterizing their expertise, publication impact, and collaboration dynamics:
+            # Create the top members summary outside the f-string to avoid backslash issue
+            top_members_summary = '\n'.join([
+                                                f'{m["member_name"]} (H-index: {m["h_index"]}, {m["total_citations"]} citations), summary: {m["summary"]}. domains info: {m["domain_expertise"]}'
+                                                for m in top_influential])
+
+            prompt = f"""Summarize this research team in few paragraphs by characterizing their expertise, publication impact, and collaboration dynamics:
                 You should mention the top expertise domains, the most influential members, and any notable collaboration patterns.
                 
-                Team: {team_size} members, {total_publications} publications, {total_domains} expertise domains
-                Top domains: {domain_summary}
+                Team: {len(team_data)} members, {total_publications} publications, {len(team_expertise_domains)} expertise domains
+                Team Domains: {domain_summary}
                 Top members: {top_members_summary}"""
-                
-                messages = [SystemMessage(content="You are a research analyst. Your goal is to give a high level overview of the team expertise levels and domains."), HumanMessage(content=prompt)]
-                try:
-                    response = self.llm.invoke(messages)
-                    summary_text = response.content if hasattr(response, 'content') else "Team summary generated"
-                except Exception as e:
-                    logger.warning(f"LLM summary generation failed: {str(e)}")
-                    summary_text = "Team summary generation failed"
 
+            messages = [SystemMessage(
+                content="You are a research analyst. Your goal is to give a high level overview of the team expertise levels and domains."),
+                HumanMessage(content=prompt)]
+
+            response = self.llm.invoke(messages)
+            summary_text = response.content if hasattr(response, 'content') else "Team summary generated"
+
+            # Build team analysis
             return {
-                "total_domains": total_domains,
-                "top_expertise_domains": top_domains,
-                "most_influential_members": top_influential,
-                "summary_text": summary_text
+                "member_count": len(team_data),
+                "publications": {
+                    "papers": team_publications,
+                    "total_publications": total_publications,
+                    "total_citations": total_citations,
+                },
+                "citation_analysis": self.publication_processor.get_citation_analysis(team_publications),
+                "team_collaboration": {
+                    "multi_author_papers": len(
+                        [p for p in team_publications if len(p.get("_member_contributors", [])) > 1]),
+                    "single_author_papers": len(
+                        [p for p in team_publications if len(p.get("_member_contributors", [])) == 1])
+                },
+                "expertise_domains": team_expertise_domains,
+                "summary": summary_text
             }
-            
+
         except Exception as e:
-            logger.error(f"Error generating team summary: {str(e)}")
-            return {"error": str(e), "summary_text": "Error generating summary"}
+            logger.error(f"Error building team analysis and summary: {str(e)}")
+            return {"team_analysis": {}, "team_summary": {"error": str(e), "summary_text": "Error generating summary"}}
+
+    @staticmethod
+    def analyze_team_expertise(team_data):
+
+        team_expertise_domains = {}
+        # Process each member expertise to build team expertise map
+        for member in team_data.values():
+            member_expertise_data = member.get("domain_expertise", [])
+            domains = [d["domain"] for d in member_expertise_data]
+
+            # Update team expertise counts
+            for domain in domains:
+                member_rank = \
+                    member_expertise_data[
+                        next(i for i, d in enumerate(member_expertise_data) if d["domain"] == domain)][
+                        "rank"]
+                if domain not in team_expertise_domains:
+                    team_expertise_domains[domain] = {"total_rank": 0, "contributing_members": {}}
+
+                team_expertise_domains[domain]["total_rank"] += member_rank
+                member_name = member.get("name", "Unknown")
+                team_expertise_domains[domain]["contributing_members"][member_name] = member_rank
+
+                #sort contributing members by rank
+                team_expertise_domains[domain]["contributing_members"] = dict(sorted(
+                    team_expertise_domains[domain]["contributing_members"].items(),
+                    key=lambda x: x[1],
+                    reverse=True
+                ))
+
+        # Sort team_expertise_domains by total_rank in descending order
+        team_expertise_domains = dict(sorted(
+            team_expertise_domains.items(),
+            key=lambda x: x[1].get("total_rank", 0),
+            reverse=True
+        ))
+        return team_expertise_domains
 
 
 def execute(input_data):
@@ -418,12 +310,23 @@ if __name__ == '__main__':
         "team_members": """
 Mark Purcell	IBM Research	47296533
 Stefano Braghin	IBM Research	2971861
+Giandomenico Cornacchia	IBM Research	2112895513
+Greta Dolcetti	IBM Research	2160343749
+Kieran Fraser	IBM Research	40626466
+Anisa Halimi	IBM Research	32779570
+Muhammad Zaid Hameed	IBM Research	3207859
+Naoise Holohan	IBM Research	2946928
+Liubov Nedoshivina	IBM Research	2304392989
+Ambrish Rawat	IBM Research	22261698
+Yara Schütt	IBM Research	2370929411
+Mohamed Suliman	IBM Research	2189156764
+Giulio Zizzo	IBM Research	152109289
 """,
         "model_name": "azure/gpt-4o-2024-08-06",
-        "temperature": 0.1,
+        "temperature": 0,
         "max_publications_per_member": 30
     }
 
     result = execute(input_data)
-    with open("output.json", "w") as f:
+    with open("Mark_Purcell_output.json", "w") as f:
         json.dump(result, f, indent=4)  # indent=4 makes the file pretty-printed

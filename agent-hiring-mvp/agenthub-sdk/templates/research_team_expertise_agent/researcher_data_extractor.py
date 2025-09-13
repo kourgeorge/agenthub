@@ -13,7 +13,6 @@ import json
 import re
 from publication_processor import PublicationProcessor
 from dotenv import load_dotenv
-from dataclasses import asdict
 
 from langchain.schema import HumanMessage, SystemMessage
 from open_alex import OpenAlexClient
@@ -866,10 +865,11 @@ Include only the relevant domains in the JSON array."""
             system_prompt = """You are an expert academic researcher and writer. Your task is to analyze a researcher's publications and create a comprehensive, professional summary of their research profile.
 
 Write a 1-4 paragraph summary that covers:
-1. Research focus and expertise areas
-2. Key contributions and impact
-3. Research trajectory and evolution
-4. Overall research profile assessment
+1. Research focus and expertise areas. Pinpoint the specific niche the researcher works in. 
+2. What are the research questions the researcher is addressing.
+3. Key contributions and impact
+4. Research trajectory and evolution - if the researcher has shifted focus over time, mention this. put more focus on recent work.
+5. Overall research profile assessment
 
 The summary should be:
 - Professional and academic in tone

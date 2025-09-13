@@ -415,10 +415,8 @@ class PublicationProcessor:
 
         # Citation distribution
         citation_distribution = {
-            "0 citations": len([p for p in publications if p.get("citations", 0) == 0]),
-            "1-10 citations": len([p for p in publications if 1 <= p.get("citations", 0) <= 10]),
-            "11-50 citations": len([p for p in publications if 11 <= p.get("citations", 0) <= 50]),
-            "51-100 citations": len([p for p in publications if 51 <= p.get("citations", 0) <= 100]),
+            "0-9 citations": len([p for p in publications if p.get("citations", 0) < 10]),
+            "10-100 citations": len([p for p in publications if 10 <= p.get("citations", 0) <= 100]),
             "100+ citations": len([p for p in publications if p.get("citations", 0) > 100])
         }
 
@@ -455,7 +453,7 @@ class PublicationProcessor:
 
         return {
             "total_citations": total_citations,
-            "average_citations": round(average_citations, 2),
+            "paper_average_citations": round(average_citations, 2),
             "citation_distribution": citation_distribution,
             "high_impact_papers": high_impact_papers,
             "citation_trends": citation_trends,
