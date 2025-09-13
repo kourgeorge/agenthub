@@ -59,10 +59,10 @@ def print_team_overview(team_profile: Dict[str, Any]) -> None:
     print(f"\n📈 TEAM OVERVIEW")
     print("-" * 50)
     print(f"👥 Total Members Analyzed: {team_profile.get("member_count", 0)}")
-
+    citation_analysis = team_profile.get("citation_analysis", {})
     publications_data = team_profile.get("publications", {})
     total_pubs = publications_data.get("total_publications", 0)
-    total_citations = publications_data.get("total_citations", 0)
+    total_citations = citation_analysis.get("total_citations", 0)
 
     print(f"📚 Total Publications: {total_pubs:,}")
     print(f"📊 Total Citations: {total_citations:,}")
@@ -146,7 +146,8 @@ def print_team_expertise_domains(team_profile: Dict[str, Any]) -> None:
         print(f"      📊 Total Rank: {total_rank}")
         print(f"      👥 Contributing Members: {member_count}")
         if contributing_members:
-            members_str = ", ".join([f'{name} ({rank})' for name, rank in contributing_members.items()][:5])   # Show first 5 members
+            members_str = ", ".join(
+                [f'{name} ({rank})' for name, rank in contributing_members.items()][:5])  # Show first 5 members
             if len(contributing_members) > 5:
                 members_str += f" (+{len(contributing_members) - 5} more)"
             print(f"      👤 Members: {members_str}")
@@ -174,8 +175,8 @@ def print_publications_analysis(team_profile: Dict[str, Any]) -> None:
     if citation_distribution:
         print(f"\n📊 Citation Distribution:")
         highly_cited = citation_distribution.get("100+ citations", 0)
-        moderately_cited = citation_analysis.get("11-100 citations", 0)
-        low_cited = citation_analysis.get("0-10 citations", 0)
+        moderately_cited = citation_distribution.get("10-100 citations", 0)
+        low_cited = citation_distribution.get("0-9 citations", 0)
 
         print(f"   🔥 Highly Cited (100+): {highly_cited}")
         print(f"   📈 Moderately Cited (11-99): {moderately_cited}")
@@ -185,6 +186,18 @@ def print_publications_analysis(team_profile: Dict[str, Any]) -> None:
         recent_pubs = citation_analysis.get("recent_publications", 0)
         if recent_pubs > 0:
             print(f"   🆕 Recent Publications (2020+): {recent_pubs}")
+
+    # Publication and citation trends by year
+    trend_data = citation_analysis.get("trend", {})
+    if trend_data:
+        print(f"\n📈 Publication & Citation Trends:")
+        for year in sorted(trend_data.keys(), reverse=True)[:10]:  # Last 10 years max
+            stats = trend_data[year]
+            pubs = stats.get("publications", 0)
+            citations = stats.get("citations", 0)
+            pub_bar = "█" * min(pubs, 20)  # Visual bar for publications
+            cit_bar = "▓" * min(citations // 10, 20)  # Visual bar for citations
+            print(f"   {year}: {pubs:2d} pubs {pub_bar:<20} | {citations:4d} cites {cit_bar}")
 
 
 def print_team_collaboration(team_profile: Dict[str, Any]) -> None:
@@ -230,6 +243,6 @@ def print_ai_summary(team_profile: Dict[str, Any]) -> None:
 
 if __name__ == "__main__":
     # Also save the raw result to JSON for reference
-    with open("Mark_Purcell_output.json", "r") as f:
+    with open("Ateret1_output.json", "r") as f:
         result = json.load(f)
     print_team_report(result)

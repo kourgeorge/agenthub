@@ -441,22 +441,19 @@ class PublicationProcessor:
             citations = pub.get("citations", 0)
             if year:
                 if year not in citation_trends:
-                    citation_trends[year] = {"count": 0, "total_citations": 0}
-                citation_trends[year]["count"] += 1
-                citation_trends[year]["total_citations"] += citations
+                    citation_trends[year] = {"publications": 0, "citations": 0}
+                citation_trends[year]["publications"] += 1
+                citation_trends[year]["citations"] += citations
 
-        # Calculate average citations per year
-        for year in citation_trends:
-            citation_trends[year]["average_citations"] = (
-                    citation_trends[year]["total_citations"] / citation_trends[year]["count"]
-            )
+        # order citation trend by year
+        citation_trends = dict(sorted(citation_trends.items()))
 
         return {
             "total_citations": total_citations,
             "paper_average_citations": round(average_citations, 2),
             "citation_distribution": citation_distribution,
             "high_impact_papers": high_impact_papers,
-            "citation_trends": citation_trends,
+            "trend": citation_trends,
             "median_citations": sorted_by_citations[len(sorted_by_citations) // 2].get("citations",
                                                                                        0) if sorted_by_citations else 0
         }

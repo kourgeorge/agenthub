@@ -26,7 +26,6 @@ class TeamExpertiseAgent:
 
         # Initialize our new modular classes
         self.publication_processor = PublicationProcessor()
-        self.expertise_extractor = ExpertiseExtractor()
 
     def execute(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
 
@@ -41,8 +40,6 @@ class TeamExpertiseAgent:
 
             # Use config expertise_domains if provided, otherwise use taxonomy domains
             config_expertise_domains = input_data.get("expertise_domains")
-
-            self.expertise_extractor.expertise_domains = config_expertise_domains
 
             self.max_pubs = input_data.get("max_publications_per_member", 50)
 
@@ -183,14 +180,13 @@ class TeamExpertiseAgent:
 
             # Publications
             total_publications = len(team_publications)
-            total_citations = sum(pub.get("citations", 0) for pub in team_publications)
 
             # Identify most influential members
             influential_members = []
             for name, profile in team_data.items():
                 h_index = profile.get("citation_metrics", {}).get("h_index", 0)
                 member_total_citations = profile.get("citation_metrics", {}).get("total_citations", 0)
-                influence_score = (h_index * 0.6) + (total_citations * 0.4)
+                influence_score = (h_index * 0.6) + (member_total_citations * 0.4)
                 textual_summary = profile.get("textual_summary", "No summary available")
                 domains = profile.get("domain_expertise", [])
                 influential_members.append({
@@ -213,11 +209,17 @@ class TeamExpertiseAgent:
 
             # Create the top members summary outside the f-string to avoid backslash issue
             top_members_summary = '\n'.join([
-                                                f'{m["member_name"]} (H-index: {m["h_index"]}, {m["total_citations"]} citations), summary: {m["summary"]}. domains info: {m["domain_expertise"]}'
-                                                for m in top_influential])
+                f'{m["member_name"]} (H-index: {m["h_index"]}, {m["total_citations"]} citations), summary: {m["summary"]}. domains info: {m["domain_expertise"]}'
+                for m in top_influential])
 
             prompt = f"""Summarize this research team in few paragraphs by characterizing their expertise, publication impact, and collaboration dynamics:
-                You should mention the top expertise domains, the most influential members, and any notable collaboration patterns.
+                Among others, you should mention the: 
+                - top expertise domains.
+                - research niches with focus on recent work
+                - notable collaboration patterns.
+                - highlight - very shortly - the top most influential members with their H-index, total citations, and a one liner of their expertise.
+                
+                your summary should be concise, insightful, helping the reader to quickly grasp the team's strengths and research focus areas.
                 
                 Team: {len(team_data)} members, {total_publications} publications, {len(team_expertise_domains)} expertise domains
                 Team Domains: {domain_summary}
@@ -236,7 +238,6 @@ class TeamExpertiseAgent:
                 "publications": {
                     "papers": team_publications,
                     "total_publications": total_publications,
-                    "total_citations": total_citations,
                 },
                 "citation_analysis": self.publication_processor.get_citation_analysis(team_publications),
                 "team_collaboration": {
@@ -275,7 +276,7 @@ class TeamExpertiseAgent:
                 member_name = member.get("name", "Unknown")
                 team_expertise_domains[domain]["contributing_members"][member_name] = member_rank
 
-                #sort contributing members by rank
+                # sort contributing members by rank
                 team_expertise_domains[domain]["contributing_members"] = dict(sorted(
                     team_expertise_domains[domain]["contributing_members"].items(),
                     key=lambda x: x[1],
@@ -305,28 +306,19 @@ if __name__ == '__main__':
     # Load environment variables
     load_dotenv()
 
+    team_members = """
+    Mark Purcell	IBM Research	47296533
+    Stefano Braghin	IBM Research	2971861
+    """
+
     # Example configuration
     input_data = {
-        "team_members": """
-Mark Purcell	IBM Research	47296533
-Stefano Braghin	IBM Research	2971861
-Giandomenico Cornacchia	IBM Research	2112895513
-Greta Dolcetti	IBM Research	2160343749
-Kieran Fraser	IBM Research	40626466
-Anisa Halimi	IBM Research	32779570
-Muhammad Zaid Hameed	IBM Research	3207859
-Naoise Holohan	IBM Research	2946928
-Liubov Nedoshivina	IBM Research	2304392989
-Ambrish Rawat	IBM Research	22261698
-Yara Schütt	IBM Research	2370929411
-Mohamed Suliman	IBM Research	2189156764
-Giulio Zizzo	IBM Research	152109289
-""",
+        "team_members": team_members,
         "model_name": "azure/gpt-4o-2024-08-06",
         "temperature": 0,
         "max_publications_per_member": 30
     }
 
     result = execute(input_data)
-    with open("Mark_Purcell_output.json", "w") as f:
+    with open("Mark_output.json", "w") as f:
         json.dump(result, f, indent=4)  # indent=4 makes the file pretty-printed

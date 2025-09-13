@@ -411,5 +411,195 @@
         "name": "Statistics Theory"
       }
     ]
+  },
+  "AI-Security": {
+    "archive_id": "aisec",
+    "categories": [
+      {
+        "id": "aisec.LLM",
+        "name": "LLM development and alignment",
+        "description": "Research on the architecture, training, and deployment of large-scale language models."
+      },
+      {
+        "id": "aisec.Reasoning",
+        "name": "LLM Reasoning",
+        "description": "Techniques for improving model reasoning, consistency, and alignment with human goals."
+      },
+      {
+        "id": "aisec.Safety",
+        "name": "AI Safety",
+        "description": "Ensuring models behave as intended, avoiding harms such as bias, toxicity, and unsafe outputs."
+      },
+      {
+        "id": "aisec.Robustness",
+        "name": "Robustness and Adversarial ML",
+        "description": "Defenses and attacks on AI models, including adversarial prompts and jailbreaks."
+      },
+      {
+        "id": "aisec.Privacy",
+        "name": "Privacy and Data Protection",
+        "description": "Techniques for protecting sensitive data against leakage, memorization, and extraction."
+      },
+      {
+        "id": "aisec.ThreatModeling",
+        "name": "Threat Modeling and Red Teaming",
+        "description": "Systematic analysis of attacker goals, vectors, and adversarial evaluations of AI systems."
+      },
+      {
+        "id": "aisec.AgentSec",
+        "name": "Agent Security",
+        "description": "Security of LLM-based agents, covering memory, tool use, planning, and multi-agent risks."
+      },
+      {
+        "id": "aisec.SysSec",
+        "name": "System and Infrastructure Security",
+        "description": "Traditional cybersecurity applied to AI pipelines, APIs, data flows, and deployment stacks."
+      },
+      {
+        "id": "aisec.Governance",
+        "name": "Governance, Ethics, and Policy",
+        "description": "Regulatory frameworks, ethical guidelines, and governance for AI security and safety."
+      },
+      {
+        "id": "aisec.Eval",
+        "name": "Evaluation and Benchmarks",
+        "description": "Methods and datasets for evaluating safety, robustness, and security in AI systems."
+      }
+    ]
+  },
+  "NLP-AI": {
+    "archive_id": "nlpai",
+    "categories": [
+      {
+        "id": "nlpai.CSSCA",
+        "name": "Computational Social Science and Cultural Analytics",
+        "description": "NLP methods for analyzing human behavior, culture, stance, bias, misinformation, and social interaction."
+      },
+      {
+        "id": "nlpai.DIS",
+        "name": "Dialogue and Interactive Systems",
+        "description": "Research on dialogue systems, evaluation, reasoning, bias, factuality, retrieval, and multimodal interaction."
+      },
+      {
+        "id": "nlpai.DP",
+        "name": "Discourse and Pragmatics",
+        "description": "Studies of coherence, cohesion, anaphora, coreference, discourse relations, and argumentation."
+      },
+      {
+        "id": "nlpai.Efficient",
+        "name": "Efficient and Low-Resource NLP",
+        "description": "Techniques for quantization, pruning, distillation, efficient training, and resource-constrained NLP."
+      },
+      {
+        "id": "nlpai.EBF",
+        "name": "Ethics, Bias, and Fairness",
+        "description": "Evaluation and mitigation of bias, fairness, ethics, transparency, and governance in NLP."
+      },
+      {
+        "id": "nlpai.Generation",
+        "name": "Text Generation",
+        "description": "Research on text generation, evaluation, multilingualism, adaptation, retrieval-augmented methods, and architectures."
+      },
+      {
+        "id": "nlpai.HCNLP",
+        "name": "Human-Centered NLP",
+        "description": "Design and evaluation of NLP with human-in-the-loop, participatory methods, and value-sensitive design."
+      },
+      {
+        "id": "nlpai.IE",
+        "name": "Information Extraction",
+        "description": "Entity and relation extraction, event extraction, knowledge base construction, and multilingual IE."
+      },
+      {
+        "id": "nlpai.IRTM",
+        "name": "Information Retrieval and Text Mining",
+        "description": "Retrieval, dense representations, ranking, and contrastive learning for text mining and search."
+      },
+      {
+        "id": "nlpai.Interpret",
+        "name": "Interpretability and Model Analysis",
+        "description": "Interpretability methods, adversarial analysis, calibration, probing, robustness, and model editing."
+      },
+      {
+        "id": "nlpai.LM",
+        "name": "Language Modeling",
+        "description": "Research on pretraining, prompting, safety, reasoning, scaling, agents, robustness, and red teaming."
+      },
+      {
+        "id": "nlpai.LTCP",
+        "name": "Linguistic Theories and Psycholinguistics",
+        "description": "Computational models of language theories, cognition, and psycholinguistic phenomena."
+      },
+      {
+        "id": "nlpai.ML4NLP",
+        "name": "Machine Learning for NLP",
+        "description": "Learning methods for NLP, including self-supervision, multitask, meta learning, causality, and optimization."
+      },
+      {
+        "id": "nlpai.MT",
+        "name": "Machine Translation",
+        "description": "Models and methods for multilingual MT, efficiency, evaluation, adaptation, speech translation, and deployment."
+      },
+      {
+        "id": "nlpai.MultiLing",
+        "name": "Multilingual and Cross-Lingual NLP",
+        "description": "Cross-lingual transfer, multilingual pretraining, less-resourced and endangered languages, and tools."
+      },
+      {
+        "id": "nlpai.Multimodal",
+        "name": "Multimodality and Language Grounding",
+        "description": "Integration of language with vision, robotics, speech, and cross-modal tasks like VQA and navigation."
+      },
+      {
+        "id": "nlpai.Apps",
+        "name": "NLP Applications",
+        "description": "Practical applications of NLP in education, healthcare, finance, legal, social good, and code generation."
+      },
+      {
+        "id": "nlpai.PMW",
+        "name": "Phonology, Morphology, and Word Segmentation",
+        "description": "Research on morphology, phonology, word segmentation, pronunciation, and linguistic analysis."
+      },
+      {
+        "id": "nlpai.QA",
+        "name": "Question Answering",
+        "description": "QA across domains including commonsense, multihop, biomedical, math, multilingual, and conversational QA."
+      },
+      {
+        "id": "nlpai.Resources",
+        "name": "Resources and Evaluation",
+        "description": "Corpus creation, benchmarking, dataset design, evaluation metrics, reproducibility, and testing methods."
+      },
+      {
+        "id": "nlpai.Semantics",
+        "name": "Lexical and Sentence-Level Semantics",
+        "description": "Research on entailment, semantic similarity, compositionality, embeddings, paraphrasing, and NLI."
+      },
+      {
+        "id": "nlpai.Sentiment",
+        "name": "Sentiment, Style, and Argument Mining",
+        "description": "Stance detection, sentiment, stylistics, argument quality, framing, and generation of argumentative text."
+      },
+      {
+        "id": "nlpai.Speech",
+        "name": "Speech and Spoken Language Understanding",
+        "description": "ASR, TTS, spoken dialogue, speech-grounded understanding, and multimodal speech technologies."
+      },
+      {
+        "id": "nlpai.Summ",
+        "name": "Summarization",
+        "description": "Research on extractive, abstractive, conversational, multimodal, multilingual, and long-form summarization."
+      },
+      {
+        "id": "nlpai.Syntax",
+        "name": "Syntax and Parsing",
+        "description": "Part-of-speech tagging, parsing algorithms, morpho-syntax, semantic parsing, and multilingual parsing."
+      },
+      {
+        "id": "nlpai.Special",
+        "name": "Special Theme Track",
+        "description": "Conference-specific thematic track defined per call for papers."
+      }
+    ]
   }
 }

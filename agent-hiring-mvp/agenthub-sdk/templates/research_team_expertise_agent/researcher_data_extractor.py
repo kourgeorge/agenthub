@@ -6,6 +6,8 @@ from academic sources like Semantic Scholar and arXiv.
 """
 
 import logging
+from pathlib import Path
+
 import requests
 import arxiv
 from typing import Dict, List, Any, Optional, Union
@@ -38,7 +40,8 @@ class ResearcherDataExtractor:
         self.publication_processor = PublicationProcessor()
         self.openalex_client = OpenAlexClient()
 
-    def extract_researcher_info(self, name: str, institution:str, max_pubs: int = 50, field_of_study: str = None, author_id: str = None) -> Optional[Dict[str, Any]]:
+    def extract_researcher_info(self, name: str, institution: str, max_pubs: int = 50, field_of_study: str = None,
+                                author_id: str = None) -> Optional[Dict[str, Any]]:
         """
         Extract comprehensive information about a team member.
         
@@ -80,8 +83,6 @@ class ResearcherDataExtractor:
 
             # Post-process the data
             if member_data["publications"]:
-                member_data["domain_expertise"] = (
-                    self._analyze_domain_expertise(name, member_data["publications"]))
 
                 # Sort collaborators by collaboration count
                 member_data["collaborators"] = self._sort_collaborators_by_count(member_data["publications"], name)
@@ -99,6 +100,10 @@ class ResearcherDataExtractor:
 
                 # Ensure source reflects all contributors
                 sources = member_data["sources_used"]
+
+                member_data["domain_expertise"] = (
+                    self._analyze_domain_expertise(name, member_data["publications"]))
+
                 if len(sources) > 1:
                     member_data["citation_metrics"]["source"] = " + ".join(sources)
                 member_data["textual_summary"] = self._generate_member_summary(member_data)
@@ -112,7 +117,8 @@ class ResearcherDataExtractor:
             logger.error(f"Error extracting member info for {name}: {str(e)}")
             return {}
 
-    def extract_researcher_publications(self, name: str, institution: str, max_pubs: int = 50, field_of_study: str = None, author_id: str = None):
+    def extract_researcher_publications(self, name: str, institution: str, max_pubs: int = 50,
+                                        field_of_study: str = None, author_id: str = None):
         """Extract publications for a researcher from multiple sources."""
         publications = []
         collaborators = set()
@@ -120,7 +126,8 @@ class ResearcherDataExtractor:
         citation_metrics = {}
 
         # Extract from Semantic Scholar
-        semantic_data = self._extract_publications_from_semantic_scholar(name, institution, max_pubs, field_of_study, author_id)
+        semantic_data = self._extract_publications_from_semantic_scholar(name, institution, max_pubs, field_of_study,
+                                                                         author_id)
         if semantic_data:
             resource_used.append("Semantic Scholar")
 
@@ -155,8 +162,7 @@ class ResearcherDataExtractor:
         unique_publications = self.publication_processor.deduplicate_publications(publications)
         return unique_publications, collaborators, citation_metrics, resource_used
 
-    def _sort_collaborators_by_count(self, publications: List[Dict[str, Any]], researcher_name: str) -> List[
-        Dict[str, Any]]:
+    def _sort_collaborators_by_count(self, publications: List[Dict[str, Any]], researcher_name: str) -> List[Dict[str, Any]]:
 
         if not publications:
             return []
@@ -337,8 +343,8 @@ class ResearcherDataExtractor:
             logger.error(f"Semantic Scholar extraction failed for {name}: {str(e)}")
             return {}
 
-
-    def _extract_publications_from_semantic_scholar(self, name: str, institution: str, max_pubs: int, field_of_study: str = None, author_id: str = None) -> Dict[str, Any]:
+    def _extract_publications_from_semantic_scholar(self, name: str, institution: str, max_pubs: int,
+                                                    field_of_study: str = None, author_id: str = None) -> Dict[str, Any]:
         """Extract data from Semantic Scholar using the official client library."""
         try:
 
@@ -362,7 +368,8 @@ class ResearcherDataExtractor:
                         paper_count = best_author.paperCount if hasattr(best_author, 'paperCount') else 0
                         max_papers = paper_count
                         author_field_of_study = self._determine_author_field_of_study(best_author)
-                        logger.info(f"Found author by ID: {best_author.name} with {paper_count} papers, field: {author_field_of_study}")
+                        logger.info(
+                            f"Found author by ID: {best_author.name} with {paper_count} papers, field: {author_field_of_study}")
                         author_found = True
                     else:
                         logger.warning(f"Could not find author with ID: {author_id}")
@@ -372,7 +379,7 @@ class ResearcherDataExtractor:
                     return {}
             else:
                 # Search for author using the client
-
+                search_results = self.semantic_scholar.search_author(author_id)
                 # First pass: find the author with the most papers and determine their field of study
                 for author in search_results:
                     try:
@@ -390,7 +397,7 @@ class ResearcherDataExtractor:
 
                         # Check if this author should be considered the best
                         should_be_best = False
-                        
+
                         if field_of_study:
                             # If field of study is specified, prioritize authors in that field
                             if author_field_of_study and field_of_study.lower() in author_field_of_study.lower():
@@ -406,7 +413,8 @@ class ResearcherDataExtractor:
                         if should_be_best:
                             max_papers = paper_count
                             best_author = author
-                            logger.info(f"New best author: {author.name} with {paper_count} papers, field: {author_field_of_study}")
+                            logger.info(
+                                f"New best author: {author.name} with {paper_count} papers, field: {author_field_of_study}")
 
                     except Exception as e:
                         logger.warning(f"Error processing Semantic Scholar author {author.name}: {str(e)}")
@@ -528,11 +536,11 @@ class ResearcherDataExtractor:
         try:
             if not hasattr(author, 'papers') or not author.papers:
                 return ""
-            
+
             # Count fields of study from all papers
             field_counts = {}
             total_papers = 0
-            
+
             for paper in author.papers:
                 if hasattr(paper, 'fieldsOfStudy') and paper.fieldsOfStudy:
                     total_papers += 1
@@ -541,22 +549,22 @@ class ResearcherDataExtractor:
                             field = field.strip()
                             if field:
                                 field_counts[field] = field_counts.get(field, 0) + 1
-            
+
             if not field_counts:
                 return ""
-            
+
             # Find the most common field
             most_common_field = max(field_counts.items(), key=lambda x: x[1])
             field_name, count = most_common_field
-            
+
             logger.debug(f"Author field analysis: {field_name} appears in {count}/{total_papers} papers")
             return field_name
-            
+
         except Exception as e:
             logger.warning(f"Error determining author field of study: {str(e)}")
             return ""
 
-    def _extract_publications_from_arxiv(self, name: str, max_pubs: int) -> Dict[str, Any]:
+    def _extract_publications_from_arxiv(self, name: str, max_pubs: int) -> List[Dict]:
         """Extract data from arXiv."""
         try:
             logger.info(f"Extracting arXiv data for {name}")
@@ -621,19 +629,17 @@ class ResearcherDataExtractor:
 
         except Exception as e:
             logger.error(f"arXiv extraction failed for {name}: {str(e)}")
-            return {}
+            return []
 
-    def _extract_domains_from_text(self, text: str) -> List[str]:
+    def _extract_domains_from_text(self, text: str) -> List[Dict]:
         """Extract expertise domains from text content using LLM with structured output."""
         if not text:
             return []
 
-        # Load arXiv taxonomy if not already loaded
-        if not hasattr(self, 'arxiv_taxonomy') or not self.arxiv_taxonomy:
-            self.arxiv_taxonomy = self._load_arxiv_taxonomy()
+        arxiv_taxonomy = self._load_arxiv_taxonomy(domains=["Computer Science", "NLP-AI", "AI-Security"])
 
         # Use LLM to extract domains with structured output
-        domains = self._extract_domains_with_llm(text, self.arxiv_taxonomy)
+        domains = self._extract_domains_with_llm(text, arxiv_taxonomy)
 
         if domains:
             return domains
@@ -647,7 +653,7 @@ class ResearcherDataExtractor:
             # Create system and user messages
             system_prompt = """
             You are an expert in academic and technical domain classification. 
-            Your task is to analyze text content and identify the most relevant expertise domains from a provided taxonomy.
+            Your task is to analyze scientific papers text content and identify the most relevant expertise domains from a provided taxonomy.
             You are provided with a list of paper titles and abstracts authored by the researcher, optionally including the year of publication and the number of citations.
             Use the provided taxonomy to identify relevant domains and rank them from 1 to 5 based on relevance to the researcher's work.
 
@@ -683,9 +689,9 @@ class ResearcherDataExtractor:
             """
 
             # Simplify taxonomy to just domain names
-            domain_names = self._flatten_taxonomy(taxonomy)
-
-            user_prompt = f"""Available domains: {', '.join(domain_names[:50])}
+            domain_names = ResearcherDataExtractor._flatten_taxonomy(taxonomy)
+            domains_text = [f'{domain}: {desc}' if desc != '' else f'{domain}' for domain, desc in domain_names]
+            user_prompt = f"""Available domains: {'\n '.join(domains_text)}
 
 The works by the author to analyze: {text[:9000]}
 
@@ -699,7 +705,7 @@ Include only the relevant domains in the JSON array."""
                 json_match = re.search(r'\[[\s\S]*?\]', content)
                 if json_match:
                     try:
-                       return json.loads(json_match.group())
+                        return json.loads(json_match.group())
                     except json.JSONDecodeError:
                         logger.error("Failed to parse LLM response as JSON")
                         return {}
@@ -715,69 +721,33 @@ Include only the relevant domains in the JSON array."""
             logger.error(f"Error in LLM domain extraction: {str(e)}")
             return []
 
-    def _flatten_taxonomy(self, taxonomy: Dict[str, Any]) -> List[str]:
-        """Flatten the taxonomy into a simple list of domain names."""
+    @staticmethod
+    def _flatten_taxonomy(taxonomy: Dict[str, Any]) -> List[str]:
         domains = []
         try:
             for subject, subject_data in taxonomy.items():
                 if isinstance(subject_data, dict) and "categories" in subject_data:
                     for category in subject_data["categories"]:
                         if isinstance(category, dict) and "name" in category:
-                            domains.append(category["name"])
+                            domains.append((category["name"], category.get("description", "")))
         except Exception as e:
             logger.warning(f"Error flattening taxonomy: {str(e)}")
             # No fallback domains - return empty list
             domains = []
         return domains
 
-    def _get_domain_variations(self, domain_name: str) -> List[str]:
-        """Get common variations and abbreviations for a domain name."""
-        variations = [domain_name]
-
-        # Common abbreviations and variations
-        abbreviation_map = {
-            "Artificial Intelligence": ["AI", "artificial intelligence", "intelligent systems"],
-            "Machine Learning": ["ML", "machine learning", "statistical learning"],
-            "Computer Vision": ["CV", "computer vision", "image processing", "visual computing"],
-            "Natural Language Processing": ["NLP", "natural language", "text processing", "computational linguistics"],
-            "Robotics": ["robotics", "robot", "autonomous systems", "control systems"],
-            "Data Science": ["data science", "data analysis", "analytics", "statistics"],
-            "Software Engineering": ["software engineering", "software development", "programming"],
-            "Computer Networks": ["networking", "network protocols", "communication systems"],
-            "Database Systems": ["databases", "data management", "information systems"],
-            "Operating Systems": ["OS", "operating systems", "system software", "kernel"],
-            "Human-Computer Interaction": ["HCI", "human-computer interaction", "user interface", "UX"],
-            "Cryptography and Security": ["security", "cryptography", "cybersecurity", "privacy"],
-            "Distributed Systems": ["distributed computing", "distributed systems", "parallel computing"],
-            "Information Theory": ["information theory", "coding theory", "data compression"],
-            "Computational Biology": ["computational biology", "bioinformatics", "genomics"],
-            "Quantum Computing": ["quantum computing", "quantum algorithms", "quantum information"]
-        }
-
-        # Add variations if domain name matches
-        for key, values in abbreviation_map.items():
-            if domain_name.lower() in key.lower() or any(v.lower() in domain_name.lower() for v in values):
-                variations.extend(values)
-
-        return list(set(variations))  # Remove duplicates
-
-    def _load_arxiv_taxonomy(self) -> Dict[str, Any]:
+    def _load_arxiv_taxonomy(self, domains) -> Dict[str, Any]:
         """Load ArXiv subject taxonomy from JSON file."""
-        try:
-            import json
-            from pathlib import Path
+        taxonomy_path = Path(__file__).parent / "arxiv_taxonomy.json"
+        if taxonomy_path.exists():
+            with open(taxonomy_path, 'r', encoding='utf-8') as f:
+                taxonomy = json.load(f)
 
-            taxonomy_path = Path(__file__).parent / "arxiv_taxonomy.json"
-            if taxonomy_path.exists():
-                with open(taxonomy_path, 'r', encoding='utf-8') as f:
-                    taxonomy = json.load(f)
-                logger.info(f"Loaded ArXiv taxonomy with {len(taxonomy)} main subjects")
-                return taxonomy
-            else:
-                logger.warning("ArXiv taxonomy file not found")
-                return {}
-        except Exception as e:
-            logger.error(f"Error loading ArXiv taxonomy: {str(e)}")
+            taxonomy = {k: v for k, v in taxonomy.items() if k in domains}
+            return taxonomy
+
+        else:
+            logger.warning("ArXiv taxonomy file not found")
             return {}
 
     def _merge_citation_metrics(self, current_metrics: Dict[str, Any], new_metrics: Dict[str, Any], source_name: str) -> \
@@ -820,17 +790,6 @@ Include only the relevant domains in the JSON array."""
                 main_timeline[year] = count
 
     def _generate_member_summary(self, member_data) -> str:
-        """
-        Generate a comprehensive textual summary for a team member using LLM.
-        
-        Args:
-            name: Name of the team member
-            publications: List of publications with titles and abstracts
-            
-        Returns:
-            Textual summary (1-4 paragraphs)
-        """
-
         name = member_data.get("name")
         publications = member_data.get("publications", [])
         if not publications:
@@ -899,16 +858,17 @@ Based on these publications, please provide a 1-4 paragraph summary of {name}'s 
             logger.error(f"Error generating LLM summary for {name}: {str(e)}")
             return f"{name} is a researcher whose publications have been analyzed."
 
-    def _analyze_domain_expertise(self, member_name: str, publications: List[Dict[str, Any]]) -> Dict[
-        str, int]:
+    def _analyze_domain_expertise(self, member_name: str, publications: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         try:
             logger.info(
                 f"Analyzing and characterizing expertise for {member_name} with {len(publications)} publications")
 
             if not publications:
                 logger.warning(f"No publications for {member_name}")
-                return {}
+                return []
 
+            # sort the publications by year descending
+            publications = sorted(publications, key=lambda x: x.get('year', 0) or 0, reverse=True)
             # Combine all text content from all publications for single domain extraction
             all_text_content = ""
             for pub in publications:
@@ -926,7 +886,7 @@ Based on these publications, please provide a 1-4 paragraph summary of {name}'s 
 
         except Exception as e:
             logger.error(f"Error analyzing and characterizing expertise for {member_name}: {str(e)}")
-            return {}
+            return []
 
     def _call_llm(self, system_prompt: str, user_prompt: str, max_tokens: int = 1000, temperature: float = None) -> \
             Optional[str]:

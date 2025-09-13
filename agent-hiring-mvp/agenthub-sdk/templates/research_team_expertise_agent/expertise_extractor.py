@@ -17,7 +17,7 @@ class ExpertiseExtractor:
     """Unified extractor for all expertise domain operations."""
     
     def __init__(self):
-        self.arxiv_taxonomy = self._load_arxiv_taxonomy()
+        self.arxiv_taxonomy = self._load_arxiv_taxonomy(domains=["Computer Science", "Mathematics", "AI-Security"])
         self.default_domains = [
             "NLP", "Security", "Machine Learning", "Quantum Computing",
             "Operating Systems", "Medicine", "Neurology", "Computer Vision",
@@ -28,7 +28,7 @@ class ExpertiseExtractor:
         ]
         self.expertise_domains = self._extract_taxonomy_domains()
 
-    def _load_arxiv_taxonomy(self) -> Dict[str, Any]:
+    def _load_arxiv_taxonomy(self, domains) -> Dict[str, Any]:
         """
         Load ArXiv subject taxonomy from JSON file.
         
@@ -40,7 +40,8 @@ class ExpertiseExtractor:
             if taxonomy_path.exists():
                 with open(taxonomy_path, 'r', encoding='utf-8') as f:
                     taxonomy = json.load(f)
-                logger.info(f"Loaded ArXiv taxonomy with {len(taxonomy)} main subjects")
+                #keep only specified domains
+                taxonomy = {k: v for k, v in taxonomy.items() if k in domains}
                 return taxonomy
             else:
                 logger.warning("ArXiv taxonomy file not found, using default domains")
