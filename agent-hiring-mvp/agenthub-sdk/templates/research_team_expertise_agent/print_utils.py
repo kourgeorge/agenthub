@@ -137,15 +137,10 @@ def print_team_expertise_domains(team_profile: Dict[str, Any]) -> None:
     print(f"Total Domains: {len(expertise_domains)}")
     print("\nTop Expertise Areas:")
 
-    for i, (domain, data) in enumerate(expertise_domains.items(), 1):
-        if isinstance(data, dict):
-            total_rank = data.get("total_rank", 0)
-            contributing_members = data.get("contributing_members", [])
-            member_count = len(contributing_members)
-        else:
-            total_rank = 0
-            contributing_members = []
-            member_count = 0
+    for i, (domain, data) in enumerate(list(expertise_domains.items())[:5], 1):
+        total_rank = data.get("total_rank", 0)
+        contributing_members = data.get("contributing_members", [])
+        member_count = len(contributing_members)
 
         print(f"   {i}. {domain}")
         print(f"      📊 Total Rank: {total_rank}")
