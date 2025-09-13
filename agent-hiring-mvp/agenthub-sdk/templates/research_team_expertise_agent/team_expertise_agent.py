@@ -68,10 +68,15 @@ class TeamExpertiseAgent:
             )
 
             # STEP 1: Data Collection
-            team_members_data = {member_name: member_extractor.extract_researcher_info(member_name, self.max_pubs) for member_name in team_members}
+            field_of_study = input_data.get("field_of_study", "Computer Science")
+            
+            team_members_data = {}
+            for member_name, institution, author_id in team_members:
+                team_members_data[member_name] = member_extractor.extract_researcher_info(
+                    member_name, institution, self.max_pubs, field_of_study, author_id
+                )
 
             team_members_data = self.sort_members_by_rank(team_members_data)
-            logger.info(f"Collected data for {len(team_members_data)} team members.\nHighly ranked: {list(team_members_data.keys())[:5]}")
 
             # STEP 2: Publication Collection and Deduplication
             team_publications = self.publication_processor.get_team_publications(team_members_data)
@@ -85,7 +90,6 @@ class TeamExpertiseAgent:
             team_summary = self._generate_comprehensive_team_summary(team_members_data, team_analysis)
 
             # Calculate total publications
-
             return {
                 "status": "success",
                 "team_members_analyzed": len(team_members_data),
@@ -115,32 +119,60 @@ class TeamExpertiseAgent:
         return dict(sorted_members)
 
 
-    def _parse_team_members(self, team_members_input: str) -> List[str]:
+    def _parse_team_members(self, team_members_input: str) -> List[tuple]:
         """
-        Parse team members input string into a list of names.
+        Parse team members input string into a list of (name, institution, author_id) tuples.
+        
+        Supports formats:
+        - "name, institution; name2, institution2, id" (comma separated)
+        - "name, institution, id; name2, institution2, id2" (comma separated)
+        - "name, institution\nname2, institution2, id" (comma separated)
+        - "name\tinstitution; name2\tinstitution2\tid" (tab separated)
+        - "name\tinstitution\tauthor_id; name2\tinstitution2\tauthor_id2" (tab separated)
+        - "name\nname2" (institution and author_id will be None)
         
         Args:
-            team_members_input: String containing team member names (multiline or comma-separated)
+            team_members_input: String containing team member names, institutions, and optional author IDs
             
         Returns:
-            List of cleaned team member names
+            List of (name, institution, author_id) tuples
         """
         if not team_members_input or not isinstance(team_members_input, str):
             raise ValueError("team_members must be a non-empty string")
         
-        # Split by newlines first, then by commas for any remaining lines
-        lines = team_members_input.strip().split('\n')
+        # Split by semicolons first, then by newlines
+        entries = []
+        if ';' in team_members_input:
+            entries = team_members_input.strip().split(';')
+        else:
+            entries = team_members_input.strip().split('\n')
+        
         members = []
         
-        for line in lines:
-            line = line.strip()
-            if line:
-                # Split by comma if the line contains commas
-                if ',' in line:
-                    comma_separated = [name.strip() for name in line.split(',') if name.strip()]
-                    members.extend(comma_separated)
+        for entry in entries:
+            entry = entry.strip()
+            if entry:
+                # Determine separator: prefer tab if present, otherwise use comma
+                if '\t' in entry:
+                    # Tab-separated format (name\tinstitution\tauthor_id)
+                    parts = [part.strip() for part in entry.split('\t')]
+                elif ',' in entry:
+                    # Comma-separated format (name, institution, author_id)
+                    parts = [part.strip() for part in entry.split(',')]
                 else:
-                    members.append(line)
+                    # No separator, treat as name only
+                    parts = [entry]
+                
+                # Parse parts based on length
+                if len(parts) >= 2:
+                    name = parts[0]
+                    institution = parts[1] if len(parts) > 1 else None
+                    author_id = parts[2] if len(parts) > 2 else None
+                    if name:  # Only add if name is not empty
+                        members.append((name, institution, author_id))
+                elif len(parts) == 1 and parts[0]:
+                    # Single part, treat as name only
+                    members.append((parts[0], None, None))
         
         # Remove duplicates while preserving order
         seen = set()
@@ -196,7 +228,7 @@ class TeamExpertiseAgent:
             
             # Get collaboration network analysis
             team_members = list(team_data.keys())
-            collaboration_network = self.publication_processor.get_team_collaboration_network(team_publications, team_members)
+            # collaboration_network = self.publication_processor.get_team_collaboration_network(team_publications, team_members)
             
             # Build analysis
             team_analysis = {
@@ -211,7 +243,7 @@ class TeamExpertiseAgent:
                     "multi_author_papers": len([p for p in team_publications if len(p.get("_member_contributors", [])) > 1]),
                     "single_author_papers": len([p for p in team_publications if len(p.get("_member_contributors", [])) == 1])
                 },
-                "collaboration_network": collaboration_network,
+                # "collaboration_network": collaboration_network,
                 "citation_analysis": citation_analysis
             }
             
@@ -383,13 +415,9 @@ if __name__ == '__main__':
 
     # Example configuration
     input_data = {
-        "team_members": """Jiyong Jang
-Kevin Eykholt
-Dhilung Kirat
-Youngja Park
-Doug Schales
-Xiaokui Shu
-Qiushi Wu
+        "team_members": """
+Mark Purcell	IBM Research	47296533
+Stefano Braghin	IBM Research	2971861
 """,
         "model_name": "azure/gpt-4o-2024-08-06",
         "temperature": 0.1,

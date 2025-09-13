@@ -9,7 +9,6 @@ import logging
 import requests
 import arxiv
 from typing import Dict, List, Any, Optional, Union
-from datetime import datetime
 import json
 import re
 from publication_processor import PublicationProcessor
@@ -40,14 +39,16 @@ class ResearcherDataExtractor:
         self.publication_processor = PublicationProcessor()
         self.openalex_client = OpenAlexClient()
 
-    def extract_researcher_info(self, name: str, max_pubs: int = 50) -> Optional[Dict[str, Any]]:
+    def extract_researcher_info(self, name: str, institution:str, max_pubs: int = 50, field_of_study: str = None, author_id: str = None) -> Optional[Dict[str, Any]]:
         """
         Extract comprehensive information about a team member.
         
         Args:
             name: Full name of the team member
+            institution: Institution name for the researcher
             max_pubs: Maximum number of publications to collect
-            include_citations: Whether to include citation metrics
+            field_of_study: Optional field of study to prioritize when selecting authors
+            author_id: Optional Semantic Scholar author ID to use directly (bypasses search)
             
         Returns:
             Dictionary with member information or None if extraction fails
@@ -57,67 +58,29 @@ class ResearcherDataExtractor:
             # Initialize member data structure
             member_data = {
                 "name": name,
+                "metrics": {},
                 "publications": [],
                 "collaborators": set(),
                 "research_timeline": {},
                 "sources_used": []
             }
 
-            researcher_metric = asdict(self.openalex_client.get_author_metrics(name))
-            if researcher_metric:
-                member_data["metrics"] = researcher_metric
+            # researcher_meta = asdict(self.openalex_client.get_author_metrics(name, institution))
+            # if researcher_meta:
+            #     member_data["meta"] = researcher_meta
+            #     alex_publications = self.openalex_client.get_author_works_list_by_id(researcher_meta['id'])
 
-            # Extract from Semantic Scholar (primary source for citations and publications)
-            semantic_data = self._extract_publications_from_semantic_scholar(name, max_pubs)
-            if semantic_data:
-                member_data["sources_used"].append("Semantic Scholar")
+            # Extract publications from multiple sources
+            publications, collaborators, citation_metrics, resource_used = (
+                self.extract_researcher_publications(name, institution, max_pubs, field_of_study, author_id))
 
-                # Extract citation metrics from Semantic Scholar
-                if semantic_data.get("citation_metrics"):
-                    member_data["citation_metrics"] = semantic_data["citation_metrics"]
-
-                # Add publications from Semantic Scholar
-                member_data["publications"].extend(semantic_data.get("publications", []))
-
-                # Merge collaborators
-                member_data["collaborators"].update(semantic_data.get("collaborators", []))
-
-                # Merge research timeline
-                self._update_research_timeline(member_data["research_timeline"],
-                                               semantic_data.get("research_timeline", {}))
-
-                # Calculate average citations per paper
-                if member_data["publications"] and member_data["citation_metrics"].get("total_citations"):
-                    total_citations = sum(pub.get('citations', 0) for pub in member_data["publications"])
-                    member_data["citation_metrics"]["avg_citations_per_paper"] = (
-                            total_citations / len(member_data["publications"])
-                    )
-
-            # Extract from arXiv (for additional publications)
-            arxiv_data = self._extract_publications_from_arxiv(name, max_pubs // 2)
-            if arxiv_data:
-                member_data["sources_used"].append("arXiv")
-
-                # Only add publications not already found
-                existing_titles = {pub.get('title', '').lower() for pub in member_data["publications"]}
-                new_pubs = [pub for pub in arxiv_data.get("publications", [])
-                            if pub.get('title', '').lower() not in existing_titles]
-                member_data["publications"].extend(new_pubs)
-
-                # Note: Domain extraction will be done once at the end
-
-                # Merge collaborators
-                member_data["collaborators"].update(arxiv_data.get("collaborators", []))
-
-                # Merge research timeline
-                self._update_research_timeline(member_data["research_timeline"],
-                                               arxiv_data.get("research_timeline", {}))
+            member_data["publications"] = publications
+            member_data["collaborators"] = collaborators
+            member_data["citation_metrics"] = citation_metrics
+            member_data["sources_used"] = resource_used
 
             # Post-process the data
             if member_data["publications"]:
-                member_data["publications"] = self.publication_processor.deduplicate_publications(
-                    member_data["publications"])
-
                 member_data["domain_expertise"] = (
                     self._analyze_domain_expertise(name, member_data["publications"]))
 
@@ -139,7 +102,7 @@ class ResearcherDataExtractor:
                 sources = member_data["sources_used"]
                 if len(sources) > 1:
                     member_data["citation_metrics"]["source"] = " + ".join(sources)
-                    member_data["textual_summary"] = self._generate_member_summary(member_data)
+                member_data["textual_summary"] = self._generate_member_summary(member_data)
 
                 return member_data
             else:
@@ -149,6 +112,49 @@ class ResearcherDataExtractor:
         except Exception as e:
             logger.error(f"Error extracting member info for {name}: {str(e)}")
             return {}
+
+    def extract_researcher_publications(self, name: str, institution: str, max_pubs: int = 50, field_of_study: str = None, author_id: str = None):
+        """Extract publications for a researcher from multiple sources."""
+        publications = []
+        collaborators = set()
+        resource_used = []
+        citation_metrics = {}
+
+        # Extract from Semantic Scholar
+        semantic_data = self._extract_publications_from_semantic_scholar(name, institution, max_pubs, field_of_study, author_id)
+        if semantic_data:
+            resource_used.append("Semantic Scholar")
+
+            # Extract citation metrics from Semantic Scholar
+            if semantic_data.get("citation_metrics"):
+                citation_metrics = semantic_data["citation_metrics"]
+
+            # Add publications from Semantic Scholar
+            publications.extend(semantic_data.get("publications", []))
+
+            # Merge collaborators
+            collaborators.update(semantic_data.get("collaborators", []))
+
+            # Merge research timeline
+            # self._update_research_timeline(member_data["research_timeline"],
+            #                                semantic_data.get("research_timeline", {}))
+
+            # Calculate average citations per paper
+            if publications and citation_metrics.get("total_citations"):
+                total_citations = sum(pub.get('citations', 0) for pub in publications)
+                citation_metrics["avg_citations_per_paper"] = (
+                        total_citations / len(publications)
+                )
+
+        # # Extract from arXiv
+        # arxiv_data = self._extract_publications_from_arxiv(name, max_pubs)
+        # if arxiv_data and "publications" in arxiv_data:
+        #     publications.extend(arxiv_data["publications"])
+        #     collaborators.update(ss_data.get("collaborators", []))
+
+        # Deduplicate publications
+        unique_publications = self.publication_processor.deduplicate_publications(publications)
+        return unique_publications, collaborators, citation_metrics, resource_used
 
     def _sort_collaborators_by_count(self, publications: List[Dict[str, Any]], researcher_name: str) -> List[
         Dict[str, Any]]:
@@ -190,7 +196,7 @@ class ResearcherDataExtractor:
             for name, count in sorted_collaborators
         ]
 
-    def _extract_publications_from_semantic_scholar(self, name: str, max_pubs: int) -> Dict[str, Any]:
+    def _extract_publications_from_openalex(self, name: str, max_pubs: int) -> Dict[str, Any]:
         """Extract data from Semantic Scholar using the official client library."""
         try:
 
@@ -331,6 +337,225 @@ class ResearcherDataExtractor:
         except Exception as e:
             logger.error(f"Semantic Scholar extraction failed for {name}: {str(e)}")
             return {}
+
+
+    def _extract_publications_from_semantic_scholar(self, name: str, institution: str, max_pubs: int, field_of_study: str = None, author_id: str = None) -> Dict[str, Any]:
+        """Extract data from Semantic Scholar using the official client library."""
+        try:
+
+            logger.info(f"Extracting Semantic Scholar data for {name}")
+
+            publications = []
+            collaborators = set()
+            research_timeline = {}
+            citation_metrics = {}
+
+            author_found = False
+            best_author = None
+            max_papers = 0
+
+            # If author_id is provided, use it directly
+            if author_id:
+                try:
+                    logger.info(f"Using provided author ID: {author_id}")
+                    best_author = self.semantic_scholar.get_author(author_id)
+                    if best_author:
+                        paper_count = best_author.paperCount if hasattr(best_author, 'paperCount') else 0
+                        max_papers = paper_count
+                        author_field_of_study = self._determine_author_field_of_study(best_author)
+                        logger.info(f"Found author by ID: {best_author.name} with {paper_count} papers, field: {author_field_of_study}")
+                        author_found = True
+                    else:
+                        logger.warning(f"Could not find author with ID: {author_id}")
+                        return {}
+                except Exception as e:
+                    logger.error(f"Error getting author by ID {author_id}: {str(e)}")
+                    return {}
+            else:
+                # Search for author using the client
+
+                # First pass: find the author with the most papers and determine their field of study
+                for author in search_results:
+                    try:
+                        logger.info(f"Found Semantic Scholar author: {author.name} (ID: {author.authorId})")
+
+                        # Get detailed author information with papers to analyze field of study
+
+                        # Check if this author has more papers
+                        paper_count = author.paperCount if hasattr(author, 'paperCount') else 0
+                        logger.info(f"Author {author.name} has {paper_count} papers")
+
+                        # Determine the author's field of study based on majority of their papers' fields
+                        author_field_of_study = self._determine_author_field_of_study(author)
+                        logger.info(f"Author {author.name} field of study: {author_field_of_study}")
+
+                        # Check if this author should be considered the best
+                        should_be_best = False
+                        
+                        if field_of_study:
+                            # If field of study is specified, prioritize authors in that field
+                            if author_field_of_study and field_of_study.lower() in author_field_of_study.lower():
+                                should_be_best = True
+                                logger.info(f"Author {author.name} matches target field '{field_of_study}'")
+                            else:
+                                # Only consider if no field-matched author found yet
+                                should_be_best = (best_author is None)
+                        else:
+                            # If no field specified, use paper count as before
+                            should_be_best = (paper_count > max_papers)
+
+                        if should_be_best:
+                            max_papers = paper_count
+                            best_author = author
+                            logger.info(f"New best author: {author.name} with {paper_count} papers, field: {author_field_of_study}")
+
+                    except Exception as e:
+                        logger.warning(f"Error processing Semantic Scholar author {author.name}: {str(e)}")
+                        continue
+
+            # Second pass: extract data from the best author
+            if best_author:
+                try:
+                    logger.info(f"Processing best author: {best_author.name} with {max_papers} papers")
+
+                    # Extract citation metrics
+                    citation_metrics = {
+                        "h_index": best_author.hIndex if hasattr(best_author, 'hIndex') else 0,
+                        "total_citations": best_author.citationCount if hasattr(best_author, 'citationCount') else 0,
+                        "publication_count": best_author.paperCount if hasattr(best_author, 'paperCount') else 0,
+                        "source": "Semantic Scholar (official client)"
+                    }
+
+                    # Get publications
+                    papers = best_author.papers
+                    logger.info(f"Found {len(papers)} publications for {name}")
+
+                    for i, paper in enumerate(papers[:max_pubs]):
+                        try:
+                            # Extract publication data
+                            title = paper.title if hasattr(paper, 'title') else ""
+                            if not title:
+                                continue
+
+                            # Extract authors
+                            authors = []
+                            if hasattr(paper, 'authors') and paper.authors:
+                                authors = [author.name for author in paper.authors if hasattr(author, 'name')]
+
+                            # Extract year
+                            year = paper.year if hasattr(paper, 'year') else None
+
+                            # Extract venue
+                            venue = paper.venue if hasattr(paper, 'venue') else ""
+
+                            # Extract abstract
+                            abstract = paper.abstract if hasattr(paper, 'abstract') else ""
+
+                            # Extract citation count
+                            citations = paper.citationCount if hasattr(paper, 'citationCount') else 0
+
+                            # Extract URL
+                            url = paper.url if hasattr(paper, 'url') else ""
+
+                            # Extract fields of study
+                            fields_of_study = paper.fieldsOfStudy if hasattr(paper, 'fieldsOfStudy') else []
+
+                            # Create publication data
+                            pub_data = {
+                                "title": title,
+                                "authors": authors,
+                                "year": year,
+                                "citations": citations,
+                                "venue": venue,
+                                "abstract": abstract,
+                                "source": "Semantic Scholar (official client)",
+                                "url": url,
+                                "paper_id": paper.paperId if hasattr(paper, 'paperId') else f"ss_{i}",
+                                "fields_of_study": fields_of_study
+                            }
+
+                            # Track research timeline
+                            if year:
+                                if year not in research_timeline:
+                                    research_timeline[year] = 0
+                                research_timeline[year] += 1
+
+                            # Add collaborators (excluding the main author)
+                            for author_name in authors:
+                                if author_name.lower() != name.lower():
+                                    collaborators.add(author_name)
+
+                            # Note: Domain extraction will be done once at the end
+
+                            publications.append(pub_data)
+                            logger.debug(f"Added Semantic Scholar publication: {title[:50]}...")
+
+                        except Exception as e:
+                            logger.warning(f"Error processing Semantic Scholar paper {i} for {name}: {str(e)}")
+                            continue
+
+                    author_found = True
+
+                except Exception as e:
+                    logger.error(f"Error processing best Semantic Scholar author: {str(e)}")
+
+            if not author_found:
+                logger.warning(f"No Semantic Scholar author found for {name}")
+                return {}
+
+            logger.info(f"Collected {len(publications)} publications from Semantic Scholar for {name}")
+
+            return {
+                "publications": publications,
+                "collaborators": list(collaborators),
+                "research_timeline": research_timeline,
+                "citation_metrics": citation_metrics
+            }
+
+        except Exception as e:
+            logger.error(f"Semantic Scholar extraction failed for {name}: {str(e)}")
+            return {}
+
+    def _determine_author_field_of_study(self, author) -> str:
+        """
+        Determine the author's field of study based on the majority of their papers' fields.
+        
+        Args:
+            author: Semantic Scholar author object with papers
+            
+        Returns:
+            String representing the most common field of study
+        """
+        try:
+            if not hasattr(author, 'papers') or not author.papers:
+                return ""
+            
+            # Count fields of study from all papers
+            field_counts = {}
+            total_papers = 0
+            
+            for paper in author.papers:
+                if hasattr(paper, 'fieldsOfStudy') and paper.fieldsOfStudy:
+                    total_papers += 1
+                    for field in paper.fieldsOfStudy:
+                        if field:
+                            field = field.strip()
+                            if field:
+                                field_counts[field] = field_counts.get(field, 0) + 1
+            
+            if not field_counts:
+                return ""
+            
+            # Find the most common field
+            most_common_field = max(field_counts.items(), key=lambda x: x[1])
+            field_name, count = most_common_field
+            
+            logger.debug(f"Author field analysis: {field_name} appears in {count}/{total_papers} papers")
+            return field_name
+            
+        except Exception as e:
+            logger.warning(f"Error determining author field of study: {str(e)}")
+            return ""
 
     def _extract_publications_from_arxiv(self, name: str, max_pubs: int) -> Dict[str, Any]:
         """Extract data from arXiv."""
