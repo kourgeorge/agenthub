@@ -102,10 +102,12 @@ def print_individual_members(individual_profiles: Dict[str, Any]) -> None:
         h_index = citation_metrics.get("h_index", 0)
         total_citations = citation_metrics.get("total_citations", 0)
         publication_count = citation_metrics.get("publication_count", 0)
+        collaborators = ", ".join([f"{name}({num})" for name, num in profile.get("collaborators", 0).items()][:5]) # Show top 5 collaborators
 
         print(f"   📊 H-index: {h_index}")
         print(f"   📚 Total Citations: {total_citations:,}")
         print(f"   📄 Publications: {publication_count}")
+        print(f"   👥 Top Collaborators: {collaborators}")
 
         # Domain expertise
         domain_expertise = profile.get("domain_expertise", [])
@@ -243,6 +245,6 @@ def print_ai_summary(team_profile: Dict[str, Any]) -> None:
 
 if __name__ == "__main__":
     # Also save the raw result to JSON for reference
-    with open("Ateret1_output.json", "r") as f:
+    with open("mark.json", "r") as f:
         result = json.load(f)
     print_team_report(result)

@@ -60,9 +60,8 @@ class ResearcherDataExtractor:
             # Initialize member data structure
             member_data = {
                 "name": name,
-                "metrics": {},
                 "publications": [],
-                "collaborators": set(),
+                "collaborators": {},
                 "research_timeline": {},
                 "sources_used": []
             }
@@ -73,11 +72,10 @@ class ResearcherDataExtractor:
             #     alex_publications = self.openalex_client.get_author_works_list_by_id(researcher_meta['id'])
 
             # Extract publications from multiple sources
-            publications, collaborators, citation_metrics, resource_used = (
+            publications, citation_metrics, resource_used = (
                 self.extract_researcher_publications(name, institution, max_pubs, field_of_study, author_id))
 
             member_data["publications"] = publications
-            member_data["collaborators"] = collaborators
             member_data["citation_metrics"] = citation_metrics
             member_data["sources_used"] = resource_used
 
@@ -85,24 +83,12 @@ class ResearcherDataExtractor:
             if member_data["publications"]:
 
                 # Sort collaborators by collaboration count
-                member_data["collaborators"] = self._sort_collaborators_by_count(member_data["publications"], name)
-
-                # Update citation metrics with final calculated values
-                if not member_data.get("citation_metrics"):
-                    member_data["citation_metrics"] = {}
-                total_citations = sum(pub.get('citations', 0) for pub in member_data["publications"])
-                member_data["metrics"].update({
-                    "total_citations": max(member_data["citation_metrics"].get("total_citations", 0), total_citations),
-                    "publication_count": len(member_data["publications"]),
-                    "avg_citations_per_paper": total_citations / len(
-                        member_data["publications"]) if total_citations > 0 else 0
-                })
+                member_data["collaborators"] = self._analyze_collaborators(member_data["publications"], name)
 
                 # Ensure source reflects all contributors
                 sources = member_data["sources_used"]
 
-                member_data["domain_expertise"] = (
-                    self._analyze_domain_expertise(name, member_data["publications"]))
+                member_data["domain_expertise"] = self._analyze_domain_expertise(name, member_data["publications"])
 
                 if len(sources) > 1:
                     member_data["citation_metrics"]["source"] = " + ".join(sources)
@@ -121,7 +107,6 @@ class ResearcherDataExtractor:
                                         field_of_study: str = None, author_id: str = None):
         """Extract publications for a researcher from multiple sources."""
         publications = []
-        collaborators = set()
         resource_used = []
         citation_metrics = {}
 
@@ -138,9 +123,6 @@ class ResearcherDataExtractor:
             # Add publications from Semantic Scholar
             publications.extend(semantic_data.get("publications", []))
 
-            # Merge collaborators
-            collaborators.update(semantic_data.get("collaborators", []))
-
             # Merge research timeline
             # self._update_research_timeline(member_data["research_timeline"],
             #                                semantic_data.get("research_timeline", {}))
@@ -148,9 +130,7 @@ class ResearcherDataExtractor:
             # Calculate average citations per paper
             if publications and citation_metrics.get("total_citations"):
                 total_citations = sum(pub.get('citations', 0) for pub in publications)
-                citation_metrics["avg_citations_per_paper"] = (
-                        total_citations / len(publications)
-                )
+                citation_metrics["avg_citations_per_paper"] = round(total_citations / len(publications),1)
 
         # # Extract from arXiv
         # arxiv_data = self._extract_publications_from_arxiv(name, max_pubs)
@@ -160,16 +140,17 @@ class ResearcherDataExtractor:
 
         # Deduplicate publications
         unique_publications = self.publication_processor.deduplicate_publications(publications)
-        return unique_publications, collaborators, citation_metrics, resource_used
+        return unique_publications, citation_metrics, resource_used
 
-    def _sort_collaborators_by_count(self, publications: List[Dict[str, Any]], researcher_name: str) -> List[Dict[str, Any]]:
+    def _analyze_collaborators(self, publications: List[Dict[str, Any]], researcher_name: str) -> Dict[str, Any]:
 
         if not publications:
-            return []
+            return {}
 
         # Count collaborations for each collaborator
         collaboration_counts = {}
 
+        researcher_normalized = researcher_name.lower().strip()
         for pub in publications:
             authors = pub.get("authors", [])
             if not authors:
@@ -178,11 +159,18 @@ class ResearcherDataExtractor:
             # Count collaborations with other authors
             for author in authors:
                 author_normalized = author.lower().strip()
-                researcher_normalized = researcher_name.lower().strip()
 
                 # Skip the researcher themselves
-                if author_normalized == researcher_normalized:
+                # Smarter comparison: check if family name matches and first letter of first name matches
+                researcher_parts = researcher_normalized.split()
+                author_parts = author_normalized.split()
+                if (
+                        len(researcher_parts) > 1 and len(author_parts) > 1 and
+                        researcher_parts[-1] == author_parts[-1] and #same family name
+                        researcher_parts[0][0] == author_parts[0][0] #same first initial
+                ):
                     continue
+
 
                 # Count collaboration with this author
                 if author not in collaboration_counts:
@@ -196,10 +184,7 @@ class ResearcherDataExtractor:
         )
 
         # Return as list of dictionaries with name and collaboration count
-        return [
-            {"name": name, "collaboration_count": count}
-            for name, count in sorted_collaborators
-        ]
+        return {name: count for name, count in sorted_collaborators}
 
     def _extract_publications_from_openalex(self, name: str, max_pubs: int) -> Dict[str, Any]:
         """Extract data from Semantic Scholar using the official client library."""
@@ -389,11 +374,9 @@ class ResearcherDataExtractor:
 
                         # Check if this author has more papers
                         paper_count = author.paperCount if hasattr(author, 'paperCount') else 0
-                        logger.info(f"Author {author.name} has {paper_count} papers")
 
                         # Determine the author's field of study based on majority of their papers' fields
                         author_field_of_study = self._determine_author_field_of_study(author)
-                        logger.info(f"Author {author.name} field of study: {author_field_of_study}")
 
                         # Check if this author should be considered the best
                         should_be_best = False
@@ -636,7 +619,7 @@ class ResearcherDataExtractor:
         if not text:
             return []
 
-        arxiv_taxonomy = self._load_arxiv_taxonomy(domains=["Computer Science", "NLP-AI", "AI-Security"])
+        arxiv_taxonomy = self._load_arxiv_taxonomy(domains=["Computer Science", "NLP", "AI-Security", "AI"])
 
         # Use LLM to extract domains with structured output
         domains = self._extract_domains_with_llm(text, arxiv_taxonomy)
@@ -795,7 +778,7 @@ Include only the relevant domains in the JSON array."""
         if not publications:
             return f"{name} is a researcher whose publication record could not be retrieved."
 
-        metrics = member_data.get("metrics", {})
+        metrics = member_data.get("citation_metrics", {})
 
         try:
             # Prepare publication data for LLM
@@ -821,20 +804,18 @@ Include only the relevant domains in the JSON array."""
                     pub_data.append(pub_info)
 
             # Create prompt for LLM
-            system_prompt = """You are an expert academic researcher and writer. Your task is to analyze a researcher's publications and create a comprehensive, professional summary of their research profile.
-
-Write a 1-4 paragraph summary that covers:
-1. Research focus and expertise areas. Pinpoint the specific niche the researcher works in. 
-2. What are the research questions the researcher is addressing.
-3. Key contributions and impact
-4. Research trajectory and evolution - if the researcher has shifted focus over time, mention this. put more focus on recent work.
-5. Overall research profile assessment
+            system_prompt = """You are an expert academic researcher and writer. 
+Your task is to analyze a researcher's publications and create a professional summary of their research profile.
+Write up to 5 sentences summary that covers:
+1. Research focus and expertise areas. Pinpoint the specific niche and research questions the researcher works in. Put more focus on recent work.
+2. Key contributions and impact
+3. Research trajectory and evolution - if the researcher has shifted focus over time, mention this. 
 
 The summary should be:
 - Professional and academic in tone
 - Based solely on the provided publication data
-- Concise but comprehensive
-- Suitable for academic or professional contexts
+- Concise, concrete and suitable professional contexts.
+- Provide exact, quantifiable details (e.g., ‘23 papers’) rather than vague descriptions like 'many papers'.
 - Written in third person
 
 Focus on patterns, themes, and insights that emerge from the publication data."""
@@ -843,7 +824,9 @@ Focus on patterns, themes, and insights that emerge from the publication data.""
 
 {chr(10).join(pub_data)}
 
-Based on these publications, please provide a 1-4 paragraph summary of {name}'s research profile, expertise, and contributions."""
+Based on these publications, please provide a short summary of {name}'s research profile, expertise, and contributions.
+
+Below are some basic researcher metrics: {str(metrics)}"""
 
             # Use unified LLM calling method
             summary = self._call_llm(system_prompt, user_prompt, max_tokens=1000)

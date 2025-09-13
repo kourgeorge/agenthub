@@ -467,138 +467,380 @@
       }
     ]
   },
-  "NLP-AI": {
-    "archive_id": "nlpai",
+  "NLP": {
+    "archive_id": "NLP",
     "categories": [
       {
-        "id": "nlpai.CSSCA",
+        "id": "NLP.CSSCA",
         "name": "Computational Social Science and Cultural Analytics",
         "description": "NLP methods for analyzing human behavior, culture, stance, bias, misinformation, and social interaction."
       },
       {
-        "id": "nlpai.DIS",
+        "id": "NLP.DIS",
         "name": "Dialogue and Interactive Systems",
         "description": "Research on dialogue systems, evaluation, reasoning, bias, factuality, retrieval, and multimodal interaction."
       },
       {
-        "id": "nlpai.DP",
+        "id": "NLP.DP",
         "name": "Discourse and Pragmatics",
         "description": "Studies of coherence, cohesion, anaphora, coreference, discourse relations, and argumentation."
       },
       {
-        "id": "nlpai.Efficient",
+        "id": "NLP.Efficient",
         "name": "Efficient and Low-Resource NLP",
         "description": "Techniques for quantization, pruning, distillation, efficient training, and resource-constrained NLP."
       },
       {
-        "id": "nlpai.EBF",
+        "id": "NLP.EBF",
         "name": "Ethics, Bias, and Fairness",
         "description": "Evaluation and mitigation of bias, fairness, ethics, transparency, and governance in NLP."
       },
       {
-        "id": "nlpai.Generation",
+        "id": "NLP.Generation",
         "name": "Text Generation",
         "description": "Research on text generation, evaluation, multilingualism, adaptation, retrieval-augmented methods, and architectures."
       },
       {
-        "id": "nlpai.HCNLP",
+        "id": "NLP.HCNLP",
         "name": "Human-Centered NLP",
         "description": "Design and evaluation of NLP with human-in-the-loop, participatory methods, and value-sensitive design."
       },
       {
-        "id": "nlpai.IE",
+        "id": "NLP.IE",
         "name": "Information Extraction",
         "description": "Entity and relation extraction, event extraction, knowledge base construction, and multilingual IE."
       },
       {
-        "id": "nlpai.IRTM",
+        "id": "NLP.IRTM",
         "name": "Information Retrieval and Text Mining",
         "description": "Retrieval, dense representations, ranking, and contrastive learning for text mining and search."
       },
       {
-        "id": "nlpai.Interpret",
+        "id": "NLP.Interpret",
         "name": "Interpretability and Model Analysis",
         "description": "Interpretability methods, adversarial analysis, calibration, probing, robustness, and model editing."
       },
       {
-        "id": "nlpai.LM",
+        "id": "NLP.LM",
         "name": "Language Modeling",
         "description": "Research on pretraining, prompting, safety, reasoning, scaling, agents, robustness, and red teaming."
       },
       {
-        "id": "nlpai.LTCP",
+        "id": "NLP.LTCP",
         "name": "Linguistic Theories and Psycholinguistics",
         "description": "Computational models of language theories, cognition, and psycholinguistic phenomena."
       },
       {
-        "id": "nlpai.ML4NLP",
+        "id": "NLP.ML4NLP",
         "name": "Machine Learning for NLP",
         "description": "Learning methods for NLP, including self-supervision, multitask, meta learning, causality, and optimization."
       },
       {
-        "id": "nlpai.MT",
+        "id": "NLP.MT",
         "name": "Machine Translation",
         "description": "Models and methods for multilingual MT, efficiency, evaluation, adaptation, speech translation, and deployment."
       },
       {
-        "id": "nlpai.MultiLing",
+        "id": "NLP.MultiLing",
         "name": "Multilingual and Cross-Lingual NLP",
         "description": "Cross-lingual transfer, multilingual pretraining, less-resourced and endangered languages, and tools."
       },
       {
-        "id": "nlpai.Multimodal",
+        "id": "NLP.Multimodal",
         "name": "Multimodality and Language Grounding",
         "description": "Integration of language with vision, robotics, speech, and cross-modal tasks like VQA and navigation."
       },
       {
-        "id": "nlpai.Apps",
+        "id": "NLP.Apps",
         "name": "NLP Applications",
         "description": "Practical applications of NLP in education, healthcare, finance, legal, social good, and code generation."
       },
       {
-        "id": "nlpai.PMW",
+        "id": "NLP.PMW",
         "name": "Phonology, Morphology, and Word Segmentation",
         "description": "Research on morphology, phonology, word segmentation, pronunciation, and linguistic analysis."
       },
       {
-        "id": "nlpai.QA",
+        "id": "NLP.QA",
         "name": "Question Answering",
         "description": "QA across domains including commonsense, multihop, biomedical, math, multilingual, and conversational QA."
       },
       {
-        "id": "nlpai.Resources",
+        "id": "NLP.Resources",
         "name": "Resources and Evaluation",
         "description": "Corpus creation, benchmarking, dataset design, evaluation metrics, reproducibility, and testing methods."
       },
       {
-        "id": "nlpai.Semantics",
+        "id": "NLP.Semantics",
         "name": "Lexical and Sentence-Level Semantics",
         "description": "Research on entailment, semantic similarity, compositionality, embeddings, paraphrasing, and NLI."
       },
       {
-        "id": "nlpai.Sentiment",
+        "id": "NLP.Sentiment",
         "name": "Sentiment, Style, and Argument Mining",
         "description": "Stance detection, sentiment, stylistics, argument quality, framing, and generation of argumentative text."
       },
       {
-        "id": "nlpai.Speech",
+        "id": "NLP.Speech",
         "name": "Speech and Spoken Language Understanding",
         "description": "ASR, TTS, spoken dialogue, speech-grounded understanding, and multimodal speech technologies."
       },
       {
-        "id": "nlpai.Summ",
+        "id": "NLP.Summ",
         "name": "Summarization",
         "description": "Research on extractive, abstractive, conversational, multimodal, multilingual, and long-form summarization."
       },
       {
-        "id": "nlpai.Syntax",
+        "id": "NLP.Syntax",
         "name": "Syntax and Parsing",
         "description": "Part-of-speech tagging, parsing algorithms, morpho-syntax, semantic parsing, and multilingual parsing."
+      }
+      ]},
+  "AI": {
+    "archive_id": "ai",
+    "categories": [
+      {
+        "id": "ai.Learning",
+        "name": "Learning Paradigms",
+        "description": "Core approaches to machine learning including supervised, unsupervised, and reinforcement learning."
       },
       {
-        "id": "nlpai.Special",
-        "name": "Special Theme Track",
-        "description": "Conference-specific thematic track defined per call for papers."
+        "id": "ai.ActiveLearning",
+        "name": "Active Learning",
+        "description": "Methods where models query or select informative samples to improve learning efficiency."
+      },
+      {
+        "id": "ai.OnlineLearning",
+        "name": "Online Learning",
+        "description": "Incremental model updates as new data arrives, without retraining from scratch."
+      },
+      {
+        "id": "ai.OneShotLearning",
+        "name": "One-Shot and Low-Shot Learning",
+        "description": "Techniques for learning from very few labeled examples."
+      },
+      {
+        "id": "ai.SemiSupervised",
+        "name": "Semi-Supervised Learning",
+        "description": "Learning with limited labeled data combined with large amounts of unlabeled data."
+      },
+      {
+        "id": "ai.Unsupervised",
+        "name": "Unsupervised Learning",
+        "description": "Discovering hidden patterns, clusters, or latent structures in unlabeled data."
+      },
+      {
+        "id": "ai.Transfer",
+        "name": "Transfer and Multitask Learning",
+        "description": "Leveraging knowledge from one domain or task to improve learning in another."
+      },
+      {
+        "id": "ai.MetaLearning",
+        "name": "Learning to Learn",
+        "description": "Algorithms that learn across tasks, enabling adaptation with minimal new data."
+      },
+      {
+        "id": "ai.ReinforcementLearning",
+        "name": "Reinforcement Learning",
+        "description": "Learning from interaction with environments via rewards and penalties."
+      },
+      {
+        "id": "ai.ModelBasedRL",
+        "name": "Model-Based RL",
+        "description": "Reinforcement learning methods that explicitly model environment dynamics."
+      },
+      {
+        "id": "ai.MultiAgentRL",
+        "name": "Multi-Agent Reinforcement Learning",
+        "description": "RL involving multiple agents with cooperative or competitive objectives."
+      },
+      {
+        "id": "ai.HierarchicalRL",
+        "name": "Hierarchical Reinforcement Learning",
+        "description": "Structured RL with temporal abstractions and sub-task hierarchies."
+      },
+      {
+        "id": "ai.Bandits",
+        "name": "Bandit Algorithms",
+        "description": "Exploration-exploitation algorithms for decision-making under uncertainty."
+      },
+      {
+        "id": "ai.Causal",
+        "name": "Causal Inference",
+        "description": "Methods for discovering and reasoning about cause-and-effect relationships."
+      },
+
+      {
+        "id": "ai.Models",
+        "name": "Models and Architectures",
+        "description": "Design of neural networks, generative models, and probabilistic frameworks."
+      },
+      {
+        "id": "ai.Attention",
+        "name": "Attention Models",
+        "description": "Mechanisms for focusing computation on relevant parts of the input."
+      },
+      {
+        "id": "ai.Recurrent",
+        "name": "Recurrent Networks",
+        "description": "Neural models with feedback connections for sequential data."
+      },
+      {
+        "id": "ai.Generative",
+        "name": "Generative Models",
+        "description": "Models that learn to generate data, including VAEs, GANs, and autoregressive models."
+      },
+      {
+        "id": "ai.Adversarial",
+        "name": "Adversarial Networks",
+        "description": "Generative adversarial models trained with competing objectives."
+      },
+      {
+        "id": "ai.MemoryNN",
+        "name": "Memory-Augmented Neural Networks",
+        "description": "Neural architectures with external or structured memory components."
+      },
+      {
+        "id": "ai.Hierarchical",
+        "name": "Hierarchical Models",
+        "description": "Models that represent data at multiple levels of abstraction."
+      },
+      {
+        "id": "ai.Graphical",
+        "name": "Graphical Models",
+        "description": "Probabilistic models such as Bayesian networks and factor graphs."
+      },
+      {
+        "id": "ai.Variational",
+        "name": "Variational Inference",
+        "description": "Approximate inference methods using optimization over distributions."
+      },
+      {
+        "id": "ai.Gaussian",
+        "name": "Gaussian Processes",
+        "description": "Nonparametric Bayesian models for regression and classification."
+      },
+      {
+        "id": "ai.Latent",
+        "name": "Latent Variable Models",
+        "description": "Models with hidden variables explaining observed data."
+      },
+      {
+        "id": "ai.Embedding",
+        "name": "Embedding Approaches",
+        "description": "Representing entities such as words, images, or graphs in vector spaces."
+      },
+      {
+        "id": "ai.Components",
+        "name": "Components Analysis",
+        "description": "Methods such as PCA, ICA, LDA, and CCA for dimensionality reduction."
+      },
+
+      {
+        "id": "ai.Optimization",
+        "name": "Optimization and Training",
+        "description": "Mathematical and algorithmic methods for training AI models efficiently."
+      },
+      {
+        "id": "ai.Convex",
+        "name": "Convex Optimization",
+        "description": "Optimization techniques for convex functions with guaranteed solutions."
+      },
+      {
+        "id": "ai.NonConvex",
+        "name": "Non-Convex Optimization",
+        "description": "Optimization of complex landscapes typical in deep networks."
+      },
+      {
+        "id": "ai.Stochastic",
+        "name": "Stochastic Methods",
+        "description": "Randomized algorithms for optimization and inference."
+      },
+      {
+        "id": "ai.Regularization",
+        "name": "Regularization",
+        "description": "Techniques to prevent overfitting and improve generalization."
+      },
+      {
+        "id": "ai.Sparsity",
+        "name": "Sparsity and Compressed Sensing",
+        "description": "Learning under sparsity constraints and compressed representations."
+      },
+      {
+        "id": "ai.Spectral",
+        "name": "Spectral Methods",
+        "description": "Algorithms based on eigenvalues and spectral graph properties."
+      },
+      {
+        "id": "ai.OptimizationDeep",
+        "name": "Optimization for Deep Networks",
+        "description": "Techniques to improve convergence and performance in deep learning."
+      },
+      {
+        "id": "ai.Hyperparam",
+        "name": "Hyperparameter Selection",
+        "description": "Methods for tuning model parameters efficiently."
+      },
+
+      {
+        "id": "ai.Applications",
+        "name": "Applications and Domains",
+        "description": "Use of AI methods in specific application areas and interdisciplinary domains."
+      },
+      {
+        "id": "ai.CV",
+        "name": "Computer Vision",
+        "description": "Visual perception tasks such as recognition, detection, and segmentation."
+      },
+      {
+        "id": "ai.Speech",
+        "name": "Speech and Audio Processing",
+        "description": "Automatic speech recognition, TTS, and auditory modeling."
+      },
+      {
+        "id": "ai.NLP",
+        "name": "Natural Language Processing",
+        "description": "Processing and generation of human language in text and speech."
+      },
+      {
+        "id": "ai.Robotics",
+        "name": "Robotics",
+        "description": "AI methods for perception, planning, navigation, and control in robots."
+      },
+      {
+        "id": "ai.Health",
+        "name": "Computational Biology and Neuroscience",
+        "description": "AI applications in bioinformatics, brain mapping, connectomics, and neuroprostheses."
+      },
+      {
+        "id": "ai.Finance",
+        "name": "Quantitative Finance and Econometrics",
+        "description": "AI and ML applications in financial modeling, risk, and econometrics."
+      },
+      {
+        "id": "ai.Social",
+        "name": "Computational Social Science",
+        "description": "Modeling human behavior, social networks, and cultural phenomena with AI."
+      },
+      {
+        "id": "ai.Recommender",
+        "name": "Recommender Systems",
+        "description": "Algorithms for ranking, preference learning, and personalization."
+      },
+      {
+        "id": "ai.Games",
+        "name": "Game Playing and Game Theory",
+        "description": "AI in strategic environments and multi-agent decision-making."
+      },
+      {
+        "id": "ai.Privacy",
+        "name": "Privacy, Anonymity, and Security",
+        "description": "Ensuring AI systems protect sensitive data and resist adversarial threats."
+      },
+      {
+        "id": "ai.Toolkits",
+        "name": "Software Toolkits",
+        "description": "Libraries, benchmarks, and frameworks for AI research and applications."
       }
     ]
   }
