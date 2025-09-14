@@ -235,10 +235,7 @@ class TeamExpertiseAgent:
             # Build team analysis
             return {
                 "member_count": len(team_data),
-                "publications": {
-                    "papers": team_publications,
-                    "total_publications": total_publications,
-                },
+                "publications":  team_publications,
                 "citation_analysis": self.publication_processor.get_citation_analysis(team_publications),
                 "team_collaboration": {
                     "multi_author_papers": len(

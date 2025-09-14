@@ -402,11 +402,13 @@ class PublicationProcessor:
         """
         if not publications:
             return {
+                "publication_count": 0,
                 "total_citations": 0,
-                "average_citations": 0,
+                "paper_average_citations": 0,
                 "citation_distribution": {},
                 "high_impact_papers": [],
-                "citation_trends": {}
+                "citation_trends": {},
+                "median_citations": 0
             }
 
         # Basic metrics
@@ -449,6 +451,7 @@ class PublicationProcessor:
         citation_trends = dict(sorted(citation_trends.items()))
 
         return {
+            "publication_count": len(publications),
             "total_citations": total_citations,
             "paper_average_citations": round(average_citations, 2),
             "citation_distribution": citation_distribution,

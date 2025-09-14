@@ -30,20 +30,20 @@ def print_team_report(result: Dict[str, Any]) -> None:
         # Team Overview Section
         print_team_overview(team_profile)
 
-        # Individual Members Section
-        print_individual_members(individual_profiles)
+        # Publications Analysis Section
+        print_publications_analysis(team_profile)
 
         # Team Expertise Domains Section
         print_team_expertise_domains(team_profile)
-
-        # Publications Analysis Section
-        print_publications_analysis(team_profile)
 
         # Team Collaboration Section
         print_team_collaboration(team_profile)
 
         # AI-Generated Summary Section
-        print_ai_summary(team_profile)
+        print_team_summary(team_profile)
+
+        # Individual Members Section
+        print_individual_members(individual_profiles)
 
         print("\n" + "=" * 80)
         print("📊 Report generated successfully!")
@@ -60,8 +60,7 @@ def print_team_overview(team_profile: Dict[str, Any]) -> None:
     print("-" * 50)
     print(f"👥 Total Members Analyzed: {team_profile.get("member_count", 0)}")
     citation_analysis = team_profile.get("citation_analysis", {})
-    publications_data = team_profile.get("publications", {})
-    total_pubs = publications_data.get("total_publications", 0)
+    total_pubs = citation_analysis.get("publication_count", 0)
     total_citations = citation_analysis.get("total_citations", 0)
 
     print(f"📚 Total Publications: {total_pubs:,}")
@@ -104,10 +103,22 @@ def print_individual_members(individual_profiles: Dict[str, Any]) -> None:
         publication_count = citation_metrics.get("publication_count", 0)
         collaborators = ", ".join([f"{name}({num})" for name, num in profile.get("collaborators", 0).items()][:5]) # Show top 5 collaborators
 
+        publications = profile.get("publications", [])
+
+        valid_pubs = [p for p in publications if isinstance(p.get("year"), int)]
+        sorted_publications = sorted(valid_pubs, key=lambda x: x["year"], reverse=True)
+
+        earliest_year = min((pub.get("year") for pub in valid_pubs), default=None)
+        latest_year = max((pub.get("year") for pub in valid_pubs), default=None)
+
+        last_publications = [f"{pub.get('title', 'Unknown Title')} ({pub.get('year', 'N/A')})" for pub in sorted_publications[:3]]
+
+        print(f"   🗓️ Timeline Span: {earliest_year}-{latest_year}")
         print(f"   📊 H-index: {h_index}")
         print(f"   📚 Total Citations: {total_citations:,}")
         print(f"   📄 Publications: {publication_count}")
         print(f"   👥 Top Collaborators: {collaborators}")
+        print(f"   🕒 last 3 papers: \n\t\t{"\n\t\t".join(last_publications)}")
 
         # Domain expertise
         domain_expertise = profile.get("domain_expertise", [])
@@ -160,17 +171,6 @@ def print_publications_analysis(team_profile: Dict[str, Any]) -> None:
     print(f"\n📚 PUBLICATIONS ANALYSIS")
     print("-" * 50)
 
-    publications_data = team_profile.get("publications", {})
-    total_pubs = publications_data.get("total_publications", 0)
-    total_citations = publications_data.get("total_citations", 0)
-
-    print(f"📄 Total Publications: {total_pubs:,}")
-    print(f"📊 Total Citations: {total_citations:,}")
-
-    if total_pubs > 0:
-        avg_citations = total_citations / total_pubs
-        print(f"📈 Average Citations per Paper: {avg_citations:.1f}")
-
     # Citation analysis
     citation_analysis = team_profile.get("citation_analysis", {})
     citation_distribution = citation_analysis.get("citation_distribution")
@@ -185,9 +185,15 @@ def print_publications_analysis(team_profile: Dict[str, Any]) -> None:
         print(f"   📄 Low Cited (<=10): {low_cited}")
 
         # Recent publications
-        recent_pubs = citation_analysis.get("recent_publications", 0)
-        if recent_pubs > 0:
-            print(f"   🆕 Recent Publications (2020+): {recent_pubs}")
+
+        publications = team_profile.get("publications", [])
+        influential_pubs = [p for p in publications if p.get("citations", 0) >= 100 and p.get("year", 0) >= 2020]
+        print(f"\n⭐ Recent Influential Publications (100+ citations, 2020+): {len(influential_pubs)}")
+        for pub in influential_pubs[:3]:  # Show top 3 influential publications
+            title = pub.get("title", "Unknown Title")
+            year = pub.get("year", "N/A")
+            citations = pub.get("citations", 0)
+            print(f"   • {title} ({year}) - {citations} citations")
 
     # Publication and citation trends by year
     trend_data = citation_analysis.get("trend", {})
@@ -231,9 +237,9 @@ def print_team_collaboration(team_profile: Dict[str, Any]) -> None:
             print("   📊 Lower collaboration team")
 
 
-def print_ai_summary(team_profile: Dict[str, Any]) -> None:
+def print_team_summary(team_profile: Dict[str, Any]) -> None:
     """Print AI-generated summary section."""
-    print(f"\n🤖 AI-GENERATED TEAM SUMMARY")
+    print(f"\n🤖 TEAM SUMMARY")
     print("-" * 50)
 
     summary = team_profile.get("summary", "")
