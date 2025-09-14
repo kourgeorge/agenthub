@@ -1,0 +1,21 @@
+# Local development overrides
+# This file is automatically loaded by docker-compose for local development
+version: '3.8'
+
+services:
+  # Override for local development
+  caddy:
+    volumes:
+      # Use development Caddyfile for local development
+      - ../configs/caddy/Caddyfile.dev:/etc/caddy/Caddyfile:ro
+    environment:
+      - CADDY_DEVELOPMENT=true
+    ports:
+      - "8080:80"  # Use different port for local development
+      - "8443:443"
+
+  # Add development-specific services if needed
+  # litellm:
+  #   environment:
+  #     - DEBUG=true
+  #     - LOG_LEVEL=debug
