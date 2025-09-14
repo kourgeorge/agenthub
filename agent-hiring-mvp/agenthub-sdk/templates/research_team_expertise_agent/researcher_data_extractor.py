@@ -619,7 +619,7 @@ class ResearcherDataExtractor:
         if not text:
             return []
 
-        arxiv_taxonomy = self._load_arxiv_taxonomy(domains=["Computer Science", "NLP", "AI-Security", "AI"])
+        arxiv_taxonomy = self._load_arxiv_taxonomy(domains=["Computer Science", "AI-Security"])
 
         # Use LLM to extract domains with structured output
         domains = self._extract_domains_with_llm(text, arxiv_taxonomy)

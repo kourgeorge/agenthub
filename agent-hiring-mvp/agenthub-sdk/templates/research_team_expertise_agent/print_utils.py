@@ -37,7 +37,7 @@ def print_team_report(result: Dict[str, Any]) -> None:
         print_team_expertise_domains(team_profile)
 
         # Team Collaboration Section
-        print_team_collaboration(team_profile)
+        # print_team_collaboration(team_profile)
 
         # AI-Generated Summary Section
         print_team_summary(team_profile)
@@ -65,6 +65,7 @@ def print_team_overview(team_profile: Dict[str, Any]) -> None:
 
     print(f"📚 Total Publications: {total_pubs:,}")
     print(f"📊 Total Citations: {total_citations:,}")
+    print(f"🕒 Accumulated H-index: {citation_analysis.get("h-index", "N/A")}")
 
     if total_pubs > 0:
         avg_citations = total_citations / total_pubs
@@ -111,30 +112,31 @@ def print_individual_members(individual_profiles: Dict[str, Any]) -> None:
         earliest_year = min((pub.get("year") for pub in valid_pubs), default=None)
         latest_year = max((pub.get("year") for pub in valid_pubs), default=None)
 
-        last_publications = [f"{pub.get('title', 'Unknown Title')} ({pub.get('year', 'N/A')})" for pub in sorted_publications[:3]]
-
-        print(f"   🗓️ Timeline Span: {earliest_year}-{latest_year}")
+        print(f"   🗓️ Active Years: {earliest_year}-{latest_year}")
         print(f"   📊 H-index: {h_index}")
         print(f"   📚 Total Citations: {total_citations:,}")
         print(f"   📄 Publications: {publication_count}")
         print(f"   👥 Top Collaborators: {collaborators}")
-        print(f"   🕒 last 3 papers: \n\t\t{"\n\t\t".join(last_publications)}")
+        print(f"\n   🕒 Recent Papers:")
+        for pub in sorted_publications[:3]:  # Show top 3 influential publications
+            title = pub.get("title", "Unknown Title")
+            year = pub.get("year", "N/A")
+            print(f"\t\t• {title} ({year})")
 
         # Domain expertise
         domain_expertise = profile.get("domain_expertise", [])
         if domain_expertise:
-            print(f"   🎯 Top Expertise Domains:")
+            print(f"\n   🎯 Top Expertise Domains:")
             for domain_info in domain_expertise[:3]:  # Show top 3
                 domain = domain_info.get("domain", "Unknown")
                 rank = domain_info.get("rank", 0)
-                print(f"      • {domain} (Rank: {rank})")
+                print(f"\t\t• {domain} (Rank: {rank})")
 
         # Textual summary (truncated)
         textual_summary = profile.get("textual_summary", "")
         if textual_summary:
-            # Truncate summary to 150 characters
             summary_preview = textual_summary
-            print(f"   📝 Summary: {summary_preview}")
+            print(f"\n   📝 Summary: {summary_preview}")
 
 
 def print_team_expertise_domains(team_profile: Dict[str, Any]) -> None:
@@ -148,7 +150,7 @@ def print_team_expertise_domains(team_profile: Dict[str, Any]) -> None:
         return
 
     print(f"Total Domains: {len(expertise_domains)}")
-    print("\nTop Expertise Areas:")
+    print("Top Expertise Areas:")
 
     for i, (domain, data) in enumerate(list(expertise_domains.items())[:5], 1):
         total_rank = data.get("total_rank", 0)
@@ -157,13 +159,12 @@ def print_team_expertise_domains(team_profile: Dict[str, Any]) -> None:
 
         print(f"   {i}. {domain}")
         print(f"      📊 Total Rank: {total_rank}")
-        print(f"      👥 Contributing Members: {member_count}")
         if contributing_members:
             members_str = ", ".join(
                 [f'{name} ({rank})' for name, rank in contributing_members.items()][:5])  # Show first 5 members
             if len(contributing_members) > 5:
                 members_str += f" (+{len(contributing_members) - 5} more)"
-            print(f"      👤 Members: {members_str}")
+            print(f"      👥 Contributing Members: {members_str}")
 
 
 def print_publications_analysis(team_profile: Dict[str, Any]) -> None:
@@ -187,7 +188,11 @@ def print_publications_analysis(team_profile: Dict[str, Any]) -> None:
         # Recent publications
 
         publications = team_profile.get("publications", [])
-        influential_pubs = [p for p in publications if p.get("citations", 0) >= 100 and p.get("year", 0) >= 2020]
+        influential_pubs = [
+            p for p in publications
+            if isinstance(p.get("citations"), int) and p["citations"] >= 100
+               and isinstance(p.get("year"), int) and p["year"] >= 2020
+        ]
         print(f"\n⭐ Recent Influential Publications (100+ citations, 2020+): {len(influential_pubs)}")
         for pub in influential_pubs[:3]:  # Show top 3 influential publications
             title = pub.get("title", "Unknown Title")
@@ -251,6 +256,6 @@ def print_team_summary(team_profile: Dict[str, Any]) -> None:
 
 if __name__ == "__main__":
     # Also save the raw result to JSON for reference
-    with open("mark.json", "r") as f:
+    with open("ateret.json", "r") as f:
         result = json.load(f)
     print_team_report(result)

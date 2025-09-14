@@ -264,37 +264,6 @@ class PublicationProcessor:
 
         return unique_pubs
 
-    def publications_match(self, pub1: Dict[str, Any], pub2: Dict[str, Any]) -> bool:
-        """
-        Check if two publications are the same paper based on title only.
-        
-        Args:
-            pub1: First publication
-            pub2: Second publication
-            
-        Returns:
-            True if publications match, False otherwise
-        """
-        try:
-            title1 = pub1.get("title", "").lower().strip()
-            title2 = pub2.get("title", "").lower().strip()
-
-            if not title1 or not title2:
-                return False
-
-            # Normalize titles for comparison
-            norm_title1 = re.sub(r'[^\w\s]', '', title1)
-            norm_title1 = re.sub(r'\s+', ' ', norm_title1).strip()
-            norm_title2 = re.sub(r'[^\w\s]', '', title2)
-            norm_title2 = re.sub(r'\s+', ' ', norm_title2).strip()
-
-            # Exact match on normalized titles
-            return norm_title1 == norm_title2
-
-        except Exception as e:
-            logger.error(f"Error comparing publications: {str(e)}")
-            return False
-
     def get_team_publications(self, team_data: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Get all team publications with deduplication to handle shared papers between members."""
         try:
@@ -322,73 +291,6 @@ class PublicationProcessor:
         except Exception as e:
             logger.error(f"Error getting team publications: {str(e)}")
             return []
-
-    def analyze_publications_by_year(self, publications: List[Dict[str, Any]]) -> Dict[int, List[Dict[str, Any]]]:
-        """
-        Analyze publications by year to identify trends.
-        
-        Args:
-            publications: List of publications
-            
-        Returns:
-            Dictionary mapping year to list of publications
-        """
-        year_publications = {}
-
-        for pub in publications:
-            year = pub.get("year")
-            if year:
-                if year not in year_publications:
-                    year_publications[year] = []
-                year_publications[year].append(pub)
-
-        return year_publications
-
-    def get_publication_metrics(self, publications: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """
-        Calculate comprehensive publication metrics.
-        
-        Args:
-            publications: List of publications
-            
-        Returns:
-            Dictionary containing publication metrics
-        """
-        if not publications:
-            return {
-                "total_count": 0,
-                "recent_count": 0,
-                "cited_count": 0,
-                "average_citations": 0,
-                "year_range": None
-            }
-
-        total_count = len(publications)
-        current_year = datetime.now().year
-
-        # Recent publications (last 3 years)
-        recent_count = len([p for p in publications if p.get("year") and p.get("year") >= current_year - 3])
-
-        # Cited publications
-        cited_publications = [p for p in publications if p.get("citations", 0) > 0]
-        cited_count = len(cited_publications)
-
-        # Average citations
-        total_citations = sum(p.get("citations", 0) for p in publications)
-        average_citations = total_citations / total_count if total_count > 0 else 0
-
-        # Year range
-        years = [p.get("year") for p in publications if p.get("year")]
-        year_range = (min(years), max(years)) if years else None
-
-        return {
-            "total_count": total_count,
-            "recent_count": recent_count,
-            "cited_count": cited_count,
-            "average_citations": round(average_citations, 2),
-            "year_range": year_range,
-            "total_citations": total_citations
-        }
 
     def get_citation_analysis(self, publications: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
@@ -424,14 +326,12 @@ class PublicationProcessor:
 
         # High impact papers (top 10% by citations)
         sorted_by_citations = sorted(publications, key=lambda x: x.get("citations", 0), reverse=True)
-        top_count = max(1, len(publications) // 10)  # Top 10%
+        top_count = max(1, len(publications) // 20)  # Top 5%
         high_impact_papers = [
             {
                 "title": p.get("title", "Unknown"),
                 "citations": p.get("citations", 0),
                 "year": p.get("year"),
-                "doi": p.get("doi"),
-                "venue": p.get("venue")
             }
             for p in sorted_by_citations[:top_count]
         ]
@@ -450,16 +350,37 @@ class PublicationProcessor:
         # order citation trend by year
         citation_trends = dict(sorted(citation_trends.items()))
 
+        h_index = self.calculate_h_index(publications)
         return {
             "publication_count": len(publications),
             "total_citations": total_citations,
             "paper_average_citations": round(average_citations, 2),
+            "median_citations": sorted_by_citations[len(sorted_by_citations) // 2].get("citations",
+                                                                                       0) if sorted_by_citations else 0,
+            "h-index": h_index,
             "citation_distribution": citation_distribution,
             "high_impact_papers": high_impact_papers,
-            "trend": citation_trends,
-            "median_citations": sorted_by_citations[len(sorted_by_citations) // 2].get("citations",
-                                                                                       0) if sorted_by_citations else 0
+            "trend": citation_trends
         }
+
+    def calculate_h_index(self, publications: List[Dict[str, Any]]) -> int:
+        """
+        Calculate the h-index for a list of publications.
+
+        Args:
+            publications: List of publications with citation data
+
+        Returns:
+            h-index value
+        """
+        citations = sorted([p.get("citations", 0) for p in publications], reverse=True)
+        h_index = 0
+        for i, c in enumerate(citations):
+            if c >= i + 1:
+                h_index = i + 1
+            else:
+                break
+        return h_index
 
     def get_team_collaboration_network(self, publications: List[Dict[str, Any]], team_members: List[str]) -> Dict[str, Any]:
         """

@@ -417,8 +417,13 @@
     "categories": [
       {
         "id": "aisec.LLM",
-        "name": "LLM development and alignment",
-        "description": "Research on the architecture, training, and deployment of large-scale language models."
+        "name": "LLM Development and Alignment",
+        "description": "Research on the effect of architecture, training, and alignment of LLM on the safety of AI."
+      },
+      {
+        "id": "aisec.AI4Sec",
+        "name": "AI for Security",
+        "description": "Research on applying AI to enhance cybersecurity, threat detection, and incident response in systems."
       },
       {
         "id": "aisec.Reasoning",
@@ -432,7 +437,7 @@
       },
       {
         "id": "aisec.Robustness",
-        "name": "Robustness and Adversarial ML",
+        "name": "AI Security and Robustness",
         "description": "Defenses and attacks on AI models, including adversarial prompts and jailbreaks."
       },
       {
@@ -441,19 +446,14 @@
         "description": "Techniques for protecting sensitive data against leakage, memorization, and extraction."
       },
       {
-        "id": "aisec.ThreatModeling",
-        "name": "Threat Modeling and Red Teaming",
-        "description": "Systematic analysis of attacker goals, vectors, and adversarial evaluations of AI systems."
-      },
-      {
         "id": "aisec.AgentSec",
         "name": "Agent Security",
         "description": "Security of LLM-based agents, covering memory, tool use, planning, and multi-agent risks."
       },
       {
-        "id": "aisec.SysSec",
-        "name": "System and Infrastructure Security",
-        "description": "Traditional cybersecurity applied to AI pipelines, APIs, data flows, and deployment stacks."
+        "id": "aisec.HumanFactors",
+        "name": "Human Factors in AI Security",
+        "description": "Study of human-AI interaction, trust, usability, and social implications of AI systems."
       },
       {
         "id": "aisec.Governance",
