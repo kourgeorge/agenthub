@@ -23,13 +23,13 @@ logger = logging.getLogger(__name__)
 
 # Import LangChain components
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
-from langchain_community.document_loaders import PyPDFLoader, TextLoader, CSVLoader, JSONLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 from langchain.chains import RetrievalQA
 from langchain.schema import Document
 
 from agenthub_sdk.agent import PersistentAgent
+from content_reader import FileContentReader
 
 
 class FileRAGAgent(PersistentAgent):
@@ -40,6 +40,8 @@ class FileRAGAgent(PersistentAgent):
         # Instance variables for LangChain components
         self.base_storage_dir = Path("/tmp/agenthub_persistent_rag")
         self.base_storage_dir.mkdir(exist_ok=True)
+        # Initialize content reader
+        self.content_reader = FileContentReader()
 
     def _get_storage_path(self, identifier: str) -> Path:
         """Get storage path for this agent instance."""
@@ -131,13 +133,13 @@ class FileRAGAgent(PersistentAgent):
                                              f"Agent already initialized with {len(self._get_state('file_references', []))} files")
 
             # Try to load existing index or create new one
-            content, files_metadata = self._load_documents_from_urls(file_references)
+            documents, files_metadata = self._load_documents_from_urls(file_references)
 
-            vectorstore, index_size = self._create_vectorstore(content, config)
-            self._save_vectorstore_to_disk(vectorstore, content, index_size)
+            vectorstore, index_size = self._create_vectorstore(documents, config)
+            self._save_vectorstore_to_disk(vectorstore, documents, index_size)
 
             # Store configuration in state
-            self._store_config_in_state(config, file_references, index_size, content)
+            self._store_config_in_state(config, file_references, index_size, documents)
             self._mark_initialized()
 
             logger.info("Initialization completed successfully")
@@ -225,16 +227,16 @@ class FileRAGAgent(PersistentAgent):
         self._state.clear()
         return self._create_cleanup_response("success", "Agent resources cleaned up successfully")
 
-    def _store_config_in_state(self, config: Dict[str, Any], file_references: list, index_size: int, content: str):
+    def _store_config_in_state(self, config: Dict[str, Any], file_references: list, index_size: int, documents: list):
         """Store configuration in state."""
         self._set_state("file_references", file_references)
         self._set_state("index_size", index_size)
         self._set_state("model_name", config.get("model_name", "gpt-4o-mini"))
         self._set_state("temperature", config.get("temperature", 0))
-        self._set_state("content", content)  # Store content for recreation if needed
+        self._set_state("documents_count", len(documents))  # Store document count for recreation if needed
         self._set_state("agent_id", config.get("agent_id", "default"))
         logger.info(
-            f"Configuration stored in state: file_references={len(file_references)}, content_length={len(content)}")
+            f"Configuration stored in state: file_references={len(file_references)}, documents_count={len(documents)}")
 
     def _get_source_info(self) -> list:
         """Get source information for response."""
@@ -277,7 +279,7 @@ class FileRAGAgent(PersistentAgent):
             # Must match schema: list of resources freed
         }
 
-    def _save_vectorstore_to_disk(self, vectorstore: FAISS, content: str, index_size: int):
+    def _save_vectorstore_to_disk(self, vectorstore: FAISS, documents: list, index_size: int):
         """Save the FAISS vectorstore and documents metadata to disk."""
         index_path = self._get_index_path()
         index_path.parent.mkdir(parents=True, exist_ok=True)
@@ -289,7 +291,12 @@ class FileRAGAgent(PersistentAgent):
         # Save documents metadata
         documents_path = self._get_documents_path()
         documents_data = {
-            "content": content,
+            "documents_metadata": [
+                {
+                    "content": doc.page_content,
+                    "metadata": doc.metadata
+                } for doc in documents
+            ],
             "total_chunks": index_size,
             "model_name": self._get_state("model_name"),
             "temperature": self._get_state("temperature")
@@ -299,9 +306,9 @@ class FileRAGAgent(PersistentAgent):
             json.dump(documents_data, f, indent=2)
         logger.info(f"Successfully saved vectorstore to disk at {index_path}")
 
-    def _load_documents_from_urls(self, file_urls: list) -> Tuple[str, list]:
-        """Load document content directly from URLs."""
-        all_content = []
+    def _load_documents_from_urls(self, file_urls: list) -> Tuple[list, list]:
+        """Load document content directly from URLs as separate Document objects."""
+        all_documents = []
         file_metadata = []
 
         for file_url in file_urls:
@@ -310,7 +317,19 @@ class FileRAGAgent(PersistentAgent):
                 content = self._process_file_content(file_content, metadata['filename'], metadata['file_type'])
 
                 if content.strip():
-                    all_content.append(content)
+                    # Create Document object with metadata
+                    doc = Document(
+                        page_content=content,
+                        metadata={
+                            'source': file_url,
+                            'filename': metadata['filename'],
+                            'file_type': metadata['file_type'],
+                            'file_size': metadata.get('file_size', len(content)),
+                            'description': metadata.get('description', '')
+                        }
+                    )
+                    all_documents.append(doc)
+                    
                     file_metadata.append({
                         'file_url': file_url,
                         'filename': metadata['filename'],
@@ -323,60 +342,38 @@ class FileRAGAgent(PersistentAgent):
                 logger.error(f"Error processing file from {file_url}: {e}")
                 continue
 
-        if not all_content:
+        if not all_documents:
             raise Exception("No content could be extracted from any of the uploaded files")
 
         # Store file metadata in state
-
-        return "\n\n".join(all_content), file_metadata
+        self._set_state("file_metadata", file_metadata)
+        return all_documents, file_metadata
 
     def _process_file_content(self, file_content: bytes, filename: str, file_type: str) -> str:
-        """Process file content based on file type."""
+        """Process file content using FileContentReader."""
+        return self.content_reader.read_text(file_content, filename, file_type)
 
-        # Create temporary file for processing
-        with tempfile.NamedTemporaryFile(delete=False, suffix=self._get_file_extension(filename)) as temp_file:
-            temp_file.write(file_content)
-            temp_file_path = temp_file.name
 
-        try:
-            # Process based on file type
-            if file_type.lower() == 'application/pdf' or filename.lower().endswith('.pdf'):
-                loader = PyPDFLoader(temp_file_path)
-            elif file_type.lower() == 'text/csv' or filename.lower().endswith('.csv'):
-                loader = CSVLoader(temp_file_path)
-            elif file_type.lower() == 'application/json' or filename.lower().endswith('.json'):
-                loader = JSONLoader(temp_file_path, jq_schema='.', text_content=False)
-            else:
-                loader = TextLoader(temp_file_path, encoding='utf-8')
+    def _create_vectorstore(self, documents: list, config: Dict[str, Any]) -> Tuple[FAISS, int]:
+        """Create vectorstore from list of Document objects."""
 
-            documents = loader.load()
-            return documents[0].page_content if documents else ""
-
-        finally:
-            if os.path.exists(temp_file_path):
-                os.unlink(temp_file_path)
-
-    def _get_file_extension(self, filename: str) -> str:
-        """Get file extension from filename."""
-        return os.path.splitext(filename)[1] if '.' in filename else ''
-
-    def _create_vectorstore(self, content: str, config: Dict[str, Any]) -> Tuple[FAISS, int]:
-        """Create vectorstore from content."""
-
-        # Split text into chunks
+        # Split documents into chunks while preserving metadata
         text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=config.get("chunk_size", 1000),
             chunk_overlap=config.get("chunk_overlap", 200)
         )
 
-        documents = text_splitter.split_text(content)
-        docs = [Document(page_content=doc) for doc in documents]
+        # Split each document and preserve its metadata in chunks
+        all_chunks = []
+        for doc in documents:
+            chunks = text_splitter.split_documents([doc])
+            all_chunks.extend(chunks)
 
         # Create embeddings and vectorstore
         embeddings = OpenAIEmbeddings()
-        vectorstore = FAISS.from_documents(docs, embeddings)
+        vectorstore = FAISS.from_documents(all_chunks, embeddings)
 
-        return vectorstore, len(docs)
+        return vectorstore, len(all_chunks)
 
     def _load_vectorstore_from_disk(self) -> Optional[FAISS]:
         """Load the FAISS vectorstore from disk."""
@@ -407,6 +404,7 @@ if __name__ == "__main__":
     print("1. Testing initialization...")
     init_result = agent.initialize({
         "file_references": [
+            "https://drive.google.com/uc?export=download&id=1YXjKauefPt_Pfqag9hdHAtA5YgybRA-g",
             "https://drive.google.com/uc?export=download&id=1z1jVSzUX6OE-6o4ZnPXImzq5GUdTbKn_",
             "https://drive.google.com/uc?export=download&id=1kHPc2f7AXp1Tx6uU1ym6AmW7NBsEXPLe"
         ],
