@@ -1465,7 +1465,10 @@ class PersistentAgent(ABC):
             
             # Update execution status if execution_id is provided
             if execution_id:
-                await self._update_execution_status(execution_id, result)
+                if result.get("status") == "success":
+                    await self._update_execution_status(execution_id, result, status="completed")
+                else:
+                    await self._update_execution_status(execution_id, result, status="failed")
             
         except Exception as e:
             logger.error(f"Error in background initialization for deployment {deployment_id}: {e}")
