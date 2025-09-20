@@ -784,10 +784,28 @@ class PersistentAgent(ABC):
         
         # Add resource limits
         try:
-            # Get resource limits for the agent
-            resource_limits = get_agent_resource_limits(deployment.agent_id)
+            # Get agent configuration and type for proper resource limits
+            agent = self.db.query(Agent).filter(Agent.id == deployment.agent_id).first()
+            if not agent:
+                raise Exception(f"Agent {deployment.agent_id} not found")
+            
+            # Get agent configuration from files
+            try:
+                agent_config = self._get_agent_config_from_files(deployment.agent_id)
+            except Exception as e:
+                logger.warning(f"Could not get agent config from files: {e}, using empty config")
+                agent_config = {}
+            
+            # Determine agent type (use deployment_type if available, otherwise agent.agent_type)
+            agent_type = deployment.deployment_type or agent.agent_type or "function"
+            
+            # Get resource limits with proper agent config and type
+            resource_limits = get_agent_resource_limits(agent_config, agent_type)
             docker_config = to_docker_config(resource_limits)
             container_config.update(docker_config)
+            
+            logger.info(f"Applied resource limits for {agent_type} agent {deployment.agent_id}: {resource_limits}")
+            
             
             # Run container creation in a thread pool to avoid blocking
             loop = asyncio.get_event_loop()
