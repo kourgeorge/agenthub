@@ -423,7 +423,7 @@
       {
         "id": "aisec.AI4Sec",
         "name": "AI for Security",
-        "description": "Research on applying AI to enhance cybersecurity, threat detection, and incident response in systems."
+        "description": "Research on using AI to enhance traditional cybersecurity, threat detection, and incident response."
       },
       {
         "id": "aisec.Reasoning",
@@ -436,9 +436,13 @@
         "description": "Ensuring models behave as intended, avoiding harms such as bias, toxicity, and unsafe outputs."
       },
       {
-        "id": "aisec.Robustness",
-        "name": "AI Security and Robustness",
-        "description": "Defenses and attacks on AI models, including adversarial prompts and jailbreaks."
+        "id": "aisec.Security",
+        "name": "AI Security",
+        "description": "Defenses and attacks on AI models, including adversarial prompts and jailbreaks that aims to target the AI system."
+      },
+      {"id": "aisec.Robustness",
+        "name": "AI Robustness",
+        "description": "Robustness of AI models to distribution shifts and unexpected inputs."
       },
       {
         "id": "aisec.Privacy",
