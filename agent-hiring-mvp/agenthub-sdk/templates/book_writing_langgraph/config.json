@@ -1,0 +1,160 @@
+{
+  "name": "Book Writing Agent (LangGraph)",
+  "description": "A simple book writing agent using LangGraph that creates a complete book by generating an outline and writing all chapters. Uses search tools (Tavily, SerpAPI, Serper, or DuckDuckGo) for research and exploration. Supports both OpenAI and Azure OpenAI. Configure search via environment variables: TAVILY_API_KEY (preferred), SERPAPI_API_KEY, SERPER_API_KEY, or DuckDuckGo (default, no key needed). Configure Azure via environment variables (AZURE_API_KEY, AZURE_API_BASE) or input parameters.",
+  "version": "1.0.0",
+  "entry_point": "book_writing_agent.py",
+  "agent_type": "function",
+  "author": "AgentHub Team",
+  "email": "team@agenthub.com",
+  "pricing_model": "per_use",
+  "price_per_use": 5.0,
+  "requirements": [
+    "langgraph>=0.0.1",
+    "langchain>=0.1.0",
+    "langchain-openai>=0.1.0",
+    "langchain-community>=0.0.20",
+    "openai>=1.0.0",
+    "python-dotenv>=1.0.0",
+    "duckduckgo-search>=4.0.0"
+  ],
+  "config_schema": {
+    "functions": [
+      {
+        "name": "execute",
+        "description": "Write a complete book by generating an outline and writing all chapters",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "topic": {
+              "type": "string",
+              "description": "The main topic of the book",
+              "minLength": 1
+            },
+            "goal": {
+              "type": "string",
+              "description": "The author's desired goal or vision for the book",
+              "default": ""
+            },
+            "model_name": {
+              "type": "string",
+              "description": "Model to use for LLM. For OpenAI: gpt-4o-mini, gpt-3.5-turbo, gpt-4, gpt-4o. For Azure: deployment name (e.g., gpt-4o-mini-2024-07-18)",
+              "default": "gpt-4o-mini"
+            },
+            "temperature": {
+              "type": "number",
+              "description": "Temperature for LLM responses",
+              "minimum": 0,
+              "maximum": 2,
+              "default": 0.7
+            },
+            "use_azure": {
+              "type": "boolean",
+              "description": "Whether to use Azure OpenAI (requires azure_api_key and azure_endpoint)",
+              "default": false
+            },
+            "azure_api_key": {
+              "type": "string",
+              "description": "Azure OpenAI API key (optional if AZURE_API_KEY env var is set)"
+            },
+            "azure_endpoint": {
+              "type": "string",
+              "description": "Azure OpenAI endpoint URL (optional if AZURE_API_BASE or AZURE_ENDPOINT env var is set)"
+            },
+            "azure_api_version": {
+              "type": "string",
+              "description": "Azure API version",
+              "default": "2024-02-15-preview"
+            },
+            "output_dir": {
+              "type": "string",
+              "description": "Directory to save the .tex file (default: ./books)"
+            },
+            "recursion_limit": {
+              "type": "integer",
+              "description": "Maximum number of workflow steps (default: 100, increase if you have many chapters)",
+              "default": 100,
+              "minimum": 25
+            }
+          },
+          "required": ["topic"],
+          "additionalProperties": true
+        },
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "description": "Execution status",
+              "enum": ["success", "error"]
+            },
+            "result": {
+              "type": "object",
+              "description": "The result of the book writing operation",
+              "properties": {
+                "book": {
+                  "type": "string",
+                  "description": "Complete book in LaTeX format with all chapters"
+                },
+                "outline": {
+                  "type": "string",
+                  "description": "Generated book outline in plain text format"
+                },
+                "tex_file": {
+                  "type": "string",
+                  "description": "Path to the saved .tex file on the filesystem"
+                },
+                "metadata": {
+                  "type": "object",
+                  "description": "Additional metadata about the book",
+                  "properties": {
+                    "topic": {
+                      "type": "string"
+                    },
+                    "num_chapters": {
+                      "type": "integer",
+                      "description": "Number of chapters written"
+                    },
+                    "model": {
+                      "type": "string"
+                    },
+                    "temperature": {
+                      "type": "number"
+                    }
+                  }
+                }
+              },
+              "required": ["book", "outline", "tex_file"]
+            },
+            "error": {
+              "type": "string",
+              "description": "Error message when status is error"
+            }
+          },
+          "required": ["status"],
+          "additionalProperties": false
+        }
+      }
+    ]
+  },
+  "capabilities": [
+    "book_outlining",
+    "chapter_writing",
+    "research_integration",
+    "langgraph_workflows",
+    "latex_generation",
+    "complete_book_generation",
+    "file_output"
+  ],
+  "tags": [
+    "book-writing",
+    "content-creation",
+    "langgraph",
+    "research",
+    "outlining",
+    "chapter-writing",
+    "creative-writing",
+    "complete-books"
+  ],
+  "category": "content-creation"
+}
+
